@@ -56,8 +56,7 @@ const CandidateSchema = new mongoose.Schema({
 const interviewSchema = new mongoose.Schema({
   company: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'User'
   },
   title: {
     type: String,
