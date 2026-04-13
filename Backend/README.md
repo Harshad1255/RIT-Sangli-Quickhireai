@@ -2,7 +2,6 @@
 
 A comprehensive AI-powered interview platform backend with real-time analysis, face detection, and automated evaluation.
 
-## 🚀 Features
 
 - **AI-Powered Interviews**: Real-time question generation and answer analysis using Google Gemini
 - **Face Analysis**: Confidence scoring and behavioral analysis during interviews
