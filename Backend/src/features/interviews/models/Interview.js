@@ -6,8 +6,7 @@ const CandidateSchema = new mongoose.Schema({
     ref: 'Candidate'
   },
   code: {
-    type: String,
-    unique: true
+    type: String
   },
   status: {
     type: String,
@@ -92,6 +91,8 @@ const interviewSchema = new mongoose.Schema({
     default: Date.now
   }
 });
+
+interviewSchema.index({ "candidates.code": 1 }, { unique: true, sparse: true });
 
 // Generate unique interview code
 interviewSchema.pre('save', async function(next) {
