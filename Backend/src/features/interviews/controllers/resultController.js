@@ -136,6 +136,11 @@ const processAnswer = async (req, res) => {
       return res.json({
         success: true,
         evaluation: finalEvaluation,
+        lastAnswerEvaluation: {
+          ...analysis,
+          confidenceScore: confidenceScore,
+          facialAnalysis: facialAnalysis
+        },
         isComplete: true,
         finalScore: interview.currentScore
       });

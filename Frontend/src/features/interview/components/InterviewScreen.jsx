@@ -315,6 +315,15 @@ const InterviewScreen = (props) => {
 
       // If interview is complete, show final evaluation
       if (response.data.isComplete && response.data.evaluation) {
+        const newAnswer = {
+          question: currentQuestion,
+          answer: answerText.trim(),
+          code: codeText || '',
+          evaluation: response.data.lastAnswerEvaluation || response.data.evaluation,
+          questionNumber: questionIndex + 1,
+          isFollowUp: isFollowUpQuestion
+        };
+        setAnswers(prev => [...prev, newAnswer]);
         setFinalEvaluation(response.data.evaluation);
         setIsComplete(true);
         // Do NOT call handleInterviewCompletion!
@@ -412,6 +421,14 @@ const InterviewScreen = (props) => {
       console.log('Skip payload:', payload); // <-- Debug log
       const response = await api.post('/interviews/evaluate-answer', payload);
       if (response.data.isComplete && response.data.evaluation) {
+        const newAnswer = {
+          question: validQuestion,
+          answer: '',
+          code: '',
+          evaluation: response.data.lastAnswerEvaluation || response.data.evaluation,
+          questionNumber: questionIndex + 1
+        };
+        setAnswers(prev => [...prev, newAnswer]);
         setFinalEvaluation(response.data.evaluation);
         setIsComplete(true);
         return;
