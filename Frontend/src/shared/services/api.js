@@ -9,8 +9,8 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json'
   },
-  timeout: 10000, // 10 second timeout
-  retry: 3, // Number of retries
+  timeout: 120000, // 120 second timeout for complex AI generation tasks
+  maxRetries: 3, // Number of retries
   retryDelay: 1000 // Delay between retries in milliseconds
 });
 
@@ -34,32 +34,68 @@ api.interceptors.response.use(
   async error => {
     const originalRequest = error.config;
     
-    // Handle network errors
+    // Handle network errors or timeouts
     if (!error.response) {
-      console.error('Network Error:', error);
-      if (originalRequest.retry < originalRequest.retry) {
-        originalRequest.retry += 1;
+      console.error('Network/Timeout Error:', error);
+      
+      originalRequest._retryCount = originalRequest._retryCount || 0;
+      if (originalRequest._retryCount < originalRequest.maxRetries) {
+        originalRequest._retryCount += 1;
+        console.log(`Retrying API call... Attempt ${originalRequest._retryCount}`);
         await new Promise(resolve => setTimeout(resolve, originalRequest.retryDelay));
         return api(originalRequest);
       }
-      throw new Error('Unable to connect to server. Please check your internet connection.');
+      throw new Error(error.code === 'ECONNABORTED' ? 'AI Generation is taking longer than expected. Please try requesting fewer questions.' : 'Unable to connect to server. Please check your internet connection.');
     }
 
     // Handle specific error codes
+    // Try a refresh flow on 401 before forcing logout
+    if (error.response.status === 401) {
+      try {
+        // avoid infinite loops
+        if (!originalRequest._retry) {
+          originalRequest._retry = true;
+
+          // attempt refresh using a refresh token if present
+          const refreshToken = localStorage.getItem('refreshToken');
+          if (refreshToken) {
+            try {
+              const refreshRes = await api.post('/auth/refresh', { token: refreshToken });
+              const newToken = refreshRes.data?.token;
+              if (newToken) {
+                localStorage.setItem('token', newToken);
+                api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+                originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+                return api(originalRequest);
+              }
+            } catch (refreshErr) {
+              // refresh failed, fall through to logout
+              console.warn('Token refresh failed:', refreshErr?.message || refreshErr);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error handling 401:', e);
+      }
+
+      // If refresh not available or failed, clear session and redirect
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+      throw new Error('Session expired. Please login again.');
+    }
+
     switch (error.response.status) {
-      case 401:
-        // Handle unauthorized access
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-        throw new Error('Session expired. Please login again.');
-      
       case 404:
         throw new Error('Resource not found. Please check the URL.');
-      
+
+      case 503:
+        // Surface server-provided message (e.g., AI quota exceeded)
+        throw new Error(error.response.data.error || 'Service unavailable. Please try again later.');
+
       case 500:
         throw new Error('Server error. Please try again later.');
-      
+
       default:
         throw new Error(error.response.data.error || 'An unexpected error occurred');
     }

@@ -7,11 +7,8 @@ const generateToken = (payload) => {
 };
 
 const verifyToken = (token) => {
-  try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (error) {
-    throw new Error('Invalid token');
-  }
+  // Let jwt.verify throw its original errors so callers can inspect error.name
+  return jwt.verify(token, JWT_SECRET);
 };
 
 const authenticateToken = (req, res, next) => {
@@ -27,7 +24,14 @@ const authenticateToken = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (error) {
-    return res.status(403).json({ success: false, error: 'Invalid token' });
+    // Distinguish expired tokens so frontend can attempt refresh on 401
+    if (error && error.name === 'TokenExpiredError') {
+      return res.status(401).json({ success: false, error: 'Token expired' });
+    }
+    if (error && error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ success: false, error: 'Invalid token' });
+    }
+    return res.status(401).json({ success: false, error: 'Invalid token' });
   }
 };
 

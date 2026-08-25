@@ -1,0 +1,95 @@
+.company-coding-container {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  color: #1a1a1a;
+}
+
+.coding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  border-bottom: 2px solid #eaeaea;
+  padding-bottom: 16px;
+}
+
+.coding-header h2 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.problem-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.problem-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: box-shadow 0.2s;
+}
+
+.problem-card:hover {
+  box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+}
+
+.problem-card-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge-difficulty {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.difficulty-Easy {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.difficulty-Medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.difficulty-Hard {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.testcase-item {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.submissions-stats-bar {
+  display: flex;
+  gap: 20px;
+  background: #f3f4f6;
+  padding: 16px;
+  border-radius: 8px;
+  margin: 16px 0;
+  font-weight: 600;
+}

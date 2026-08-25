@@ -51,6 +51,14 @@ router.post('/register', [
 
   try {
     console.log('Received registration request:', req.body);
+
+    if (!global.isDatabaseConnected) {
+      return res.status(503).json({
+        error: 'Database not connected',
+        message: 'MongoDB connection is not available. Please configure the Atlas URI and whitelist your IP.'
+      });
+    }
+
     const { email, password, userType, ...userData } = req.body;
 
     // Check if user already exists
@@ -102,6 +110,13 @@ router.post('/login', [
   }
 
   try {
+    if (!global.isDatabaseConnected) {
+      return res.status(503).json({
+        error: 'Database not connected',
+        message: 'MongoDB connection is not available. Please configure the Atlas URI and whitelist your IP.'
+      });
+    }
+
     const { email, password, userType } = req.body;
 
     // Find user
@@ -132,6 +147,13 @@ router.post('/login', [
       { expiresIn: '24h' }
     );
 
+    // Generate a refresh token (longer lifespan). Note: this is stateless and for dev only.
+    const refreshToken = jwt.sign(
+      { _id: user._id, userType: user.userType },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
     // Convert user to object and remove password
     const userResponse = user.toObject();
     delete userResponse.password;
@@ -139,7 +161,8 @@ router.post('/login', [
     res.json({ 
       message: 'Login successful',
       user: userResponse,
-      token
+      token,
+      refreshToken
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -147,9 +170,51 @@ router.post('/login', [
   }
 });
 
+// Refresh endpoint: exchange a refresh token for a new access token
+router.post('/refresh', async (req, res) => {
+  try {
+    // Support either { refreshToken } or { token } payloads (frontend may send { token })
+    const refreshToken = req.body.refreshToken || req.body.token;
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'refreshToken is required' });
+    }
+
+    // Verify refresh token
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    } catch (err) {
+      console.warn('Invalid refresh token:', err.message);
+      return res.status(401).json({ error: 'Invalid refresh token' });
+    }
+
+    // Optional: verify user still exists
+    const user = await User.findById(decoded._id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Issue new access token (and optionally a new refresh token)
+    const newToken = jwt.sign({ _id: user._id, userType: user.userType }, process.env.JWT_SECRET, { expiresIn: '24h' });
+    const newRefresh = jwt.sign({ _id: user._id, userType: user.userType }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    return res.json({ token: newToken, refreshToken: newRefresh });
+  } catch (error) {
+    console.error('Refresh error:', error);
+    return res.status(500).json({ error: 'Failed to refresh token' });
+  }
+});
+
 // Get user profile
 router.get('/profile/:userId', async (req, res) => {
   try {
+    if (!global.isDatabaseConnected) {
+      return res.status(503).json({
+        error: 'Database not connected',
+        message: 'MongoDB connection is not available. Please configure the Atlas URI and whitelist your IP.'
+      });
+    }
+
     const user = await User.findById(req.params.userId).select('-password');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });

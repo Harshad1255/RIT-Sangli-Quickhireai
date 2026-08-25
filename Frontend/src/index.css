@@ -1,4 +1,14 @@
 /* Reset and base styles */
+:root {
+  --primary-color: #1b4332;
+  --secondary-color: #b8860b;
+  --accent-color: #7a1f1f;
+  --text-color: #1f2937;
+  --light-text: #6b7280;
+  --surface-color: #ffffff;
+  --background-color: #f7f5f0;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -11,8 +21,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #ffffff;
-  color: #1f2937;
+  background-color: var(--background-color);
+  color: var(--text-color);
   line-height: 1.6;
 }
 

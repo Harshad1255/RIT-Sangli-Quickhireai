@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/SignupPage.css";
 import { register } from "../services/authApi";
-import { getApiBaseUrl } from "../../../config/api";
+import { getHealthcheckUrl } from "../../../config/api";
 
 const SignupPage = () => {
   const navigate = useNavigate();
@@ -29,8 +29,7 @@ const SignupPage = () => {
 
   const checkBackend = async () => {
     try {
-      const apiBaseUrl = getApiBaseUrl();
-      const res = await fetch(`${apiBaseUrl.replace('/api', '')}/healthcheck`);
+      const res = await fetch(getHealthcheckUrl(), { cache: "no-store" });
       if (res.ok) {
         setBackendOnline(true);
         setCheckingBackend(false);
@@ -39,11 +38,11 @@ const SignupPage = () => {
           pollInterval.current = null;
         }
         return true;
-      } else {
-        setBackendOnline(false);
-        setCheckingBackend(false);
-        return false;
       }
+
+      setBackendOnline(false);
+      setCheckingBackend(false);
+      return false;
     } catch (err) {
       setBackendOnline(false);
       setCheckingBackend(false);
@@ -54,6 +53,7 @@ const SignupPage = () => {
   const wakeBackend = async () => {
     setCheckingBackend(true);
     const online = await checkBackend();
+
     if (!online && !pollInterval.current) {
       pollInterval.current = setInterval(checkBackend, 2000);
     }
@@ -117,10 +117,10 @@ const SignupPage = () => {
     }
   };
 
-  const renderHealthcheckUrl = "https://quickhireai.onrender.com/healthcheck";
-
-  const handleWakeBackend = () => {
-    window.open(renderHealthcheckUrl, "_blank");
+  const handleWakeBackend = async () => {
+    const healthcheckUrl = getHealthcheckUrl();
+    window.open(healthcheckUrl, "_blank");
+    await wakeBackend();
   };
 
   return (

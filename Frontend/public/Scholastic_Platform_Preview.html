@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuickHireAI — Scholastic Aptitude & Coding Platform Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      --bg-primary: #f8fafc;
+      --bg-surface: #ffffff;
+      --text-primary: #0f172a;
+      --text-secondary: #64748b;
+      --accent-blue: #3b82f6;
+      --accent-blue-dark: #2563eb;
+      --accent-blue-light: #eff6ff;
+      --accent-green: #10b981;
+      --accent-green-light: #ecfdf5;
+      --accent-amber: #f59e0b;
+      --accent-amber-light: #fef3c7;
+      --accent-red: #ef4444;
+      --accent-red-light: #fee2e2;
+      --border-color: #e2e8f0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 280px;
+      background: #0f172a;
+      color: #cbd5e1;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1e293b;
+      z-index: 100;
+    }
+
+    .sidebar-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 1.25rem;
+      font-weight: 800;
+    }
+
+    .sidebar-header h2 {
+      font-size: 1.2rem;
+      color: #ffffff;
+      font-weight: 800;
+    }
+
+    .sidebar-header span {
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+
+    .nav-menu {
+      padding: 1rem 0.75rem;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .nav-section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      padding: 0.5rem 0.75rem;
+      margin-top: 0.5rem;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      color: #94a3b8;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 0.25rem;
+    }
+
+    .nav-item:hover {
+      background: #1e293b;
+      color: #ffffff;
+    }
+
+    .nav-item.active {
+      background: #2563eb;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+    }
+
+    /* Main Area */
+    .main-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .top-bar {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .top-bar-title h3 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .top-stats {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .stat-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-primary);
+      padding: 0.4rem 1rem;
+      border-radius: 20px;
+      border: 1px solid var(--border-color);
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    .content-area {
+      padding: 2.5rem;
+      max-width: 1350px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .view-section {
+      display: none;
+    }
+
+    .view-section.active {
+      display: block;
+      animation: fadeIn 0.25s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Hero Banner */
+    .hero-banner {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #1e40af 100%);
+      color: #ffffff;
+      padding: 2.5rem;
+      border-radius: 20px;
+      margin-bottom: 2.5rem;
+      box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-banner h1 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+    }
+
+    .hero-banner p {
+      color: #cbd5e1;
+      max-width: 650px;
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    .hero-stats-row {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .hero-stat-box {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 1rem 1.5rem;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .hero-stat-box i {
+      font-size: 1.75rem;
+      color: #fbbf24;
+    }
+
+    .hero-stat-value {
+      display: block;
+      font-size: 1.35rem;
+      font-weight: 800;
+    }
+
+    .hero-stat-label {
+      font-size: 0.8rem;
+      color: #cbd5e1;
+    }
+
+    /* Modules Grid */
+    .section-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+
+    .module-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      padding: 1.75rem;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .module-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 30px -10px rgba(0,0,0,0.08);
+      border-color: var(--accent-blue);
+    }
+
+    .module-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .module-icon.aptitude { background: #e0f2fe; color: #0284c7; }
+    .module-icon.coding { background: #eff6ff; color: #2563eb; }
+    .module-icon.contests { background: #fef3c7; color: #d97706; }
+    .module-icon.mock { background: #ecfdf5; color: #10b981; }
+
+    .module-card h4 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .module-card p {
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+
+    .module-card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--accent-blue);
+    }
+
+    /* Cards & Tables */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 15px -3px rgba(0,0,0,0.03);
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .table-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      padding: 1rem 1.5rem;
+      background: var(--bg-primary);
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    td {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 0.95rem;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .badge.Easy { background: #dcfce7; color: #166534; }
+    .badge.Medium { background: #fef9c3; color: #854d0e; }
+    .badge.Hard { background: #fee2e2; color: #991b1b; }
+
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-primary {
+      background: var(--accent-blue);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-blue-dark);
+    }
+
+    .btn-outline {
+      background: var(--accent-blue-light);
+      color: var(--accent-blue-dark);
+      border: 1px solid #bfdbfe;
+    }
+
+    /* Modal IDE Simulation */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: #0f172a;
+      width: 90vw;
+      height: 85vh;
+      border-radius: 20px;
+      border: 1px solid #334155;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      color: #e2e8f0;
+    }
+
+    .modal-top {
+      padding: 1rem 1.5rem;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-body {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      overflow: hidden;
+    }
+
+    .modal-pane {
+      padding: 1.5rem;
+      overflow-y: auto;
+      border-right: 1px solid #334155;
+    }
+
+    .code-box {
+      background: #090d16;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 1rem;
+      font-family: 'Fira Code', monospace;
+      color: #10b981;
+      height: 300px;
+      width: 100%;
+      resize: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-icon"><i class="fas fa-bolt"></i></div>
+      <div>
+        <h2>QuickHireAI</h2>
+        <span>Scholastic Platform</span>
+      </div>
+    </div>
+    <div class="nav-menu">
+      <div class="nav-section-title">SCHOLASTIC PRACTICE</div>
+      <div class="nav-item active" onclick="switchView('dashboard', this)">
+        <i class="fas fa-chart-pie"></i>
+        <span>Dashboard</span>
+      </div>
+      <div class="nav-item" onclick="switchView('aptitude', this)">
+        <i class="fas fa-brain"></i>
+        <span>Aptitude Bank</span>
+      </div>
+      <div class="nav-item" onclick="switchView('coding', this)">
+        <i class="fas fa-code"></i>
+        <span>Coding Arena</span>
+      </div>
+      <div class="nav-item" onclick="switchView('leaderboard', this)">
+        <i class="fas fa-trophy"></i>
+        <span>Leaderboard</span>
+      </div>
+      <div class="nav-item" onclick="switchView('progress', this)">
+        <i class="fas fa-chart-line"></i>
+        <span>Analytics & XP</span>
+      </div>
+      <div class="nav-item" onclick="switchView('contests', this)">
+        <i class="fas fa-flag-checkered"></i>
+        <span>Contests</span>
+      </div>
+      <div class="nav-item" onclick="switchView('mocktests', this)">
+        <i class="fas fa-clipboard-check"></i>
+        <span>Mock Tests</span>
+      </div>
+      <div class="nav-item" onclick="switchView('profile', this)">
+        <i class="fas fa-user-graduate"></i>
+        <span>Profile</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Area -->
+  <main class="main-area">
+    <header class="top-bar">
+      <div class="top-bar-title">
+        <h3 id="current-title">Scholastic Dashboard</h3>
+      </div>
+      <div class="top-stats">
+        <div class="stat-pill" style="color: #d97706; background: #fffbeb;">
+          <i class="fas fa-fire"></i> 7 Days Streak
+        </div>
+        <div class="stat-pill" style="color: #2563eb; background: #eff6ff;">
+          <i class="fas fa-star"></i> Level 3 (450 XP)
+        </div>
+        <div class="stat-pill" style="color: #10b981; background: #ecfdf5;">
+          <i class="fas fa-check-circle"></i> 23 Solved
+        </div>
+      </div>
+    </header>
+
+    <div class="content-area">
+      
+      <!-- VIEW: DASHBOARD -->
+      <section id="view-dashboard" class="view-section active">
+        <div class="hero-banner">
+          <h1>Master University Placement Aptitude & FAANG Coding Rounds</h1>
+          <p>Solve curated quantitative reasoning tests, build algorithmic muscle with LeetCode-grade problems, and climb your university leaderboard.</p>
+          <div class="hero-stats-row">
+            <div class="hero-stat-box">
+              <i class="fas fa-fire"></i>
+              <div>
+                <span class="hero-stat-value">7 Days</span>
+                <span class="hero-stat-label">Current Streak</span>
+              </div>
+            </div>
+            <div class="hero-stat-box">
+              <i class="fas fa-star"></i>
+              <div>
+                <span class="hero-stat-value">450 XP</span>
+                <span class="hero-stat-label">Level 3 Scholar</span>
+              </div>
+            </div>
+            <div class="hero-stat-box">
+              <i class="fas fa-building"></i>
+              <div>
+                <span class="hero-stat-value">TCS • Google</span>
+                <span class="hero-stat-label">Target Companies</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h3 class="section-title"><i class="fas fa-compass" style="color: #3b82f6;"></i> Interactive Practice Modules</h3>
+        <div class="modules-grid">
+          <div class="module-card" onclick="switchView('aptitude')">
+            <div>
+              <div class="module-icon aptitude"><i class="fas fa-brain"></i></div>
+              <h4>Quantitative & Verbal Aptitude</h4>
+              <p>100+ placement aptitude questions across Arithmetic, Logical Reasoning, and Verbal Ability with instant explanations.</p>
+            </div>
+            <div class="module-card-footer">
+              <span>Explore Aptitude</span>
+              <i class="fas fa-arrow-right"></i>
+            </div>
+          </div>
+
+          <div class="module-card" onclick="switchView('coding')">
+            <div>
+              <div class="module-icon coding"><i class="fas fa-code"></i></div>
+              <h4>Algorithmic Coding Arena</h4>
+              <p>Data Structures & Algorithms practice with an integrated Judge0 IDE, custom stdin test cases, and instant execution.</p>
+            </div>
+            <div class="module-card-footer">
+              <span>Explore Coding</span>
+              <i class="fas fa-arrow-right"></i>
+            </div>
+          </div>
+
+          <div class="module-card" onclick="switchView('leaderboard')">
+            <div>
+              <div class="module-icon contests"><i class="fas fa-trophy"></i></div>
+              <h4>University Leaderboard</h4>
+              <p>Compete with university peers, earn badges, and track your rank across Global, College, and Weekly tiers.</p>
+            </div>
+            <div class="module-card-footer">
+              <span>View Leaderboard</span>
+              <i class="fas fa-arrow-right"></i>
+            </div>
+          </div>
+
+          <div class="module-card" onclick="switchView('mocktests')">
+            <div>
+              <div class="module-icon mock"><i class="fas fa-clipboard-check"></i></div>
+              <h4>Company Mock Placement Tests</h4>
+              <p>Full-length simulated placement tests for TCS NQT, Infosys, Wipro, Google, and Amazon with timer controls.</p>
+            </div>
+            <div class="module-card-footer">
+              <span>Take Mock Test</span>
+              <i class="fas fa-arrow-right"></i>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: APTITUDE -->
+      <section id="view-aptitude" class="view-section">
+        <h3 class="section-title"><i class="fas fa-brain" style="color: #0284c7;"></i> Aptitude Question Bank</h3>
+        <div class="table-container" style="margin-top: 1.5rem;">
+          <table>
+            <thead>
+              <tr>
+                <th>Question Title</th>
+                <th>Category</th>
+                <th>Difficulty</th>
+                <th>Accuracy</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Probability of selecting 2 red balls from a bag of 5 red & 3 blue balls</strong></td>
+                <td>Quantitative Aptitude</td>
+                <td><span class="badge Medium">Medium</span></td>
+                <td>74%</td>
+                <td><button class="btn btn-outline" onclick="alert('MCQ Modal: Correct Answer is 5/14! +10 XP Earned!')">Solve MCQ</button></td>
+              </tr>
+              <tr>
+                <td><strong>Seating arrangement of 8 executives around a circular table</strong></td>
+                <td>Logical Reasoning</td>
+                <td><span class="badge Hard">Hard</span></td>
+                <td>62%</td>
+                <td><button class="btn btn-outline" onclick="alert('MCQ Modal: Correct Answer is Option B! +15 XP Earned!')">Solve MCQ</button></td>
+              </tr>
+              <tr>
+                <td><strong>Find the synonym of the word \'EPHEMERAL\' in context</strong></td>
+                <td>Verbal Ability</td>
+                <td><span class="badge Easy">Easy</span></td>
+                <td>88%</td>
+                <td><button class="btn btn-outline" onclick="alert('MCQ Modal: Correct Answer is Transient! +5 XP Earned!')">Solve MCQ</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- VIEW: CODING -->
+      <section id="view-coding" class="view-section">
+        <h3 class="section-title"><i class="fas fa-code" style="color: #2563eb;"></i> Algorithmic Coding Arena</h3>
+        <div class="table-container" style="margin-top: 1.5rem;">
+          <table>
+            <thead>
+              <tr>
+                <th>Problem Title</th>
+                <th>Topic</th>
+                <th>Difficulty</th>
+                <th>Acceptance</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Two Sum IV - Input is a BST</strong></td>
+                <td>Trees & Hashing</td>
+                <td><span class="badge Medium">Medium</span></td>
+                <td>68.4%</td>
+                <td><button class="btn btn-primary" onclick="openIDE('Two Sum IV')">Open IDE</button></td>
+              </tr>
+              <tr>
+                <td><strong>Longest Palindromic Substring</strong></td>
+                <td>Dynamic Programming</td>
+                <td><span class="badge Medium">Medium</span></td>
+                <td>54.2%</td>
+                <td><button class="btn btn-primary" onclick="openIDE('Longest Palindromic Substring')">Open IDE</button></td>
+              </tr>
+              <tr>
+                <td><strong>Trapping Rain Water</strong></td>
+                <td>Two Pointers</td>
+                <td><span class="badge Hard">Hard</span></td>
+                <td>42.8%</td>
+                <td><button class="btn btn-primary" onclick="openIDE('Trapping Rain Water')">Open IDE</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- VIEW: LEADERBOARD -->
+      <section id="view-leaderboard" class="view-section">
+        <h3 class="section-title"><i class="fas fa-trophy" style="color: #f59e0b;"></i> Global University Leaderboard</h3>
+        <div class="grid-3" style="margin: 2rem 0;">
+          <div class="card" style="text-align: center; border-color: #cbd5e1;">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">🥈</div>
+            <h4>Rohan Verma</h4>
+            <p style="color: #64748b; font-size: 0.85rem;">IIT Delhi</p>
+            <div style="margin-top: 1rem; font-weight: 800; color: #2563eb;">1,240 XP</div>
+          </div>
+          <div class="card" style="text-align: center; border-color: #fde047; background: #fffbeb;">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">👑</div>
+            <h4>Aarav Sharma</h4>
+            <p style="color: #64748b; font-size: 0.85rem;">IIT Bombay</p>
+            <div style="margin-top: 1rem; font-weight: 800; color: #d97706;">1,450 XP (Rank #1)</div>
+          </div>
+          <div class="card" style="text-align: center; border-color: #fdba74;">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">🥉</div>
+            <h4>Priya Nair</h4>
+            <p style="color: #64748b; font-size: 0.85rem;">NIT Trichy</p>
+            <div style="margin-top: 1rem; font-weight: 800; color: #ea580c;">1,120 XP</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: PROGRESS -->
+      <section id="view-progress" class="view-section">
+        <h3 class="section-title"><i class="fas fa-chart-line" style="color: #10b981;"></i> Performance Analytics & Activity</h3>
+        <div class="card" style="margin-top: 1.5rem;">
+          <h4>4-Week Activity Heatmap</h4>
+          <p style="color: #64748b; font-size: 0.9rem; margin: 0.5rem 0 1.5rem 0;">You have completed 18 practice sessions over the last 28 days.</p>
+          <div style="display: flex; gap: 8px;">
+            <div style="width:20px;height:20px;background:#3b82f6;border-radius:4px;" title="Day 1"></div>
+            <div style="width:20px;height:20px;background:#3b82f6;border-radius:4px;" title="Day 2"></div>
+            <div style="width:20px;height:20px;background:#1d4ed8;border-radius:4px;" title="Day 3"></div>
+            <div style="width:20px;height:20px;background:#dbeafe;border-radius:4px;" title="Day 4"></div>
+            <div style="width:20px;height:20px;background:#3b82f6;border-radius:4px;" title="Day 5"></div>
+            <div style="width:20px;height:20px;background:#3b82f6;border-radius:4px;" title="Day 6"></div>
+            <div style="width:20px;height:20px;background:#1d4ed8;border-radius:4px;" title="Day 7"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: CONTESTS -->
+      <section id="view-contests" class="view-section">
+        <h3 class="section-title"><i class="fas fa-flag-checkered" style="color: #d97706;"></i> University & Placement Contests</h3>
+        <div class="grid-3" style="margin-top: 1.5rem;">
+          <div class="card">
+            <span class="badge Easy" style="background: #eff6ff; color: #2563eb; margin-bottom: 0.5rem;">Upcoming</span>
+            <h4>TCS National Qualifier Sprint 2026</h4>
+            <p style="color: #64748b; font-size: 0.85rem; margin: 0.75rem 0;">90-minute timed algorithmic coding contest with 3 placement-level questions.</p>
+            <button class="btn btn-primary" onclick="alert('Registered successfully!')">Register Now</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: MOCK TESTS -->
+      <section id="view-mocktests" class="view-section">
+        <h3 class="section-title"><i class="fas fa-clipboard-check" style="color: #10b981;"></i> Company Mock Placement Tests</h3>
+        <div class="grid-3" style="margin-top: 1.5rem;">
+          <div class="card">
+            <h4>TCS National Qualifier Mock</h4>
+            <p style="color: #64748b; font-size: 0.85rem; margin: 0.75rem 0;">45 MCQs + 2 Coding rounds (120 min duration).</p>
+            <button class="btn btn-primary" onclick="switchView('coding')">Start Assessment</button>
+          </div>
+          <div class="card">
+            <h4>Google SWE Intern Assessment</h4>
+            <p style="color: #64748b; font-size: 0.85rem; margin: 0.75rem 0;">2 Hard DP & Graph algorithmic problems (90 min).</p>
+            <button class="btn btn-primary" onclick="switchView('coding')">Start Assessment</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: PROFILE -->
+      <section id="view-profile" class="view-section">
+        <h3 class="section-title"><i class="fas fa-user-graduate" style="color: #6366f1;"></i> Academic Profile & Resume</h3>
+        <div class="card" style="margin-top: 1.5rem;">
+          <h4>Aarav Sharma</h4>
+          <p style="color: #64748b;">B.Tech Computer Science (Class of 2026) • IIT Bombay</p>
+          <div style="margin-top: 1rem;">
+            <strong>Target Placement Companies:</strong>
+            <span class="badge Easy" style="margin-left: 0.5rem;">Google</span>
+            <span class="badge Easy">Microsoft</span>
+            <span class="badge Easy">TCS NQT</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- IDE MODAL -->
+  <div id="ide-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-top">
+        <div>
+          <strong id="modal-problem-title" style="font-size: 1.1rem; color: #fff;">Problem Title</strong>
+          <span class="badge Medium" style="margin-left: 8px;">Medium</span>
+        </div>
+        <div>
+          <button class="btn btn-primary" style="background: #10b981;" onclick="runSampleCode()">Run Code</button>
+          <button class="btn" style="background: #334155; color: #fff; margin-left: 0.5rem;" onclick="closeIDE()">Close</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-pane">
+          <h4 style="color: #fff; margin-bottom: 0.75rem;">Problem Statement</h4>
+          <p style="line-height: 1.6; color: #cbd5e1; font-size: 0.95rem;">
+            Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.<br><br>
+            <strong>Example 1:</strong><br>
+            Input: nums = [2,7,11,15], target = 9<br>
+            Output: [0,1]
+          </p>
+        </div>
+        <div class="modal-pane" style="background: #0f172a;">
+          <select style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 0.4rem; border-radius: 6px; margin-bottom: 1rem;">
+            <option>JavaScript (Node.js)</option>
+            <option>Python 3</option>
+            <option>C++</option>
+          </select>
+          <textarea id="editor-code" class="code-box">// Write solution here
+function twoSum(nums, target) {
+  const map = new Map();
+  for (let i = 0; i < nums.length; i++) {
+    const complement = target - nums[i];
+    if (map.has(complement)) {
+      return [map.get(complement), i];
+    }
+    map.set(nums[i], i);
+  }
+}</textarea>
+          <div id="execution-result" style="margin-top: 1rem; padding: 1rem; background: #1e293b; border-radius: 8px; display: none;">
+            <strong style="color: #10b981;"><i class="fas fa-check-circle"></i> Accepted (0 ms)</strong>
+            <p style="color: #cbd5e1; font-size: 0.85rem; margin-top: 0.5rem;">All 5 sample test cases passed! +50 XP Earned!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function switchView(viewId, el) {
+      document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
+      const target = document.getElementById('view-' + viewId);
+      if (target) target.classList.add('active');
+
+      if (el) {
+        document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+        el.classList.add('active');
+      }
+
+      const titles = {
+        'dashboard': 'Scholastic Dashboard',
+        'aptitude': 'Aptitude Question Bank',
+        'coding': 'Algorithmic Coding Arena',
+        'leaderboard': 'University Leaderboard',
+        'progress': 'Analytics & XP Progress',
+        'contests': 'University & Placement Contests',
+        'mocktests': 'Company Mock Placement Tests',
+        'profile': 'Academic Profile'
+      };
+      document.getElementById('current-title').innerText = titles[viewId] || 'Scholastic Platform';
+    }
+
+    function openIDE(title) {
+      document.getElementById('modal-problem-title').innerText = title;
+      document.getElementById('execution-result').style.display = 'none';
+      document.getElementById('ide-modal').style.display = 'flex';
+    }
+
+    function closeIDE() {
+      document.getElementById('ide-modal').style.display = 'none';
+    }
+
+    function runSampleCode() {
+      const res = document.getElementById('execution-result');
+      res.style.display = 'block';
+    }
+  </script>
+</body>
+</html>

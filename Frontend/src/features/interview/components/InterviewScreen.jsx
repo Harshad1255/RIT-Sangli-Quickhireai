@@ -784,7 +784,6 @@ const InterviewScreen = (props) => {
             <div class="notification-content">
               <span class="notification-icon">🚫</span>
               <span class="notification-text">You can't select text during the interview.</span>
-              <button class="notification-dismiss" onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer; margin-left: 8px;">×</button>
             </div>
           `;
           notification.style.cssText = `
@@ -950,7 +949,6 @@ const InterviewScreen = (props) => {
           <div class="warning-content">
             <span class="warning-icon">🚫</span>
             <span class="warning-text"><strong>INTERVIEW BLOCKED!</strong> Fullscreen mode is MANDATORY to continue.</span>
-            <button class="warning-dismiss" onclick="this.parentElement.parentElement.remove()">×</button>
           </div>
         `;
         
@@ -1090,7 +1088,6 @@ const InterviewScreen = (props) => {
         <div class="notification-content">
           <span class="notification-icon">🚫</span>
           <span class="notification-text">Fullscreen first!</span>
-          <button class="notification-dismiss" onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer; margin-left: 8px;">×</button>
         </div>
       `;
       

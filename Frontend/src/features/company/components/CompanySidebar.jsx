@@ -22,9 +22,9 @@ const CompanySidebar = () => {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="logo">
-          <i className="fas fa-building"></i>
-          <h2>QuickHire AI</h2>
+        <div className="logo" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img src="/rit-logo.png" alt="RIT Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+          <h2 style={{ fontSize: '1.2rem', color: 'var(--primary-color)' }}>QuickHire AI</h2>
         </div>
       </div>
 
@@ -57,6 +57,33 @@ const CompanySidebar = () => {
               <div className="menu-item">
                 <i className="fas fa-plus-circle"></i>
                 <span>Create Interview</span>
+              </div>
+            </li>
+            <li
+              className={isActive("/company-dashboard/aptitude-tests") ? "active" : ""}
+              onClick={() => navigate("/company-dashboard/aptitude-tests")}
+            >
+              <div className="menu-item">
+                <i className="fas fa-file-alt"></i>
+                <span>Aptitude Tests</span>
+              </div>
+            </li>
+            <li
+              className={isActive("/company-dashboard/coding-problems") ? "active" : ""}
+              onClick={() => navigate("/company-dashboard/coding-problems")}
+            >
+              <div className="menu-item">
+                <i className="fas fa-code"></i>
+                <span>Coding Practice</span>
+              </div>
+            </li>
+            <li
+              className={isActive("/company-dashboard/leaderboard") ? "active" : ""}
+              onClick={() => navigate("/company-dashboard/leaderboard")}
+            >
+              <div className="menu-item">
+                <i className="fas fa-trophy"></i>
+                <span>Leaderboard</span>
               </div>
             </li>
             <li

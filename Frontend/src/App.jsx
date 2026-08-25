@@ -21,6 +21,10 @@ import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import MockInterviewPage from './features/interview/pages/MockInterviewPage';
 import InterviewScreenWrapper from './features/interview/components/InterviewScreenWrapper';
+import ScholasticMainPage from './features/scholastic/pages/ScholasticMainPage';
+import CompanyAptitudeTests from './features/company/components/CompanyAptitudeTests';
+import CompanyCodingProblems from './features/company/components/CompanyCodingProblems';
+import CompanyLeaderboard from './features/company/components/CompanyLeaderboard';
 
 const AppContainer = styled.div`
   min-height: 100vh;
@@ -104,6 +108,11 @@ function App() {
             <StudentDashboard />
           </PrivateRoute>
         } />
+        <Route path="/dashboard/scholastic/*" element={
+          <PrivateRoute allowed={['student']}>
+            <ScholasticMainPage />
+          </PrivateRoute>
+        } />
         <Route path="/company-dashboard/*" element={
           <PrivateRoute allowed={['company']}>
             <CompanyDashboard />
@@ -115,6 +124,9 @@ function App() {
           <Route path="interviews/:interviewId/upload-candidates" element={<UploadCandidates />} />
           <Route path="reports" element={<CandidateReports />} />
           <Route path="profile" element={<CompanyProfile />} />
+          <Route path="aptitude-tests" element={<CompanyAptitudeTests />} />
+          <Route path="coding-problems" element={<CompanyCodingProblems />} />
+          <Route path="leaderboard" element={<CompanyLeaderboard />} />
           <Route path="settings" element={<div>Settings Page</div>} />
           <Route path="team" element={<div>Team Management Page</div>} />
           <Route path="interviews/:id/details" element={<InterviewDetails />} />

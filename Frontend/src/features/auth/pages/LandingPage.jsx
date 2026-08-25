@@ -20,8 +20,9 @@ const LandingPage = (props) => {
     <div className="landing-page">
       {/* Header Section */}
       <header>
-        <div className="logo">
-          <span className="gradient-text">QuickHire AI</span>
+        <div className="logo" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img src="/rit-logo.png" alt="RIT Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+          <span className="gradient-text" style={{ fontSize: '1.5rem', color: 'var(--primary-color)' }}>KES's RIT - QuickHire AI</span>
         </div>
         <nav>
           <a href="#features">Features</a>
@@ -37,7 +38,7 @@ const LandingPage = (props) => {
       {/* Hero Section */}
       <section className="hero">
         <div className="hero-content">
-          <h1>AI-Powered Interview Platform for Modern Hiring</h1>
+          <h1>KES's RIT Placement & AI Interview Platform</h1>
           <p>QuickHire AI streamlines your recruitment process with smart, unbiased, and efficient AI-driven interviews. Save time, reduce bias, and hire the best talent with confidence.</p>
           <div className="hero-buttons">
             <button className="cta-button" onClick={() => navigate('/signup')}>Get Started</button>
@@ -121,13 +122,13 @@ const LandingPage = (props) => {
         <h2>What Our Clients Say</h2>
         <div className="testimonials-grid">
           <div className="testimonial-card">
-            <img src="/assets/client1.jpg" alt="HR Manager" className="client-image" />
+            <img src={landingImg} alt="HR Manager" className="client-image" />
             <p>"QuickHire AI has revolutionized our hiring process. We've reduced time-to-hire by 60% while finding better candidates."</p>
             <h4>Sarah Johnson</h4>
             <p className="client-position">HR Manager, Tech Corp</p>
           </div>
           <div className="testimonial-card">
-            <img src="/assets/client2.jpg" alt="CEO" className="client-image" />
+            <img src={landingImg} alt="CEO" className="client-image" />
             <p>"The AI analysis provides insights we couldn't get from traditional interviews. It's been a game-changer for our recruitment."</p>
             <h4>Michael Chen</h4>
             <p className="client-position">CEO, StartUp Inc</p>

@@ -1,17 +1,4 @@
 /* Global Styles */
-:root {
-  --primary-color: #3b82f6;
-  --secondary-color: #10b981;
-  --accent-color: #6366f1;
-  --text-color: #1f2937;
-  --light-text: #6b7280;
-}
-
-body {
-  font-family: 'Inter', sans-serif;
-  color: var(--text-color);
-  line-height: 1.6;
-}
 
 /* Header Styles */
 header {

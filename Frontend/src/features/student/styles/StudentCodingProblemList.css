@@ -1,0 +1,92 @@
+.student-coding-list {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.student-coding-header {
+  margin-bottom: 24px;
+}
+
+.student-coding-header h2 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 6px 0;
+}
+
+.student-coding-header p {
+  color: #6b7280;
+  margin: 0;
+}
+
+.coding-filters {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.coding-filter-input {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 0.95rem;
+}
+
+.coding-problems-table-wrapper {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.coding-problems-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.coding-problems-table th,
+.coding-problems-table td {
+  padding: 14px 18px;
+  border-bottom: 1px solid #f3f4f6;
+  text-align: left;
+}
+
+.coding-problems-table th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #475569;
+}
+
+.coding-problems-table tr:hover {
+  background: #f8fafc;
+}
+
+.status-solved {
+  background: #d1fae5;
+  color: #065f46;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.status-attempted {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.status-unattempted {
+  background: #f3f4f6;
+  color: #64748b;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}

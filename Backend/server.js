@@ -60,6 +60,9 @@ const multer = require('multer');
 const cors = require('cors');
 const interviewRoutes = require('./src/features/interviews/routes/interviewRoutes');
 const userRoutes = require('./src/features/users/routes/userRoutes');
+const { aptitudeRoutes, codingRoutes, scholasticRoutes, adminRoutes } = require('./src/features/scholastic/routes');
+const aptitudeTestRoutes = require('./src/features/aptitude/routes/aptitudeTestRoutes');
+const codingProblemRoutes = require('./src/features/coding/routes/codingProblemRoutes');
 
 // Connect to MongoDB
 connectDB();
@@ -75,7 +78,7 @@ console.log('Final Environment Check:', {
 });
 
 const app = express();
-const preferredPort = process.env.PORT || 5001;
+const preferredPort = Number(process.env.PORT) || 5001;
 let port = preferredPort;
 
 // Configure multer for file uploads
@@ -88,12 +91,29 @@ const upload = multer({
 });
 
 // Middleware
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://localhost:5001',
+  'https://quick-hire-ai.vercel.app'
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173', 
-    'http://localhost:5001',
-    'https://quick-hire-ai.vercel.app'
-  ],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    const isLocalhostOrigin = /^http:\/\/localhost:\d+$/.test(origin);
+    if (isLocalhostOrigin) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 app.use(express.json());
@@ -195,6 +215,22 @@ app.use('/api/auth', userRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/users', userRoutes);
 
+// Scholastic Practice & Company Aptitude/Coding Module Routes
+app.use('/api/aptitude', aptitudeTestRoutes);
+app.use('/api/aptitude', aptitudeRoutes);
+app.use('/api/coding', codingProblemRoutes);
+app.use('/api/coding', codingRoutes);
+app.use('/api/scholastic', scholasticRoutes);
+app.use('/api/mocktests', scholasticRoutes);
+app.use('/api/progress', scholasticRoutes);
+app.use('/api/bookmarks', scholasticRoutes);
+app.use('/api/leaderboard', scholasticRoutes);
+app.use('/api/companies', scholasticRoutes);
+app.use('/api/contests', scholasticRoutes);
+app.use('/api/analytics', scholasticRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/scholastic/admin', adminRoutes);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Server Error:', err);
@@ -265,8 +301,9 @@ const startServer = (portToTry) => {
     port = portToTry; // Update the port variable
   }).on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-      console.log(`Port ${portToTry} is busy, trying ${portToTry + 1}...`);
-      startServer(portToTry + 1);
+      const nextPort = Number(portToTry) + 1;
+      console.log(`Port ${portToTry} is busy, trying ${nextPort}...`);
+      startServer(nextPort);
     } else {
       console.error('Server error:', err);
     }
