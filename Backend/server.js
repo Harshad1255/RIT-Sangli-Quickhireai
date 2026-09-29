@@ -1,71 +1,24 @@
-// Load environment variables first, before any other imports
 const path = require('path');
-const fs = require('fs');
+
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config({ path: path.join(__dirname, '.env') });
+}
+
+const { validateEnv } = require('./src/config/validateEnv');
+const envValidation = validateEnv(process.env);
+
+if (!envValidation.valid) {
+  console.error('[env] Startup aborted. Invalid or missing variables:', envValidation.invalidVariables.join(', '));
+  process.exit(1);
+}
+
+if (envValidation.warnings.length > 0) {
+  console.warn('[env] Optional variables not set:', envValidation.warnings.join(', '));
+}
+
 const connectDB = require('./src/config/db');
-const { validateEnvironment } = require('./src/config/env');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-
-// Robust environment variable loading that works on both local and Render
-const loadEnvironmentVariables = () => {
-  const envPath = path.join(__dirname, '.env');
-  console.log('Checking for .env file at:', envPath);
-  
-  if (fs.existsSync(envPath)) {
-    console.log('✅ Found .env file, loading local environment variables');
-    try {
-  // Read and parse .env file directly
-  const envContent = fs.readFileSync(envPath, 'utf8');
-  const lines = envContent.split('\n');
-  
-  for (const line of lines) {
-        if (line.trim() && !line.startsWith('#')) {
-          const [key, ...valueParts] = line.split('=');
-          if (key && valueParts.length > 0) {
-            const value = valueParts.join('=').trim();
-            process.env[key.trim()] = value;
-          }
-        }
-      }
-      console.log('✅ Successfully loaded local .env file');
-    } catch (error) {
-      console.warn('⚠️ Error reading .env file:', error.message);
-    }
-  } else {
-    console.log('⚠️ .env file not found. Assuming environment variables are set by hosting platform (Render)');
-  }
-
-  const { missing, weakSecret, isProduction } = validateEnvironment({ env: process.env, warnOnly: true });
-  
-  if (missing.length > 0) {
-    console.warn('⚠️ Missing environment variables:', missing);
-    console.log('Environment check:', {
-      GEMINI_API_KEY_SET: !!process.env.GEMINI_API_KEY,
-      MONGODB_URI_SET: !!process.env.MONGODB_URI,
-      JWT_SECRET_SET: !!process.env.JWT_SECRET,
-      NODE_ENV: process.env.NODE_ENV,
-      isProduction
-    });
-  } else {
-    console.log('✅ All required environment variables are present');
-  }
-
-  if (weakSecret) {
-    console.warn('⚠️ JWT_SECRET is shorter than 32 characters in production mode.');
-  }
-};
-
-// Load environment variables
-loadEnvironmentVariables();
-const envStatus = validateEnvironment({ env: process.env, warnOnly: false });
-if (!envStatus.ok) {
-  console.error('[env] Startup aborted: missing required configuration:', envStatus.missing);
-  process.exit(1);
-}
-if (envStatus.weakSecret) {
-  console.error('[env] Startup aborted: JWT_SECRET must be at least 32 characters in production mode.');
-  process.exit(1);
-}
 
 console.log('[CodeExecution]', {
   enabled: process.env.CODE_EXECUTION_ENABLED === 'true',
