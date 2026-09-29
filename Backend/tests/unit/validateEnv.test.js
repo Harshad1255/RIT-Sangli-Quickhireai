@@ -53,8 +53,6 @@ describe('validateEnv', () => {
     const child = spawnSync(process.execPath, [serverPath], {
       cwd: path.dirname(serverPath),
       env: {
-        PATH: process.env.PATH,
-        SystemRoot: process.env.SystemRoot,
         NODE_ENV: 'production',
       },
       encoding: 'utf8',

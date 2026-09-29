@@ -6,7 +6,7 @@ global.isDatabaseConnected = false;
 const connectDB = async () => {
   try {
     console.log('Attempting to connect to MongoDB...');
-    console.log('Connection string:', process.env.MONGODB_URI);
+    console.log('MONGODB_URI: set');
     
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
