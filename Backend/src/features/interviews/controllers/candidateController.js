@@ -1,7 +1,7 @@
 const Interview = require('../models/Interview');
 const Candidate = require('../../candidates/models/Candidate');
 const xlsx = require('xlsx');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
@@ -80,7 +80,6 @@ const uploadCandidates = async (req, res) => {
     const interviewId = req.params.interviewId;
     const Interview = require('../models/Interview');
     const Candidate = require('../../candidates/models/Candidate');
-    const { v4: uuidv4 } = require('uuid');
     const interview = await Interview.findById(interviewId);
 
     if (!interview) {
@@ -136,7 +135,7 @@ const uploadCandidates = async (req, res) => {
       // Generate unique code for each candidate
       let code;
       do {
-        code = uuidv4().substring(0, 8).toUpperCase();
+        code = randomUUID().substring(0, 8).toUpperCase();
       } while (codes.has(code));
       codes.add(code);
 
