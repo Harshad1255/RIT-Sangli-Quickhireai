@@ -2,6 +2,7 @@
 const path = require('path');
 const fs = require('fs');
 const connectDB = require('./src/config/db');
+const { validateEnvironment } = require('./src/config/env');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
@@ -34,25 +35,45 @@ const loadEnvironmentVariables = () => {
     console.log('⚠️ .env file not found. Assuming environment variables are set by hosting platform (Render)');
   }
 
-  // Verify critical environment variables
-  const requiredEnvVars = ['GEMINI_API_KEY', 'MONGODB_URI', 'JWT_SECRET'];
-  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+  const { missing, weakSecret, isProduction } = validateEnvironment({ env: process.env, warnOnly: true });
   
-  if (missingVars.length > 0) {
-    console.warn('⚠️ Missing environment variables:', missingVars);
+  if (missing.length > 0) {
+    console.warn('⚠️ Missing environment variables:', missing);
     console.log('Environment check:', {
-      GEMINI_API_KEY_EXISTS: !!process.env.GEMINI_API_KEY,
-      MONGODB_URI_EXISTS: !!process.env.MONGODB_URI,
-      JWT_SECRET_EXISTS: !!process.env.JWT_SECRET,
-      NODE_ENV: process.env.NODE_ENV
+      GEMINI_API_KEY_SET: !!process.env.GEMINI_API_KEY,
+      MONGODB_URI_SET: !!process.env.MONGODB_URI,
+      JWT_SECRET_SET: !!process.env.JWT_SECRET,
+      NODE_ENV: process.env.NODE_ENV,
+      isProduction
     });
   } else {
     console.log('✅ All required environment variables are present');
+  }
+
+  if (weakSecret) {
+    console.warn('⚠️ JWT_SECRET is shorter than 32 characters in production mode.');
   }
 };
 
 // Load environment variables
 loadEnvironmentVariables();
+const envStatus = validateEnvironment({ env: process.env, warnOnly: false });
+if (!envStatus.ok) {
+  console.error('[env] Startup aborted: missing required configuration:', envStatus.missing);
+  process.exit(1);
+}
+if (envStatus.weakSecret) {
+  console.error('[env] Startup aborted: JWT_SECRET must be at least 32 characters in production mode.');
+  process.exit(1);
+}
+
+console.log('[CodeExecution]', {
+  enabled: process.env.CODE_EXECUTION_ENABLED === 'true',
+  provider: process.env.CODE_EXECUTION_PROVIDER || 'judge0',
+  baseUrlConfigured: Boolean(process.env.ONECOMPILER_API_URL || process.env.JUDGE0_API_URL || process.env.JUDGE0_BASE_URL),
+  apiKeyConfigured: Boolean(process.env.ONECOMPILER_API_KEY || process.env.JUDGE0_API_KEY),
+  hostConfigured: Boolean(process.env.JUDGE0_HOST)
+});
 
 // Now load other modules
 const express = require('express');
@@ -61,18 +82,19 @@ const cors = require('cors');
 const interviewRoutes = require('./src/features/interviews/routes/interviewRoutes');
 const userRoutes = require('./src/features/users/routes/userRoutes');
 const { aptitudeRoutes, codingRoutes, scholasticRoutes, adminRoutes } = require('./src/features/scholastic/routes');
+const companyScholasticRoutes = require('./src/features/scholastic/routes/companyScholasticRoutes');
 const aptitudeTestRoutes = require('./src/features/aptitude/routes/aptitudeTestRoutes');
 const codingProblemRoutes = require('./src/features/coding/routes/codingProblemRoutes');
+const assessmentSecurityRoutes = require('./src/features/assessment/routes/assessmentSecurityRoutes');
 
 // Connect to MongoDB
 connectDB();
 
 // Add detailed debugging
 console.log('Final Environment Check:', {
-  GEMINI_API_KEY_EXISTS: !!process.env.GEMINI_API_KEY,
-  GEMINI_API_KEY_STARTS_WITH: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 8) + '...' : 'NOT_SET',
-  MONGODB_URI_EXISTS: !!process.env.MONGODB_URI,
-  JWT_SECRET_EXISTS: !!process.env.JWT_SECRET,
+  GEMINI_API_KEY_SET: !!process.env.GEMINI_API_KEY,
+  MONGODB_URI_SET: !!process.env.MONGODB_URI,
+  JWT_SECRET_SET: !!process.env.JWT_SECRET,
   NODE_ENV: process.env.NODE_ENV,
   PWD: process.cwd()
 });
@@ -126,12 +148,18 @@ app.use('/api/interviews/submit-all', upload.array('answer', 10));
 
 // --- Security Middleware ---
 app.use(helmet());
-// Rate limiting: 100 requests per 15 minutes per IP for auth and interview endpoints
+// Rate limiting: keep a production-safe cap, but avoid blocking legitimate local login retries.
+// Many dev/test flows and UI retries legitimately hit auth endpoints more than 100 times in a short window.
+const isLocalDevelopment = process.env.NODE_ENV !== 'production' || process.env.RENDER === 'false';
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  windowMs: 15 * 60 * 1000,
+  max: isLocalDevelopment ? 1000 : 200,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    const isLocalRequest = ['localhost', '127.0.0.1', '::1'].includes(req.hostname);
+    return isLocalDevelopment && isLocalRequest;
+  },
   message: { success: false, error: 'Too many requests, please try again later.' }
 });
 app.use('/api/auth', apiLimiter);
@@ -220,6 +248,8 @@ app.use('/api/aptitude', aptitudeTestRoutes);
 app.use('/api/aptitude', aptitudeRoutes);
 app.use('/api/coding', codingProblemRoutes);
 app.use('/api/coding', codingRoutes);
+app.use('/api/assessment', assessmentSecurityRoutes);
+app.use('/api/scholastic/company', companyScholasticRoutes);
 app.use('/api/scholastic', scholasticRoutes);
 app.use('/api/mocktests', scholasticRoutes);
 app.use('/api/progress', scholasticRoutes);
@@ -230,6 +260,10 @@ app.use('/api/contests', scholasticRoutes);
 app.use('/api/analytics', scholasticRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/scholastic/admin', adminRoutes);
+
+// Image Uploads
+const uploadRoutes = require('./src/routes/uploadRoutes');
+app.use('/api/upload', uploadRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

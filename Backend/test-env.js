@@ -41,11 +41,7 @@ const loadEnvironmentVariables = () => {
   requiredEnvVars.forEach(varName => {
     const exists = !!process.env[varName];
     const status = exists ? '✅' : '❌';
-    const value = exists ? 
-      (varName.includes('KEY') || varName.includes('SECRET') ? 
-        process.env[varName].substring(0, 8) + '...' : 
-        process.env[varName]) : 
-      'NOT_SET';
+    const value = exists ? 'SET' : 'NOT_SET';
     console.log(`${status} ${varName}: ${value}`);
   });
   
