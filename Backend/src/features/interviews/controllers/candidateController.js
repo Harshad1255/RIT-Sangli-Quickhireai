@@ -1,10 +1,13 @@
 const Interview = require('../models/Interview');
 const Candidate = require('../../candidates/models/Candidate');
-const xlsx = require('xlsx');
 const { randomUUID } = require('node:crypto');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const {
+  CandidateSpreadsheetError,
+  parseCandidateWorkbook,
+} = require('../utils/candidateSpreadsheet');
 
 // Upload candidates from Excel
 const uploadCandidates = async (req, res) => {
@@ -16,21 +19,12 @@ const uploadCandidates = async (req, res) => {
       });
     }
 
-    const workbook = require('xlsx').read(req.file.buffer);
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-    const data = require('xlsx').utils.sheet_to_json(worksheet);
-
-    if (data.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Excel file is empty'
-      });
-    }
+    const { columnNames, data } = await parseCandidateWorkbook(
+      req.file.buffer,
+      req.file.originalname,
+    );
 
     // Get the first row to detect column names
-    const firstRow = data[0];
-    const columnNames = Object.keys(firstRow);
-
     // Function to find column by possible names
     const findColumn = (possibleNames) => {
       return columnNames.find(col => 
@@ -78,8 +72,6 @@ const uploadCandidates = async (req, res) => {
     }
 
     const interviewId = req.params.interviewId;
-    const Interview = require('../models/Interview');
-    const Candidate = require('../../candidates/models/Candidate');
     const interview = await Interview.findById(interviewId);
 
     if (!interview) {
@@ -188,6 +180,9 @@ const uploadCandidates = async (req, res) => {
       errors: errors.length > 0 ? errors : undefined
     });
   } catch (error) {
+    if (error instanceof CandidateSpreadsheetError) {
+      return res.status(error.statusCode).json({ success: false, error: error.message });
+    }
     console.error('Error uploading candidates:', error);
     res.status(500).json({
       success: false,

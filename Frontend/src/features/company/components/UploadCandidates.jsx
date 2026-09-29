@@ -3,6 +3,12 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../../../shared/services/api";
 import "../styles/UploadCandidates.css";
 
+const toSafeCsvCell = (value) => {
+  let text = String(value ?? "");
+  if (/^[\t\r\n ]*[=+@-]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
 const UploadCandidates = () => {
   const { interviewId } = useParams();
   const navigate = useNavigate();
@@ -50,12 +56,11 @@ const UploadCandidates = () => {
 
   const handleFile = (selectedFile) => {
     if (selectedFile) {
-      if (selectedFile.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-          selectedFile.type === "application/vnd.ms-excel") {
+      if (selectedFile.name.toLowerCase().endsWith(".xlsx")) {
         setFile(selectedFile);
         setError("");
       } else {
-        setError("Please upload a valid Excel file (.xlsx or .xls)");
+        setError("Please upload a valid Excel file (.xlsx)");
         setFile(null);
       }
     }
@@ -127,7 +132,7 @@ const UploadCandidates = () => {
         candidate.mobile,
         candidate.code
       ])
-    ].map(row => row.join(",")).join("\n");
+    ].map(row => row.map(toSafeCsvCell).join(",")).join("\r\n");
 
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
@@ -141,26 +146,10 @@ const UploadCandidates = () => {
   };
 
   const downloadTemplate = () => {
-    const headers = ["Email Address", "Student Full Name", "Phone Number"];
-    const sampleData = [
-      ["student@example.com", "John Doe", "1234567890"],
-      ["jane@example.com", "Jane Smith", "9876543210"]
-    ];
-
-    const csvContent = [
-      headers,
-      ...sampleData
-    ].map(row => row.join(",")).join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = "candidate_template.csv";
-    document.body.appendChild(a);
+    a.href = "/candidate_template.xlsx";
+    a.download = "candidate_template.xlsx";
     a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
   };
 
   if (!interviewId) {
@@ -199,14 +188,14 @@ const UploadCandidates = () => {
           <label className="file-input-label" htmlFor="excel-file">
             <i className="fas fa-cloud-upload-alt"></i>
             <span>Drop your Excel file here or click to browse</span>
-            <p>Supports .xlsx and .xls files</p>
+            <p>Supports .xlsx files</p>
             {file && <div className="selected-file">Selected: {file.name}</div>}
           </label>
           <input
             id="excel-file"
             type="file"
             className="file-input"
-            accept=".xlsx,.xls"
+            accept=".xlsx"
             onChange={handleFileChange}
           />
         </div>

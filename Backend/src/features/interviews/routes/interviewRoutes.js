@@ -3,8 +3,23 @@ const router = express.Router();
 const multer = require('multer');
 const interviewController = require('../controllers/interviewController');
 const { authenticateToken, authorizeCompany } = require('../../auth/middleware/auth');
+const { MAX_CANDIDATE_FILE_BYTES } = require('../utils/candidateSpreadsheet');
 
-const upload = multer({ storage: multer.memoryStorage() });
+const receiveCandidateFile = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_CANDIDATE_FILE_BYTES },
+}).single('file');
+
+const uploadCandidateFile = (req, res, next) => {
+  receiveCandidateFile(req, res, (error) => {
+    if (!error) return next();
+    const isSizeLimit = error.code === 'LIMIT_FILE_SIZE';
+    return res.status(isSizeLimit ? 413 : 400).json({
+      success: false,
+      error: isSizeLimit ? 'Excel file exceeds the 10 MB limit' : 'Unable to read uploaded file',
+    });
+  });
+};
 
 // Test endpoints
 router.get('/test', (req, res) => {
@@ -26,7 +41,7 @@ router.get('/:id', authenticateToken, interviewController.getInterview);
 router.post('/:interviewId/upload-candidates', 
   authenticateToken, 
   authorizeCompany, 
-  upload.single('file'), 
+  uploadCandidateFile,
   interviewController.uploadCandidates
 );
 router.put('/:interviewId/candidates/:candidateId/status', 
