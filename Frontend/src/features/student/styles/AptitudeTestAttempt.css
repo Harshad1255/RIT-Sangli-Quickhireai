@@ -6,26 +6,99 @@
   color: #1f2937;
 }
 
+.aptitude-attempt-container button:disabled {
+  cursor: default;
+}
+
 .attempt-topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 24px;
-  background: #ffffff;
+  padding: 14px 24px;
+  background: rgba(255,255,255,0.96);
   border-bottom: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.attempt-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-pill {
+  background: linear-gradient(135deg, #f59e0b, #facc15);
+  color: #1f2937;
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
 }
 
 .attempt-title h2 {
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   margin: 0;
   color: #0f172a;
+}
+
+.attempt-title span {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 4px;
 }
 
 .attempt-topbar-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+}
+
+.progress-meter {
+  min-width: 86px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 8px;
+  color: #1e293b;
+}
+
+.progress-meter span {
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.progress-meter small {
+  color: #64748b;
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.status-indicator::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
 }
 
 .timer-badge {
@@ -103,6 +176,10 @@
   color: #0f172a;
   margin-bottom: 20px;
   line-height: 1.6;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 .options-list {

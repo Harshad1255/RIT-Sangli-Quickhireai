@@ -1,24 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Editor } from '@monaco-editor/react';
 import { api } from '../../../shared/services/api';
+import { getExecutionRequestError, getExecutionServiceMessage } from '../../../shared/services/codingExecutionMessages';
 import '../styles/CodingWorkspace.css';
 
 const DEFAULT_STARTERS = {
-  javascript: '// Write your JavaScript solution here\nfunction solve() {\n  \n}\n',
-  python: '# Write your Python solution here\ndef solve():\n    pass\n',
-  java: '// Write your Java solution here\npublic class Main {\n    public static void main(String[] args) {\n        \n    }\n}\n',
-  cpp: '#include <iostream>\nusing namespace std;\n\nint main() {\n    return 0;\n}\n'
+  javascript: 'function solve(nums, target) {\n  return [];\n}\n',
+  python: 'def solve(nums, target):\n    return []\n',
+  java: '// Write Java solution here\nimport java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n    }\n}\n',
+  cpp: '// Write C++ solution here\n#include <iostream>\nusing namespace std;\n\nint main() {\n    return 0;\n}\n'
 };
 
-const CodingWorkspace = ({ problem, onExit }) => {
+const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
   const [activeTab, setActiveTab] = useState('description');
-  const [language, setLanguage] = useState('javascript');
+  const [language, setLanguage] = useState('python');
   const [code, setCode] = useState('');
   const [customStdin, setCustomStdin] = useState('');
   const [loadingAction, setLoadingAction] = useState(''); // 'run' or 'submit'
   const [executionResult, setExecutionResult] = useState(null);
   const [submissionsHistory, setSubmissionsHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const editorRef = useRef(null);
 
   useEffect(() => {
     if (problem) {
@@ -52,6 +54,31 @@ const CodingWorkspace = ({ problem, onExit }) => {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    const handleClipboardKeys = (event) => {
+      const isModifier = event.ctrlKey || event.metaKey;
+      if (!isModifier) return;
+      if (['c', 'v', 'x'].includes(event.key.toLowerCase())) {
+        event.preventDefault();
+      }
+    };
+
+    document.addEventListener('keydown', handleClipboardKeys);
+    return () => document.removeEventListener('keydown', handleClipboardKeys);
+  }, []);
+
+  const handleEditorMount = (editor) => {
+    editorRef.current = editor;
+    const handleEditorKeyDown = (event) => {
+      const isModifier = event.ctrlKey || event.metaKey;
+      if (!isModifier) return;
+      if (['c', 'v', 'x'].includes(event.key.toLowerCase())) {
+        event.preventDefault();
+      }
+    };
+    editor.onKeyDown(handleEditorKeyDown);
+  };
+
   const handleRunCode = async () => {
     try {
       setLoadingAction('run');
@@ -65,7 +92,10 @@ const CodingWorkspace = ({ problem, onExit }) => {
         setExecutionResult(res.data.data);
       }
     } catch (err) {
-      alert(err.message || 'Error running code');
+      setExecutionResult({
+        verdict: err.response?.status === 404 ? 'Problem unavailable' : 'Server Error',
+        errorMessage: getExecutionRequestError(err, 'run')
+      });
     } finally {
       setLoadingAction('');
     }
@@ -77,7 +107,9 @@ const CodingWorkspace = ({ problem, onExit }) => {
       setExecutionResult(null);
       const res = await api.post(`/coding/problems/${problem._id}/submit`, {
         code,
-        language
+        language,
+        testId,
+        violations
       });
       if (res.data && res.data.success) {
         setExecutionResult(res.data.data);
@@ -86,7 +118,10 @@ const CodingWorkspace = ({ problem, onExit }) => {
         }
       }
     } catch (err) {
-      alert(err.message || 'Error submitting solution');
+      setExecutionResult({
+        verdict: err.response?.status === 404 ? 'Problem unavailable' : 'Server Error',
+        errorMessage: getExecutionRequestError(err, 'submit')
+      });
     } finally {
       setLoadingAction('');
     }
@@ -211,10 +246,9 @@ const CodingWorkspace = ({ problem, onExit }) => {
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
               >
-                <option value="javascript">JavaScript (Node.js)</option>
                 <option value="python">Python 3</option>
-                <option value="java">Java</option>
-                <option value="cpp">C++</option>
+                <option value="java">Java 17</option>
+                <option value="cpp">C++17</option>
               </select>
 
               <div className="editor-actions">
@@ -241,12 +275,19 @@ const CodingWorkspace = ({ problem, onExit }) => {
                 theme="vs-dark"
                 language={language}
                 value={code}
+                onMount={handleEditorMount}
                 onChange={(val) => setCode(val || '')}
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
                   scrollBeyondLastLine: false,
-                  automaticLayout: true
+                  automaticLayout: true,
+                  quickSuggestions: true,
+                  bracketPairColorization: { enabled: true },
+                  formatOnPaste: false,
+                  formatOnType: false,
+                  contextmenu: false,
+                  readOnly: false
                 }}
               />
             </div>
@@ -284,6 +325,13 @@ const CodingWorkspace = ({ problem, onExit }) => {
               )}
             </div>
 
+            {executionResult && ['Execution Service Error', 'Server Error'].includes(executionResult.verdict) && (
+              <div style={{ background: '#7f1d1d', color: '#fecaca', padding: 15, borderRadius: 8, margin: '15px 0', border: '1px solid #ef4444' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: 5 }}><i className="fas fa-exclamation-triangle"></i> {executionResult.verdict === 'Server Error' ? 'Server Error' : 'Execution Service Unavailable'}</div>
+                <div style={{ fontSize: '0.9rem' }}>{executionResult.verdict === 'Server Error' ? executionResult.errorMessage : getExecutionServiceMessage(executionResult.serviceReason)}</div>
+              </div>
+            )}
+
             {!executionResult && !loadingAction ? (
               <div style={{ color: '#64748b', textAlign: 'center', padding: 20 }}>
                 Click "Run Code" to test with custom input or "Submit Solution" to run against all test cases.
@@ -296,25 +344,25 @@ const CodingWorkspace = ({ problem, onExit }) => {
             ) : (
               <div>
                 <div style={{ display: 'flex', gap: 20, marginBottom: 12, fontSize: '0.9rem', color: '#cbd5e1' }}>
-                  <div><strong>Runtime:</strong> {executionResult.runtimeMs || 0} ms</div>
-                  <div><strong>Memory:</strong> {executionResult.memoryKb || 0} KB</div>
-                  {executionResult.isRunOnly ? (
+                  <div><strong>Runtime:</strong> {executionResult.runtime || executionResult.runtimeMs || 0} ms</div>
+                  <div><strong>Memory:</strong> {executionResult.memory || executionResult.memoryKb || 0} KB</div>
+                  {executionResult.isRunOnly || executionResult.totalTests === 0 ? (
                     <div><strong>Mode:</strong> Custom Run</div>
                   ) : (
                     <div>
-                      <strong>Score:</strong> {executionResult.score || 0} / 100 ({executionResult.passedTestCases} / {executionResult.totalTestCases} passed)
+                      <strong>Score:</strong> {executionResult.score || 0} / 100 ({executionResult.passedTests || executionResult.passedTestCases || 0} / {executionResult.totalTests || executionResult.totalTestCases || 0} passed)
                     </div>
                   )}
                 </div>
 
-                {executionResult.stdout && (
+                {(executionResult.output || executionResult.stdout) && (
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: 4 }}>Stdout:</div>
-                    <pre style={{ background: '#0f172a', padding: 10, borderRadius: 6, margin: 0 }}>{executionResult.stdout}</pre>
+                    <pre style={{ background: '#0f172a', padding: 10, borderRadius: 6, margin: 0 }}>{executionResult.output || executionResult.stdout}</pre>
                   </div>
                 )}
 
-                {executionResult.stderr && (
+                {executionResult.stderr && executionResult.verdict !== 'Execution Service Error' && (
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: '0.85rem', color: '#f87171', marginBottom: 4 }}>Stderr / Error:</div>
                     <pre style={{ background: '#450a0a', color: '#fecaca', padding: 10, borderRadius: 6, margin: 0 }}>{executionResult.stderr}</pre>
@@ -322,7 +370,7 @@ const CodingWorkspace = ({ problem, onExit }) => {
                 )}
 
                 {/* Test case table for submissions */}
-                {!executionResult.isRunOnly && executionResult.testCaseResults && (
+                {!executionResult.isRunOnly && (executionResult.testResults || executionResult.testCaseResults) && (
                   <div>
                     <div style={{ fontSize: '0.88rem', color: '#94a3b8', marginTop: 12 }}>Test Case Breakdown:</div>
                     <table className="test-results-table">
@@ -336,9 +384,9 @@ const CodingWorkspace = ({ problem, onExit }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {executionResult.testCaseResults.map((tc, idx) => (
+                        {(executionResult.testResults || executionResult.testCaseResults).map((tc, idx) => (
                           <tr key={idx}>
-                            <td>#{tc.testCaseNumber}</td>
+                            <td>#{tc.testCaseNumber || (idx + 1)}</td>
                             <td>
                               <span style={{
                                 fontWeight: 700,

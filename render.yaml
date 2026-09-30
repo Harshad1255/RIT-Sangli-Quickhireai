@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: quickhireai-backend
+    env: node
+    rootDir: Backend
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /healthcheck
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      - key: ALLOWED_ORIGINS
+        value: https://quick-hire-ai.vercel.app
+      - key: CODE_EXECUTION_ENABLED
+        value: "true"
+      - key: CODE_EXECUTION_PROVIDER
+        value: onecompiler
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ONECOMPILER_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

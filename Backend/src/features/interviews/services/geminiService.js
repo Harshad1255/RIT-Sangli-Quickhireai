@@ -6,7 +6,7 @@ if (!process.env.GEMINI_API_KEY) {
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const getFallbackQuestion = (skill, previousQuestions = []) => {
   const skillSpecificQuestions = {
@@ -68,15 +68,25 @@ const getFallbackQuestion = (skill, previousQuestions = []) => {
 const generateQuestion = async (skill, previousQuestions = [], questionIndex = 0, customPrompt = null) => {
   try {
     console.log('Generating question for skill:', skill);
+
+    // Backward-compatible handling for older callers that pass a custom prompt as the
+    // second argument, e.g. generateQuestion(topic, followUpPrompt).
+    if (typeof previousQuestions === 'string') {
+      customPrompt = previousQuestions;
+      previousQuestions = [];
+    }
+
     console.log('Previous questions:', previousQuestions);
+
+    let prompt;
 
     // Use custom prompt if provided (for follow-up questions)
     if (customPrompt) {
-      const prompt = customPrompt;
+      prompt = customPrompt;
     } else {
       // Only 1 out of 5 questions should be a code/coding/SQL question
       const isCodeQuestion = questionIndex === 2; // e.g., 3rd question is code/SQL
-      const prompt = isCodeQuestion ?
+      prompt = isCodeQuestion ?
       `Generate a direct, realistic technical interview question for the skill: ${skill}.
 The question should:
 - Require the candidate to write a code snippet or SQL query (choose the most relevant for the skill).
@@ -269,6 +279,10 @@ const createDefaultEvaluation = () => {
 
 const generateFinalEvaluation = async (answers) => {
   try {
+    if (!answers || answers.length === 0) {
+      return createDefaultFinalEvaluation(answers);
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       console.warn('GEMINI_API_KEY not set, using default final evaluation');
       return createDefaultFinalEvaluation(answers);
@@ -284,12 +298,12 @@ ${answersText}
 
 Provide a detailed evaluation in this JSON format:
 {
-  "overallScore": number between 0-10,
+  "overallScore": number between 0-10 (give 0 if candidate answered nothing or skipped all),
   "skillAssessment": {
-    "technicalKnowledge": number between 0-10,
-    "codingAbility": number between 0-10,
-    "communicationSkills": number between 0-10,
-    "problemSolving": number between 0-10
+    "technicalKnowledge": number between 0-10 (give 0 if skipped),
+    "codingAbility": number between 0-10 (give 0 if skipped),
+    "communicationSkills": number between 0-10 (give 0 if skipped),
+    "problemSolving": number between 0-10 (give 0 if skipped)
   },
   "strengths": ["list of candidate's strengths"],
   "weaknesses": ["areas for improvement"],
@@ -327,6 +341,8 @@ Provide a detailed evaluation in this JSON format:
 const createDefaultFinalEvaluation = (answers) => {
   const avgScore = calculateAverageScore(answers);
   
+  const isZero = avgScore === 0;
+  
   return {
     overallScore: avgScore,
     skillAssessment: {
@@ -335,17 +351,20 @@ const createDefaultFinalEvaluation = (answers) => {
       communicationSkills: avgScore,
       problemSolving: avgScore
     },
-    strengths: ['Demonstrated willingness to participate', 'Provided answers to questions'],
-    weaknesses: ['Could improve technical depth', 'More specific examples needed'],
-    recommendations: ['Continue learning and practicing', 'Work on providing detailed explanations'],
-    overallFeedback: 'Candidate participated in the interview and provided answers to questions.',
-    hiringRecommendation: 'consider'
+    strengths: isZero ? ['None observed'] : ['Demonstrated willingness to participate', 'Provided answers to questions'],
+    weaknesses: isZero ? ['Did not answer questions', 'Skipped interview portions'] : ['Could improve technical depth', 'More specific examples needed'],
+    recommendations: isZero ? ['Please attempt to answer the questions in the future'] : ['Continue learning and practicing', 'Work on providing detailed explanations'],
+    overallFeedback: isZero ? 'Candidate skipped or did not provide answers to the questions.' : 'Candidate participated in the interview and provided answers to questions.',
+    hiringRecommendation: isZero ? 'not recommend' : 'consider'
   };
 };
 
 const calculateAverageScore = (answers) => {
-  if (!answers || answers.length === 0) return 5;
-  const totalScore = answers.reduce((sum, ans) => sum + (ans.analysis?.score || 5), 0);
+  if (!answers || answers.length === 0) return 0;
+  const totalScore = answers.reduce((sum, ans) => {
+    const score = ans.analysis?.score !== undefined ? ans.analysis.score : 0;
+    return sum + score;
+  }, 0);
   return Math.round(totalScore / answers.length);
 };
 

@@ -13,6 +13,7 @@ const Sidebar = ({ setActiveSection, activeSection, navigate }) => {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('refreshToken');
     navigate('/login');
   };
 

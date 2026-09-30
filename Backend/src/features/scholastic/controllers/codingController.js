@@ -1,5 +1,5 @@
 const { CodingQuestion, CodingTestCase, CodingSubmission } = require('../models');
-const codeExecutionService = require('../services/CodeExecutionService');
+const { runTestCases } = require('../../../shared/services/codeExecution');
 const xpCalculator = require('../utils/xpCalculator');
 
 const codingController = {
@@ -13,6 +13,7 @@ const codingController = {
         difficulty,
         company,
         search,
+        dailyOnly,
         page = 1,
         limit = 15
       } = req.query;
@@ -26,6 +27,9 @@ const codingController = {
       }
       if (company && company !== 'All') {
         query.companies = { $in: [company] };
+      }
+      if (dailyOnly === 'true' || dailyOnly === '1') {
+        query.isDailyChallenge = true;
       }
       if (search && search.trim()) {
         query.$or = [
@@ -102,8 +106,7 @@ const codingController = {
       }
 
       let testCases = [];
-      if (customInput) {
-        // Run against custom input
+      if (customInput !== undefined) {
         testCases = [{
           input: customInput,
           expectedOutput: '', // User testing custom output
@@ -113,16 +116,11 @@ const codingController = {
       } else {
         testCases = await CodingTestCase.find({ questionId, isHidden: false });
         if (testCases.length === 0) {
-          testCases = [{
-            input: 'nums = [2,7,11,15], target = 9',
-            expectedOutput: '[0,1]',
-            isHidden: false,
-            points: 10
-          }];
+          return res.status(422).json({ success: false, error: 'No test cases configured for this problem.' });
         }
       }
 
-      const executionResult = await codeExecutionService.execute(code, language, testCases);
+      const executionResult = await runTestCases({ language, code, testCases, visibleOnly: true });
       res.status(200).json({
         success: true,
         executionResult
@@ -151,18 +149,13 @@ const codingController = {
         return res.status(404).json({ success: false, error: 'Problem not found' });
       }
 
-      let testCases = await CodingTestCase.find({ questionId });
+      const testCases = await CodingTestCase.find({ questionId });
       if (testCases.length === 0) {
-        // Fallback default test cases if none found
-        testCases = [
-          { input: 'nums = [2,7,11,15], target = 9', expectedOutput: '[0,1]', isHidden: false, points: 10 },
-          { input: 'nums = [3,2,4], target = 6', expectedOutput: '[1,2]', isHidden: false, points: 10 },
-          { input: 'nums = [3,3], target = 6', expectedOutput: '[0,1]', isHidden: true, points: 20 }
-        ];
+        return res.status(422).json({ success: false, error: 'No test cases configured for this problem.' });
       }
 
-      const executionResult = await codeExecutionService.execute(code, language, testCases);
-      const isAccepted = executionResult.status === 'Accepted';
+      const executionResult = await runTestCases({ language, code, testCases, visibleOnly: false });
+      const isAccepted = executionResult.verdict === 'Accepted';
 
       // Update question stats
       question.totalSubmissions += 1;
@@ -182,12 +175,12 @@ const codingController = {
           questionId,
           code,
           language,
-          status: executionResult.status,
-          executionTimeMs: executionResult.executionTimeMs,
-          memoryUsageKb: executionResult.memoryUsageKb,
-          testcasesPassed: executionResult.testcasesPassed,
-          totalTestcases: executionResult.totalTestcases,
-          errorMessage: executionResult.errorMessage
+          status: executionResult.verdict,
+          executionTimeMs: executionResult.runtime || 0,
+          memoryUsageKb: executionResult.memory || 0,
+          testcasesPassed: executionResult.passedTests || 0,
+          totalTestcases: executionResult.totalTests || 0,
+          errorMessage: executionResult.verdict === 'Accepted' ? '' : executionResult.verdict
         });
 
         xpResult = await xpCalculator.updateAfterSolution({
@@ -196,7 +189,7 @@ const codingController = {
           questionType: 'coding',
           difficulty: question.difficulty,
           isCorrect: isAccepted,
-          timeTakenSeconds: Math.round(executionResult.executionTimeMs / 1000) || 60
+          timeTakenSeconds: Math.round((executionResult.runtime || 0) / 1000) || 60
         });
       }
 

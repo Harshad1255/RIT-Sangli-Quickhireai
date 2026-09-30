@@ -16,6 +16,8 @@ const DailyChallenge = require('./DailyChallenge');
 const Achievement = require('./Achievement');
 const Badge = require('./Badge');
 const Notification = require('./Notification');
+const ScholasticPracticeSet = require('./ScholasticPracticeSet');
+const ScholasticPracticeAttempt = require('./ScholasticPracticeAttempt');
 
 module.exports = {
   Company,
@@ -36,4 +38,6 @@ module.exports = {
   Achievement,
   Badge,
   Notification,
+  ScholasticPracticeSet,
+  ScholasticPracticeAttempt,
 };

@@ -23,8 +23,22 @@ const badgeSchema = new mongoose.Schema({
     default: '#f59e0b',
   },
   criteria: {
-    type: String,
-    default: '',
+    metric: {
+      type: String,
+      enum: [
+        'lifetime_solved_total',
+        'lifetime_solved_aptitude',
+        'lifetime_solved_coding',
+        'daily_solved_count',
+        'daily_streak',
+        'perfect_score_count',
+        'combo_day',
+        'subject_mastery_count'
+      ]
+    },
+    threshold: {
+      type: Number
+    }
   },
   createdAt: {
     type: Date,

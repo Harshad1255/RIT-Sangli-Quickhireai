@@ -240,6 +240,188 @@ exports.getMockTests = async (req, res, next) => {
   }
 };
 
+exports.startChapterTest = async (req, res, next) => {
+  try {
+    const { category, subtopic } = req.body;
+    const AptitudeMockTest = require('../models/AptitudeMockTest');
+    const AptitudeAttempt = require('../models/AptitudeAttempt');
+    const { generateQuestionSet } = require('../services/testGenerationService');
+
+    let blueprint = await AptitudeMockTest.findOne({
+      testType: 'chapter',
+      'topicMix.0.category': category,
+      'topicMix.0.subtopics': subtopic
+    });
+
+    if (!blueprint) {
+      blueprint = await AptitudeMockTest.create({
+        title: `${subtopic} - Chapter Test`,
+        testType: 'chapter',
+        generationMode: 'randomized-per-attempt',
+        topicMix: [{
+          category,
+          subtopics: [subtopic],
+          questionCount: 10,
+          difficultyDistribution: { easy: 4, medium: 4, hard: 2 }
+        }],
+        duration: 1200,
+        totalMarks: 10,
+        isActive: true
+      });
+    }
+
+    const result = await generateQuestionSet(blueprint.topicMix, { dryRun: false });
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.errors.join(', ') });
+    }
+
+    const attempt = await AptitudeAttempt.create({
+      studentId: req.user._id || req.user.id,
+      mockTestId: blueprint._id,
+      answers: result.questions.map(q => ({
+        questionId: q._id,
+        questionText: q.question,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        marks: q.marks || 1,
+        negativeMarks: q.negativeMarking || 0.25,
+        selectedAnswer: null,
+        timeSpentSeconds: 0
+      })),
+      startTime: new Date(),
+      completed: false
+    });
+
+    res.json({ success: true, data: attempt });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getPYQCompanies = async (req, res, next) => {
+  try {
+    const AptitudeQuestion = require('../models/AptitudeQuestion');
+    const companies = await AptitudeQuestion.aggregate([
+      { $match: { isPYQ: true, isActive: true } },
+      { $group: { 
+        _id: '$pyqMeta.company', 
+        questionCount: { $sum: 1 },
+        years: { $addToSet: '$pyqMeta.year' }
+      } },
+      { $project: { company: '$_id', questionCount: 1, years: 1, _id: 0 } },
+      { $sort: { company: 1 } }
+    ]);
+    res.json({ success: true, data: companies });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getPYQForCompany = async (req, res, next) => {
+  try {
+    const AptitudeQuestion = require('../models/AptitudeQuestion');
+    const company = req.params.company;
+    
+    // This could just return metadata, or we could generate a blueprint here as requested by phase 1.
+    // The prompt says: "Allow candidates to generate a company-pyq test blueprint from the Phase 1 test generator."
+    // Let's just return the available questions/metadata for this company's PYQ.
+    
+    const questions = await AptitudeQuestion.find({
+      isPYQ: true,
+      isActive: true,
+      'pyqMeta.company': company
+    }).select('question category subtopic pyqMeta difficulty');
+    
+    res.json({ success: true, data: questions });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.startPYQTest = async (req, res, next) => {
+  try {
+    const { company, year } = req.body;
+    const AptitudeMockTest = require('../models/AptitudeMockTest');
+    const AptitudeAttempt = require('../models/AptitudeAttempt');
+    const { generateQuestionSet } = require('../services/testGenerationService');
+    const AptitudeQuestion = require('../models/AptitudeQuestion');
+
+    let blueprint = await AptitudeMockTest.findOne({
+      testType: 'company-pyq',
+      title: `${company} PYQ Test` + (year ? ` ${year}` : '')
+    });
+
+    if (!blueprint) {
+      // Find out how many questions exist
+      const query = { isPYQ: true, isActive: true, 'pyqMeta.company': company };
+      if (year) query['pyqMeta.year'] = year;
+      
+      const counts = await AptitudeQuestion.aggregate([
+        { $match: query },
+        { $group: { _id: '$difficulty', count: { $sum: 1 } } }
+      ]);
+      
+      const diffCounts = { easy: 0, medium: 0, hard: 0 };
+      let total = 0;
+      counts.forEach(c => {
+        const diff = c._id.toLowerCase();
+        diffCounts[diff] = c.count;
+        total += c.count;
+      });
+
+      if (total === 0) {
+        return res.status(404).json({ success: false, error: 'No PYQs found for this company/year' });
+      }
+
+      blueprint = await AptitudeMockTest.create({
+        title: `${company} PYQ Test` + (year ? ` ${year}` : ''),
+        testType: 'company-pyq',
+        generationMode: 'randomized-per-attempt',
+        topicMix: [{
+          category: 'Quantitative Aptitude', // Using this as a dummy because PYQ cuts across categories
+          subtopics: [],
+          questionCount: total,
+          difficultyDistribution: diffCounts
+        }],
+        duration: total * 120, // 2 mins per question avg
+        totalMarks: total,
+        isActive: true
+      });
+    }
+
+    // Pass pyqMeta to generateQuestionSet
+    const result = await generateQuestionSet(blueprint.topicMix, { 
+      dryRun: false,
+      pyqMeta: { company, year }
+    });
+    
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.errors.join(', ') });
+    }
+
+    const attempt = await AptitudeAttempt.create({
+      studentId: req.user._id || req.user.id,
+      testId: blueprint._id,
+      answers: result.questions.map(q => ({
+        questionId: q._id,
+        questionText: q.question,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        marks: q.marks || 1,
+        negativeMarks: q.negativeMarking || 0.25,
+        selectedAnswer: null,
+        timeSpentSeconds: 0
+      })),
+      startTime: new Date(),
+      completed: false
+    });
+
+    res.json({ success: true, data: attempt });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.explainWithAI = async (req, res, next) => {
   try {
     const { questionId, userAnswer } = req.body;

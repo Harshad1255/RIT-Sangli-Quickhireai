@@ -10,14 +10,27 @@ const aptitudeQuestionSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  questionImageUrl: {
+    type: String,
+    default: ''
+  },
   options: [{
     id: Number,
     text: String
   }],
   correctOptionId: {
     type: Number,
-    required: true,
+    required: false,
+    default: null
   },
+  questionType: {
+    type: String,
+    enum: ['Multiple Choice', 'Multiple Select', 'True/False'],
+    default: 'Multiple Choice'
+  },
+  correctOptionIds: [{
+    type: Number
+  }],
   category: {
     type: String,
     required: true, // e.g., 'Quantitative Aptitude', 'Logical Reasoning', etc.
@@ -68,9 +81,31 @@ const aptitudeQuestionSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now,
+  },
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  status: {
+    type: String,
+    enum: ['Draft', 'Published', 'Archived'],
+    default: 'Draft'
+  },
+  // PYQ Metadata
+  isPYQ: { type: Boolean, default: false },
+  pyqMeta: {
+    company: { type: String },
+    year: { type: Number },
+    round: { type: String }
+  },
+  source: { type: String, enum: ['manual', 'ai-generated'], default: 'manual' },
+  xp: {
+    type: Number,
+    default: 10
   }
 }, {
   collection: 'aptitude_questions'
 });
 
-module.exports = mongoose.model('AptitudeQuestion', aptitudeQuestionSchema);
+module.exports = mongoose.model('ScholasticAptitudeQuestion', aptitudeQuestionSchema, 'aptitude_questions');

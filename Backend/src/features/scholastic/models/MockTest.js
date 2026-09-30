@@ -40,7 +40,7 @@ const mockTestSchema = new mongoose.Schema({
   },
   aptitudeQuestions: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'AptitudeQuestion'
+    ref: 'ScholasticAptitudeQuestion'
   }],
   codingQuestions: [{
     type: mongoose.Schema.Types.ObjectId,

@@ -12,9 +12,9 @@ async function checkGeminiAPI() {
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     // Use the functional model that we confirmed works
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
-    console.log("Sending a test prompt to Gemini (gemini-2.5-flash-lite)...");
+    console.log("Sending a test prompt to Gemini (gemini-1.5-flash)...");
     const result = await model.generateContent("Hello, respond with exactly 'API IS WORKING' and nothing else.");
     
     const responseText = await result.response.text();

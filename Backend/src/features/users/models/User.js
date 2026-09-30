@@ -45,6 +45,7 @@ const userSchema = new mongoose.Schema({
       return this.userType === 'student';
     },
   },
+  hiddenAptitudeTests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AptitudeTest' }],
   // Company specific fields
   companyName: {
     type: String,

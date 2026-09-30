@@ -178,7 +178,7 @@ const questionBank = {
         The user's answer quality score is ${answerQuality.score}/10. 
         Make the follow-up question specific to their answer and the topic: ${originalQuestion.topic}`;
 
-      const followUpQuestion = await generateQuestion(originalQuestion.topic, followUpPrompt);
+      const followUpQuestion = await generateQuestion(originalQuestion.topic, [], 0, followUpPrompt);
       
       return {
         question: followUpQuestion.question,

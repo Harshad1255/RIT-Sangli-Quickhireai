@@ -6,6 +6,7 @@ const allSubtopics = Object.values(APTITUDE_CATEGORIES).flat();
 
 const aptitudeQuestionSchema = new mongoose.Schema({
   question: { type: String, required: true },
+  questionImageUrl: { type: String, default: '' },
   options: {
     type: [{ label: String, value: String }],
     required: true,
@@ -19,8 +20,18 @@ const aptitudeQuestionSchema = new mongoose.Schema({
   hints: [{ type: String }],
   timeLimit: { type: Number, default: 60 },
   companyTags: [{ type: String, enum: COMPANY_TAGS }],
+  
+  // PYQ Metadata
+  isPYQ: { type: Boolean, default: false },
+  pyqMeta: {
+    company: { type: String },
+    year: { type: Number },
+    round: { type: String }
+  },
+
   negativeMarking: { type: Number, default: 0.25 },
   marks: { type: Number, default: 1 },
+  source: { type: String, enum: ['manual', 'ai-generated'], default: 'manual' },
   isActive: { type: Boolean, default: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../../../shared/services/api';
 import '../styles/StudentCodingProblemList.css';
 
@@ -8,29 +8,51 @@ const StudentCodingProblemList = ({ onSelectProblem }) => {
   const [error, setError] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-
-  const fetchProblems = async () => {
-    try {
-      setLoading(true);
-      const params = {};
-      if (difficultyFilter) params.difficulty = difficultyFilter;
-      if (searchQuery) params.search = searchQuery;
-
-      const res = await api.get('/coding/problems', { params });
-      if (res.data && res.data.success) {
-        setProblems(res.data.data);
-      }
-    } catch (err) {
-      console.error('Error fetching coding problems:', err);
-      setError(err.message || 'Failed to load coding problems');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [refreshVersion, setRefreshVersion] = useState(0);
 
   useEffect(() => {
-    fetchProblems();
-  }, [difficultyFilter, searchQuery]);
+    const timer = window.setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    let active = true;
+    const params = {};
+    if (difficultyFilter) params.difficulty = difficultyFilter;
+    if (debouncedSearchQuery) params.search = debouncedSearchQuery;
+    setLoading(true);
+    setError('');
+
+    api.get('/coding/problems', { params })
+      .then(res => {
+        if (active && res.data?.success) setProblems(res.data.data || []);
+      })
+      .catch(err => {
+        if (!active) return;
+        console.error('Error fetching coding problems:', err);
+        setProblems([]);
+        setError(err.response?.data?.error || err.message || 'Failed to load coding problems');
+      })
+      .finally(() => { if (active) setLoading(false); });
+
+    return () => { active = false; };
+  }, [difficultyFilter, debouncedSearchQuery, refreshVersion]);
+
+  useEffect(() => {
+    const refresh = () => setRefreshVersion(version => version + 1);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    const interval = window.setInterval(refresh, 60000);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -110,7 +132,10 @@ const StudentCodingProblemList = ({ onSelectProblem }) => {
                       {prob.difficulty}
                     </span>
                   </td>
-                  <td>{prob.category}</td>
+                  <td>
+                    <strong>{prob.category || 'Uncategorized'}</strong>
+                    {prob.tags?.length > 0 && <div>{prob.tags.join(', ')}</div>}
+                  </td>
                   <td>{prob.acceptanceRate || 0}%</td>
                   <td>
                     <button

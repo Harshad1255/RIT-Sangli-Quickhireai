@@ -1,21 +1,39 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../../shared/services/api';
+import { getApiBaseUrl } from '../../../config/api';
 import CompanySidebar from './CompanySidebar';
 import '../styles/CompanyLeaderboard.css';
 
 const CompanyLeaderboard = () => {
   const [leaderboard, setLeaderboard] = useState([]);
+  const [tests, setTests] = useState([]);
+  const [selectedTest, setSelectedTest] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchLeaderboard();
+    fetchTests();
   }, []);
+
+  useEffect(() => {
+    fetchLeaderboard();
+  }, [selectedTest]);
+
+  const fetchTests = async () => {
+    try {
+      const res = await api.get('/aptitude/company');
+      if (res.data && res.data.success) {
+        setTests(res.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching tests:', err);
+    }
+  };
 
   const fetchLeaderboard = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/aptitude/company/leaderboard');
+      const res = await api.get(`/aptitude/company/leaderboard?testId=${selectedTest}`);
       if (res.data && res.data.success) {
         setLeaderboard(res.data.data);
       }
@@ -36,7 +54,51 @@ const CompanyLeaderboard = () => {
       <div className="company-leaderboard-container">
         <div className="leaderboard-header">
           <h2>Student Leadership Board & Reports</h2>
-          <p>Rankings based on total performance across your Aptitude Tests</p>
+          <p>{selectedTest === 'all' ? 'Rankings based on total performance across your Aptitude Tests' : 'Rankings for the selected test'}</p>
+          
+          <div style={{ marginTop: '1rem', display: 'flex', gap: '16px', alignItems: 'center' }}>
+            <select 
+              value={selectedTest} 
+              onChange={(e) => setSelectedTest(e.target.value)}
+              style={{
+                padding: '10px 16px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                background: 'white',
+                minWidth: '300px',
+                fontSize: '15px'
+              }}
+            >
+              <option value="all">All Tests (Aggregated)</option>
+              {tests.map(t => (
+                <option key={t._id} value={t._id}>{t.title} {t.entranceCode ? `(Code: ${t.entranceCode})` : ''}</option>
+              ))}
+            </select>
+            
+            {selectedTest !== 'all' && leaderboard.length > 0 && (
+              <button 
+                onClick={() => window.open(`${getApiBaseUrl()}/aptitude/company/tests/${selectedTest}/leaderboard/pdf?token=${localStorage.getItem('token')}`, '_blank')}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#4f46e5',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Download PDF
+              </button>
+            )}
+          </div>
         </div>
 
         {error && <div style={{ color: 'red', marginBottom: 16 }}>{error}</div>}

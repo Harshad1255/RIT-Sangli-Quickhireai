@@ -147,8 +147,14 @@ const scholasticController = {
         return res.status(401).json({ success: false, error: 'Authentication required' });
       }
 
-      const { itemType, itemId, notes = '' } = req.body;
-      if (!itemType || !itemId) {
+      const rawItemType = String(req.body?.itemType || '').trim().toLowerCase();
+      const normalizedItemType = ['aptitude', 'coding', 'mocktest'].includes(rawItemType)
+        ? rawItemType
+        : (rawItemType === 'mock test' ? 'mocktest' : rawItemType);
+      const itemId = req.body?.itemId ?? req.body?.id;
+      const notes = String(req.body?.notes || '');
+
+      if (!normalizedItemType || !itemId) {
         return res.status(400).json({ success: false, error: 'itemType and itemId are required' });
       }
 
@@ -163,7 +169,7 @@ const scholasticController = {
       } else {
         const bookmark = await Bookmark.create({
           userId,
-          itemType,
+          itemType: normalizedItemType,
           itemId,
           notes
         });

@@ -3,9 +3,9 @@ import scholasticApi from '../services/scholasticApi';
 import '../styles/ScholasticDashboard.css';
 
 const ScholasticDashboard = ({ setActiveSection }) => {
-  const [stats, setStats] = useState({ xp: 120, coins: 50, level: 1 });
+  const [stats, setStats] = useState({ xp: 0, coins: 0, level: 1 });
   const [progress, setProgress] = useState({
-    dailyStreak: 1,
+    dailyStreak: 0,
     questionsSolved: {
       aptitude: { total: 0 },
       coding: { total: 0 }
@@ -29,30 +29,24 @@ const ScholasticDashboard = ({ setActiveSection }) => {
       ]);
 
       if (progressRes?.data?.success) {
-        setStats(progressRes.data.stats || { xp: 120, coins: 50, level: 1 });
+        setStats(progressRes.data.stats || { xp: 0, coins: 0, level: 1 });
         setProgress(progressRes.data.progress || {
-          dailyStreak: 1,
+          dailyStreak: 0,
           questionsSolved: { aptitude: { total: 0 }, coding: { total: 0 } }
         });
       }
 
-      if (companiesRes?.data?.companies) {
+      if (Array.isArray(companiesRes?.data?.companies)) {
         setCompanies(companiesRes.data.companies);
       }
 
       if (dailyRes?.data?.challenge) {
         setDailyChallenge(dailyRes.data.challenge);
       } else {
-        // Fallback default challenge card if none returned
-        setDailyChallenge({
-          title: "Daily Problem: Two Sum IV - Input is a BST",
-          questionType: "coding",
-          xpReward: 50,
-          difficulty: "Medium"
-        });
+        setDailyChallenge(null);
       }
     } catch (err) {
-      console.error("Error fetching scholastic dashboard data:", err);
+      console.error('Error fetching scholastic dashboard data:', err);
     } finally {
       setLoading(false);
     }
@@ -62,7 +56,6 @@ const ScholasticDashboard = ({ setActiveSection }) => {
 
   return (
     <div className="scholastic-dashboard">
-      {/* Hero Banner */}
       <div className="scholastic-hero-banner">
         <div className="hero-content">
           <h1>Scholastic Aptitude & Coding Hub</h1>
@@ -71,14 +64,14 @@ const ScholasticDashboard = ({ setActiveSection }) => {
             <div className="hero-stat-box">
               <i className="fas fa-fire"></i>
               <div className="hero-stat-info">
-                <span className="hero-stat-value">{progress.dailyStreak || 1} Days</span>
+                <span className="hero-stat-value">{progress.dailyStreak || 0} Days</span>
                 <span className="hero-stat-label">Current Streak</span>
               </div>
             </div>
             <div className="hero-stat-box">
               <i className="fas fa-star"></i>
               <div className="hero-stat-info">
-                <span className="hero-stat-value">{stats.xp || 120} XP</span>
+                <span className="hero-stat-value">{stats.xp || 0} XP</span>
                 <span className="hero-stat-label">Level {stats.level || 1}</span>
               </div>
             </div>
@@ -93,21 +86,24 @@ const ScholasticDashboard = ({ setActiveSection }) => {
         </div>
       </div>
 
-      {/* Daily Challenge Card */}
+      {loading ? (
+        <div className="progress-box" style={{ textAlign: 'center', padding: '1.5rem' }}>Loading dashboard...</div>
+      ) : null}
+
       {dailyChallenge && (
         <div className="daily-challenge-card">
           <div className="daily-challenge-info">
             <h3>
               {dailyChallenge.title}
               <span className="badge-pill daily">Daily Challenge</span>
-              <span className="badge-pill xp">+{dailyChallenge.xpReward || 50} XP</span>
+              <span className="badge-pill xp">+{dailyChallenge.xpReward || 0} XP</span>
             </h3>
             <p className="daily-challenge-desc">
               Solve today's {dailyChallenge.difficulty || 'Medium'} difficulty problem to extend your streak and earn bonus XP!
             </p>
           </div>
-          <button 
-            className="solve-btn" 
+          <button
+            className="solve-btn"
             onClick={() => setActiveSection(dailyChallenge.questionType === 'aptitude' ? 'scholastic-aptitude' : 'scholastic-coding')}
           >
             <span>Solve Now</span>
@@ -116,7 +112,6 @@ const ScholasticDashboard = ({ setActiveSection }) => {
         </div>
       )}
 
-      {/* Practice Modules Grid */}
       <h3 className="section-grid-title">
         <i className="fas fa-compass" style={{ color: '#3b82f6' }}></i>
         Practice Modules
@@ -179,7 +174,6 @@ const ScholasticDashboard = ({ setActiveSection }) => {
         </div>
       </div>
 
-      {/* Placement Company Focus */}
       <div className="company-section">
         <h3 className="section-grid-title" style={{ fontSize: '1.2rem', marginBottom: '1rem' }}>
           <i className="fas fa-building" style={{ color: '#64748b' }}></i>
@@ -188,8 +182,8 @@ const ScholasticDashboard = ({ setActiveSection }) => {
         <div className="companies-flex">
           {companies.length > 0 ? (
             companies.map((comp, idx) => (
-              <div 
-                key={comp._id || idx} 
+              <div
+                key={comp._id || idx}
                 className="company-chip"
                 onClick={() => setActiveSection('scholastic-coding')}
               >
@@ -199,16 +193,10 @@ const ScholasticDashboard = ({ setActiveSection }) => {
               </div>
             ))
           ) : (
-            ['TCS NQT', 'Infosys', 'Wipro', 'Accenture', 'Cognizant', 'Google', 'Amazon', 'Microsoft'].map((name, idx) => (
-              <div 
-                key={idx} 
-                className="company-chip"
-                onClick={() => setActiveSection('scholastic-coding')}
-              >
-                <i className="fas fa-briefcase" style={{ color: '#3b82f6' }}></i>
-                <span>{name}</span>
-              </div>
-            ))
+            <div className="company-chip" style={{ opacity: 0.7, cursor: 'default' }}>
+              <i className="fas fa-briefcase" style={{ color: '#3b82f6' }}></i>
+              <span>No company practice sets available yet</span>
+            </div>
           )}
         </div>
       </div>

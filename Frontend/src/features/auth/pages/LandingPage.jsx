@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useContext } from 'react';
 import landingImg from '../../../images/landing1.png';
+import logoImg from '../../../images/logo2.dmfv.png';
 // If you have a UserContext, import it:
 // import { UserContext } from '../../context/UserContext';
 import '../styles/landing.css';
@@ -21,7 +22,7 @@ const LandingPage = (props) => {
       {/* Header Section */}
       <header>
         <div className="logo" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <img src="/rit-logo.png" alt="RIT Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+          <img src={logoImg} alt="RIT Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
           <span className="gradient-text" style={{ fontSize: '1.5rem', color: 'var(--primary-color)' }}>KES's RIT - QuickHire AI</span>
         </div>
         <nav>

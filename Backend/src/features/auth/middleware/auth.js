@@ -13,7 +13,11 @@ const verifyToken = (token) => {
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  let token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token && req.query && req.query.token) {
+    token = req.query.token;
+  }
 
   if (!token) {
     return res.status(401).json({ success: false, error: 'Access token required' });
@@ -22,6 +26,7 @@ const authenticateToken = (req, res, next) => {
   try {
     const decoded = verifyToken(token);
     req.user = decoded;
+    req.user.id = req.user.id || req.user._id;
     next();
   } catch (error) {
     // Distinguish expired tokens so frontend can attempt refresh on 401

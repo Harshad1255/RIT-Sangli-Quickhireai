@@ -5,11 +5,75 @@ const CodingContest = require('../models/CodingContest');
 const ContestLeaderboard = require('../models/ContestLeaderboard');
 const { CODING_CATEGORIES, LANGUAGES, COMPANY_TAGS, LANGUAGE_TEMPLATES } = require('../constants/categories');
 const { paginate, paginationMeta } = require('../../../shared/utils/pagination');
-const { runTestCases, executeCode, wrapCodeForExecution } = require('../services/judgeService');
+const { runTestCases, executeCode } = require('../../../shared/services/codeExecution');
+const { wrapCodeForExecution } = require('../services/functionDriver');
 const { recordCodingSolve, getOrCreateProfile } = require('../../platform/services/progressService');
 const { explainCode, suggestOptimizations, generateSimilarProblems } = require('../../platform/services/placementAiService');
 
 const slugify = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+const validateContestSubmission = async (contestId, problemId) => {
+  const contest = await CodingContest.findOne({ _id: contestId, isActive: true });
+  if (!contest) {
+    const error = new Error('Contest not found or inactive');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const now = new Date();
+  if (!contest.isVirtual && (now < contest.startTime || now > contest.endTime)) {
+    const error = new Error('Contest is not currently accepting submissions');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const contestProblem = contest.problems.find(item => item.problemId.toString() === problemId.toString());
+  if (!contestProblem) {
+    const error = new Error('Problem does not belong to this contest');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return { contest, contestProblem };
+};
+
+const updateContestLeaderboard = async ({ contest, userId, userName, problemId, score, accepted, submissionId }) => {
+  const previousBest = await CodingSubmission.findOne({
+    contestId: contest._id,
+    userId,
+    problemId,
+    isRun: false,
+    _id: { $ne: submissionId },
+    score: { $gt: 0 }
+  }).sort({ score: -1 }).select('score verdict');
+
+  const previousScore = previousBest?.score || 0;
+  if (score <= previousScore) return;
+
+  const leaderboard = await ContestLeaderboard.findOneAndUpdate(
+    { contestId: contest._id },
+    { $setOnInsert: { contestId: contest._id, rankings: [] } },
+    { new: true, upsert: true }
+  );
+  let ranking = leaderboard.rankings.find(item => item.userId.toString() === userId.toString());
+  const isNewParticipant = !ranking;
+  if (!ranking) {
+    ranking = { userId, userName, score: 0, penalty: 0, rank: 0, problemsSolved: 0 };
+    leaderboard.rankings.push(ranking);
+  }
+
+  ranking.score += score - previousScore;
+  if (accepted && previousBest?.verdict !== 'Accepted') ranking.problemsSolved += 1;
+  leaderboard.rankings.sort((left, right) => right.score - left.score);
+  leaderboard.rankings.forEach((item, index) => { item.rank = index + 1; });
+  leaderboard.lastUpdated = new Date();
+  await leaderboard.save();
+
+  if (isNewParticipant) {
+    contest.participants += 1;
+    await contest.save();
+  }
+};
 
 exports.getCategories = (req, res) => {
   res.json({ success: true, data: { categories: CODING_CATEGORIES, languages: LANGUAGES, companies: COMPANY_TAGS } });
@@ -70,10 +134,10 @@ exports.getProblemBySlug = async (req, res, next) => {
 exports.runCode = async (req, res, next) => {
   try {
     const { problemId, language, code, customInput } = req.body;
-    const problem = await CodingProblem.findById(problemId);
-    if (!problem) return res.status(404).json({ success: false, error: 'Problem not found' });
+    const problem = await CodingProblem.findOne({ _id: problemId, isActive: true });
+    if (!problem) return res.status(404).json({ success: false, error: 'This problem is no longer available' });
 
-    const wrappedCode = wrapCodeForExecution(language, code, problem);
+    const wrappedCode = wrapCodeForExecution(language, code, problem.entryFunction);
 
     if (customInput !== undefined) {
       const result = await executeCode({ language, code: wrappedCode, stdin: customInput, timeLimit: problem.timeLimit });
@@ -114,10 +178,20 @@ exports.runCode = async (req, res, next) => {
 exports.submitCode = async (req, res, next) => {
   try {
     const { problemId, language, code, contestId } = req.body;
-    const problem = await CodingProblem.findById(problemId);
-    if (!problem) return res.status(404).json({ success: false, error: 'Problem not found' });
+    const userId = req.user.id || req.user._id;
+    const problem = await CodingProblem.findOne({ _id: problemId, isActive: true });
+    if (!problem) return res.status(404).json({ success: false, error: 'This problem is no longer available' });
 
-    const wrappedCode = wrapCodeForExecution(language, code, problem);
+    let contestContext = null;
+    if (contestId) {
+      try {
+        contestContext = await validateContestSubmission(contestId, problemId);
+      } catch (contestError) {
+        return res.status(contestError.statusCode || 400).json({ success: false, error: contestError.message });
+      }
+    }
+
+    const wrappedCode = wrapCodeForExecution(language, code, problem.entryFunction);
     const result = await runTestCases({
       language,
       code: wrappedCode,
@@ -129,7 +203,7 @@ exports.submitCode = async (req, res, next) => {
     const xpEarned = result.verdict === 'Accepted' ? (problem.difficulty === 'Hard' ? 35 : problem.difficulty === 'Medium' ? 20 : 10) : 0;
 
     const submission = await CodingSubmission.create({
-      userId: req.user._id,
+      userId,
       problemId,
       contestId,
       language,
@@ -138,6 +212,7 @@ exports.submitCode = async (req, res, next) => {
       testResults: result.testResults,
       passedTests: result.passedTests,
       totalTests: result.totalTests,
+      score: result.totalTests > 0 ? Number(((result.passedTests / result.totalTests) * 100).toFixed(2)) : 0,
       runtime: result.runtime,
       memory: result.memory,
       executionLogs: result.executionLogs,
@@ -145,10 +220,68 @@ exports.submitCode = async (req, res, next) => {
       isRun: false
     });
 
+    if (contestContext) {
+      await updateContestLeaderboard({
+        contest: contestContext.contest,
+        userId,
+        userName: req.user.name || req.user.email || 'Student',
+        problemId,
+        score: submission.score,
+        accepted: result.verdict === 'Accepted',
+        submissionId: submission._id
+      });
+    }
+
+    if (req.body.testId) {
+      const AptitudeAttempt = require('../../aptitude/models/AptitudeAttempt');
+      const AssessmentSecurityEvent = require('../../assessment/models/AssessmentSecurityEvent');
+      
+      const attempt = await AptitudeAttempt.findOne({ testId: req.body.testId, studentId: userId, completed: false });
+      if (attempt) {
+        const codingAns = attempt.codingAnswers.find(ca => ca.problemId.toString() === problemId.toString());
+        if (codingAns) {
+          codingAns.code = code;
+          codingAns.language = language;
+          codingAns.status = result.verdict === 'Accepted' ? 'Solved' : 'Attempted';
+          codingAns.passedTests = result.passedTests;
+          codingAns.totalTests = result.totalTests;
+          codingAns.score = result.totalTests > 0 ? (result.passedTests / result.totalTests) * 10 : 0;
+          await attempt.save();
+        }
+
+        const { violations } = req.body;
+        if (Array.isArray(violations) && violations.length > 0) {
+          const persistedEvents = await AssessmentSecurityEvent.find({ assessmentType: 'aptitude', attemptId: attempt._id }).sort({ createdAt: 1 }).lean();
+          const persistedKeys = new Set(persistedEvents.map(e => `${e.eventType}:${e.message}`));
+          
+          const newEvents = violations.filter(v => {
+            const vType = v.type || v.eventType;
+            return !persistedKeys.has(`${vType}:${v.message}`);
+          });
+
+          if (newEvents.length > 0) {
+            const docs = newEvents.map(v => ({
+              userId,
+              studentId: userId,
+              assessmentType: 'aptitude',
+              assessmentId: attempt.testId,
+              attemptId: attempt._id,
+              eventType: v.type || v.eventType || 'WINDOW_BLUR',
+              message: v.message,
+              severity: v.severity || 'warning',
+              eventId: v.eventId || `coding:${attempt._id}:${Date.now()}:${Math.random().toString(16).slice(2)}`,
+              createdAt: v.timestamp || new Date()
+            }));
+            await AssessmentSecurityEvent.insertMany(docs);
+          }
+        }
+      }
+    }
+
     problem.totalSubmissions += 1;
     if (result.verdict === 'Accepted') {
       problem.totalAccepted += 1;
-      await recordCodingSolve(req.user._id, problemId, language, result.runtime, problem.difficulty);
+      await recordCodingSolve(userId, problemId, language, result.runtime, problem.difficulty);
     }
     problem.acceptanceRate = Math.round((problem.totalAccepted / problem.totalSubmissions) * 100);
     await problem.save();
@@ -192,9 +325,9 @@ exports.toggleBookmark = async (req, res, next) => {
 exports.getBookmarks = async (req, res, next) => {
   try {
     const bookmarks = await CodingBookmark.find({ userId: req.user._id })
-      .populate('problemId', 'title slug difficulty category')
+      .populate({ path: 'problemId', select: 'title slug difficulty category', match: { isActive: true } })
       .sort('-createdAt');
-    res.json({ success: true, data: bookmarks });
+    res.json({ success: true, data: bookmarks.filter(bookmark => bookmark.problemId) });
   } catch (error) {
     next(error);
   }

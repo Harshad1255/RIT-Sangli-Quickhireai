@@ -13,6 +13,7 @@ import { InterviewDetails } from './features/company/pages';
 import CompanyHome from './features/company/components/CompanyHome';
 import CompanyInterviews from './features/company/components/CompanyInterviews';
 import CreateInterview from './features/company/components/CreateInterview';
+import CandidateCodingWorkspaceWrapper from './features/student/components/CandidateCodingWorkspaceWrapper';
 import UploadCandidates from './features/company/components/UploadCandidates';
 import CandidateReports from './features/company/components/CandidateReports';
 import CompanyProfile from './features/company/components/CompanyProfile';
@@ -25,6 +26,7 @@ import ScholasticMainPage from './features/scholastic/pages/ScholasticMainPage';
 import CompanyAptitudeTests from './features/company/components/CompanyAptitudeTests';
 import CompanyCodingProblems from './features/company/components/CompanyCodingProblems';
 import CompanyLeaderboard from './features/company/components/CompanyLeaderboard';
+import CompanyScholastic from './features/company/pages/CompanyScholastic';
 
 const AppContainer = styled.div`
   min-height: 100vh;
@@ -113,6 +115,12 @@ function App() {
             <ScholasticMainPage />
           </PrivateRoute>
         } />
+        <Route path="/candidate/test/:testId/coding/:problemId" element={
+          <PrivateRoute allowed={['student']}>
+            {/* Needs a component to wrap CodingWorkspace with proctoring */}
+            <CandidateCodingWorkspaceWrapper />
+          </PrivateRoute>
+        } />
         <Route path="/company-dashboard/*" element={
           <PrivateRoute allowed={['company']}>
             <CompanyDashboard />
@@ -126,6 +134,7 @@ function App() {
           <Route path="profile" element={<CompanyProfile />} />
           <Route path="aptitude-tests" element={<CompanyAptitudeTests />} />
           <Route path="coding-problems" element={<CompanyCodingProblems />} />
+          <Route path="scholastic/*" element={<CompanyScholastic />} />
           <Route path="leaderboard" element={<CompanyLeaderboard />} />
           <Route path="settings" element={<div>Settings Page</div>} />
           <Route path="team" element={<div>Team Management Page</div>} />

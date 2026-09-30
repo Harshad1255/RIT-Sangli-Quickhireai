@@ -13,7 +13,7 @@ if (!envValidation.valid) {
 }
 
 if (envValidation.warnings.length > 0) {
-  console.warn('[env] Optional variables not set:', envValidation.warnings.join(', '));
+  console.warn('[env] Startup configuration warnings:', envValidation.warnings.join('; '));
 }
 
 const connectDB = require('./src/config/db');
@@ -53,6 +53,8 @@ console.log('Final Environment Check:', {
 });
 
 const app = express();
+app.set('trust proxy', 1);
+
 const preferredPort = Number(process.env.PORT) || 5001;
 let port = preferredPort;
 
@@ -66,13 +68,20 @@ const upload = multer({
 });
 
 // Middleware
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:5175',
-  'http://localhost:5001',
-  'https://quick-hire-ai.vercel.app'
-];
+const isProd = process.env.NODE_ENV === 'production';
+let allowedOrigins = [];
+
+if (process.env.ALLOWED_ORIGINS) {
+  allowedOrigins = process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
+} else if (!isProd) {
+  allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://localhost:5001',
+    'https://quick-hire-ai.vercel.app'
+  ];
+}
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -81,10 +90,12 @@ app.use(cors({
       return;
     }
 
-    const isLocalhostOrigin = /^http:\/\/localhost:\d+$/.test(origin);
-    if (isLocalhostOrigin) {
-      callback(null, true);
-      return;
+    if (!isProd) {
+      const isLocalhostOrigin = /^http:\/\/localhost:\d+$/.test(origin);
+      if (isLocalhostOrigin) {
+        callback(null, true);
+        return;
+      }
     }
 
     callback(new Error('Not allowed by CORS'));
@@ -93,6 +104,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.static('public'));
+// NOTE: /downloads serves ../downloads from local disk. Wait for instruction before changing.
 app.use('/downloads', express.static(path.join(__dirname, '../downloads')));
 
 // Apply multer middleware to specific routes
@@ -288,6 +300,10 @@ const startServer = (portToTry) => {
     port = portToTry; // Update the port variable
   }).on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
+      if (process.env.NODE_ENV === 'production') {
+        console.error(`Port ${portToTry} is in use. Exiting in production.`);
+        process.exit(1);
+      }
       const nextPort = Number(portToTry) + 1;
       console.log(`Port ${portToTry} is busy, trying ${nextPort}...`);
       startServer(nextPort);

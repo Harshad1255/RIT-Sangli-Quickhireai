@@ -13,7 +13,7 @@ const adminController = {
    */
   async addAptitudeQuestion(req, res) {
     try {
-      const { title, questionText, options, correctOptionId, category, difficulty, companies, hint, explanation, tags } = req.body;
+      const { title, questionText, questionImageUrl, options, correctOptionId, category, difficulty, companies, hint, explanation, tags } = req.body;
       if (!title || !questionText || !options || correctOptionId === undefined || !category) {
         return res.status(400).json({ success: false, error: 'Missing required question fields' });
       }
@@ -21,6 +21,7 @@ const adminController = {
       const question = await AptitudeQuestion.create({
         title,
         questionText,
+        questionImageUrl,
         options,
         correctOptionId: parseInt(correctOptionId, 10),
         category,

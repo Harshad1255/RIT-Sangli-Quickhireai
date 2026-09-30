@@ -29,6 +29,15 @@ const StudentDashboard = () => {
   const [aptitudeMode, setAptitudeMode] = useState("take");
   const [selectedCodingProblem, setSelectedCodingProblem] = useState(null);
 
+  const handleAptitudeTestSelection = (test, mode) => {
+    if (!test || !test._id) {
+      console.error('Invalid aptitude test selected:', test);
+      return;
+    }
+    setSelectedAptitudeTest(test);
+    setAptitudeMode(mode || 'take');
+  };
+
   const renderContent = () => {
     switch (activeSection) {
       case "home":
@@ -38,7 +47,7 @@ const StudentDashboard = () => {
       case "profile":
         return <StudentProfile />;
       case "assigned-aptitude":
-        if (selectedAptitudeTest) {
+        if (selectedAptitudeTest && selectedAptitudeTest._id) {
           return (
             <AptitudeTestAttempt
               test={selectedAptitudeTest}
@@ -51,10 +60,7 @@ const StudentDashboard = () => {
         }
         return (
           <StudentAptitudeTestList
-            onSelectTest={(test, mode) => {
-              setSelectedAptitudeTest(test);
-              setAptitudeMode(mode);
-            }}
+            onSelectTest={handleAptitudeTestSelection}
           />
         );
       case "coding-platform":
@@ -96,6 +102,33 @@ const StudentDashboard = () => {
         return <Home />;
     }
   };
+
+  const isAssessmentActive = Boolean(selectedAptitudeTest || selectedCodingProblem);
+
+  if (isAssessmentActive) {
+    return (
+      <div className="dashboard-container assessment-active">
+        <main className="main-content full-width-assessment">
+          {selectedAptitudeTest && selectedAptitudeTest._id ? (
+            <AptitudeTestAttempt
+              test={selectedAptitudeTest}
+              mode={aptitudeMode}
+              onExit={() => {
+                setSelectedAptitudeTest(null);
+              }}
+            />
+          ) : (
+            <CodingWorkspace
+              problem={selectedCodingProblem}
+              onExit={() => {
+                setSelectedCodingProblem(null);
+              }}
+            />
+          )}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-container">

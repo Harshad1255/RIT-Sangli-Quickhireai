@@ -81,23 +81,29 @@ api.interceptors.response.use(
       // If refresh not available or failed, clear session and redirect
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      localStorage.removeItem('refreshToken');
       window.location.href = '/login';
       throw new Error('Session expired. Please login again.');
     }
 
     switch (error.response.status) {
+      case 400:
+        throw new Error(error.response.data?.error || 'Invalid request. Please check your input.');
+
       case 404:
-        throw new Error('Resource not found. Please check the URL.');
+        throw new Error(error.response.data?.error || 'Resource not found. Please check the URL.');
+
+      case 429:
+        throw new Error(error.response.data?.error || 'Too many requests. Please wait a moment and try again.');
 
       case 503:
-        // Surface server-provided message (e.g., AI quota exceeded)
-        throw new Error(error.response.data.error || 'Service unavailable. Please try again later.');
+        throw new Error(error.response.data?.error || 'Service unavailable. Please try again later.');
 
       case 500:
-        throw new Error('Server error. Please try again later.');
+        throw new Error(error.response.data?.error || 'Server error. Please try again later.');
 
       default:
-        throw new Error(error.response.data.error || 'An unexpected error occurred');
+        throw new Error(error.response.data?.error || 'An unexpected error occurred');
     }
   }
 );

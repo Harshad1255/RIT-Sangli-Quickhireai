@@ -1,49 +1,98 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import scholasticApi from '../services/scholasticApi';
 import CodingIDEModal from './CodingIDEModal';
 import '../styles/CodingPractice.css';
 
 const CodingPractice = () => {
   const [problems, setProblems] = useState([]);
-  const [topics, setTopics] = useState(['All', 'Arrays & Hashing', 'Two Pointers', 'Dynamic Programming', 'Graphs', 'Trees']);
+  const [topics, setTopics] = useState(['All']);
   const [selectedTopic, setSelectedTopic] = useState('All');
   const [selectedDifficulty, setSelectedDifficulty] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showDailyOnly, setShowDailyOnly] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
 
   // Active IDE Modal
   const [activeProblem, setActiveProblem] = useState(null);
+  const [openingProblem, setOpeningProblem] = useState(false);
 
   useEffect(() => {
-    fetchProblems();
-  }, [selectedTopic, selectedDifficulty]);
+    let active = true;
+    scholasticApi.getCodingTopics()
+      .then(res => {
+        if (active && Array.isArray(res.data?.data)) setTopics(res.data.data);
+      })
+      .catch(err => console.error('Error loading coding topics:', err));
+    return () => { active = false; };
+  }, []);
 
-  const fetchProblems = async () => {
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    let active = true;
     setLoading(true);
+    setError('');
     try {
-      const res = await scholasticApi.getCodingQuestions({
+      scholasticApi.getCodingQuestions({
         topic: selectedTopic === 'All' ? undefined : selectedTopic,
         difficulty: selectedDifficulty === 'All' ? undefined : selectedDifficulty,
-        search: searchQuery || undefined,
+        search: debouncedSearchQuery || undefined,
+        dailyOnly: showDailyOnly || undefined,
         limit: 50
+      }).then(res => {
+        if (active) setProblems(res.data?.data || []);
+      }).catch(err => {
+        if (!active) return;
+        console.error('Error loading coding problems:', err);
+        setProblems([]);
+        setError(err.response?.data?.error || err.message || 'Unable to load coding problems.');
+      }).finally(() => {
+        if (active) setLoading(false);
       });
-      if (res.data && res.data.questions) {
-        setProblems(res.data.questions);
-      }
     } catch (err) {
-      console.error('Error loading coding problems:', err);
-    } finally {
+      setError(err.message || 'Unable to load coding problems.');
       setLoading(false);
     }
-  };
+
+    return () => { active = false; };
+  }, [selectedTopic, selectedDifficulty, showDailyOnly, debouncedSearchQuery, refreshVersion]);
+
+  useEffect(() => {
+    const refresh = () => setRefreshVersion(version => version + 1);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    const interval = window.setInterval(refresh, 60000);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    fetchProblems();
   };
 
-  const openIDE = (prob) => {
-    setActiveProblem(prob);
+  const openIDE = async (prob) => {
+    setOpeningProblem(true);
+    try {
+      const res = await scholasticApi.getCodingQuestionById(prob._id);
+      setActiveProblem(res.data?.data || prob);
+    } catch (err) {
+      console.error('Error loading coding problem:', err);
+      alert(err.response?.data?.error || err.message || 'Unable to load coding problem');
+    } finally {
+      setOpeningProblem(false);
+    }
   };
 
   const closeIDE = () => {
@@ -58,7 +107,9 @@ const CodingPractice = () => {
             Algorithmic Coding Arena
           </h2>
           <p style={{ color: '#64748b', margin: 0 }}>
-            Master FAANG-level algorithms, data structures, and placement coding rounds in a sandboxed IDE.
+            {showDailyOnly
+              ? 'Today\'s verified DSA drills curated by the company for daily practice.'
+              : 'Master FAANG-level algorithms, data structures, and placement coding rounds in a sandboxed IDE.'}
           </p>
         </div>
       </div>
@@ -78,6 +129,23 @@ const CodingPractice = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setShowDailyOnly(prev => !prev)}
+            style={{
+              padding: '0.55rem 1rem',
+              borderRadius: '10px',
+              border: '1px solid #dbeafe',
+              background: showDailyOnly ? '#dbeafe' : '#f8fafc',
+              color: showDailyOnly ? '#1d4ed8' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            <i className="fas fa-calendar-day" style={{ marginRight: '0.35rem' }}></i>
+            {showDailyOnly ? 'Showing Daily DSA' : 'Daily DSA'}
+          </button>
+
           <select
             value={selectedDifficulty}
             onChange={(e) => setSelectedDifficulty(e.target.value)}
@@ -110,7 +178,7 @@ const CodingPractice = () => {
       ) : problems.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '4rem 0', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <i className="fas fa-code fa-2x" style={{ color: '#cbd5e1' }}></i>
-          <p style={{ marginTop: '1rem', color: '#64748b' }}>No coding problems found for the selected filters.</p>
+          <p style={{ marginTop: '1rem', color: '#64748b' }}>{error || 'No coding problems found for the selected filters.'}</p>
         </div>
       ) : (
         <div className="coding-table-container">
@@ -141,7 +209,10 @@ const CodingPractice = () => {
                     <span className={`diff-badge ${prob.difficulty}`}>{prob.difficulty}</span>
                   </td>
                   <td>
-                    <span style={{ fontWeight: 600, color: '#334155' }}>{prob.topic}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <span style={{ fontWeight: 600, color: '#334155' }}>{prob.category || 'Uncategorized'}</span>
+                      {prob.tags?.length > 0 && <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{prob.tags.join(', ')}</span>}
+                    </div>
                   </td>
                   <td className="acceptance-cell">
                     {prob.acceptanceRate || 68.5}%
@@ -162,6 +233,11 @@ const CodingPractice = () => {
       {/* IDE Modal */}
       {activeProblem && (
         <CodingIDEModal problem={activeProblem} onClose={closeIDE} />
+      )}
+      {openingProblem && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'grid', placeItems: 'center', background: 'rgba(15, 23, 42, 0.35)', color: '#fff' }}>
+          Loading coding problem...
+        </div>
       )}
     </div>
   );

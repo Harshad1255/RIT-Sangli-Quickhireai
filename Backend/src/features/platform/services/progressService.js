@@ -136,6 +136,14 @@ const recordCodingSolve = async (userId, problemId, language, runtime, difficult
     profile.solvedProblems.push({ problemId, language, runtime, solvedAt: new Date() });
     const xp = XP_REWARDS[difficulty] || 20;
     await awardXp(userId, xp, 'coding', displayName);
+
+    // Track for unified heatmap & badges
+    try {
+      const xpCalculator = require('../../scholastic/utils/xpCalculator');
+      await xpCalculator.recordDailyActivity(userId, { coding: 1, aptitude: 0 });
+    } catch (err) {
+      console.error('Failed to record unified daily activity:', err);
+    }
   }
   if (!profile.attemptedProblems.includes(problemId)) {
     profile.attemptedProblems.push(problemId);

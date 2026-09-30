@@ -33,7 +33,7 @@ const contestSchema = new mongoose.Schema({
   }],
   aptitudeQuestions: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'AptitudeQuestion'
+    ref: 'ScholasticAptitudeQuestion'
   }],
   participantCount: {
     type: Number,

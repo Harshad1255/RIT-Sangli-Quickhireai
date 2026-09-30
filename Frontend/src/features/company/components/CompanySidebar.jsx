@@ -8,6 +8,7 @@ const CompanySidebar = () => {
   const handleLogout = () => {
     localStorage.removeItem('user');
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     navigate('/');
   };
 
@@ -75,6 +76,15 @@ const CompanySidebar = () => {
               <div className="menu-item">
                 <i className="fas fa-code"></i>
                 <span>Coding Practice</span>
+              </div>
+            </li>
+            <li
+              className={isActive("/company-dashboard/scholastic") ? "active" : ""}
+              onClick={() => navigate("/company-dashboard/scholastic")}
+            >
+              <div className="menu-item">
+                <i className="fas fa-graduation-cap"></i>
+                <span>Scholastic Content</span>
               </div>
             </li>
             <li

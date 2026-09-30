@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import scholasticApi from '../services/scholasticApi';
+import { getExecutionRequestError, getExecutionServiceMessage } from '../../../shared/services/codingExecutionMessages';
 
 const CodingIDEModal = ({ problem, onClose }) => {
   const [language, setLanguage] = useState('javascript');
@@ -10,78 +11,117 @@ const CodingIDEModal = ({ problem, onClose }) => {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [customInput, setCustomInput] = useState('');
+  const [history, setHistory] = useState([]);
+  const requestLock = useRef(false);
 
   useEffect(() => {
     if (problem) {
       // Set starter code for default language
-      const starter = problem.starterCode?.[language] || problem.starterCode?.javascript || 
-`// Write your JavaScript solution here
-function solve(nums, target) {
-  // TODO
-}`;
+      const fallbackCode = {
+        javascript: `// Write your JavaScript solution here\nfunction solve(nums, target) {\n  // TODO\n}`,
+        python: `# Write your Python solution here\ndef solve(nums, target):\n    pass`,
+        java: `// Write your Java solution here\nimport java.util.*;\n\nclass Solution {\n    public int solve(int[] nums) {\n        // TODO\n        return 0;\n    }\n}`,
+        cpp: `// Write your C++ solution here\n#include <iostream>\n#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(vector<int>& nums) {\n        // TODO\n        return 0;\n    }\n};`
+      };
+      const starter = problem.starterCode?.[language] || fallbackCode[language] || '';
       setCode(starter);
 
-      if (problem.examples && problem.examples.length > 0) {
-        setCustomInput(problem.examples[0].input || '');
-      }
+      setCustomInput('');
+      scholasticApi.getCodingSubmissions(problem._id)
+        .then((res) => setHistory(res.data?.data || []))
+        .catch(() => setHistory([]));
     }
   }, [problem, language]);
 
   const handleLanguageChange = (e) => {
     const newLang = e.target.value;
     setLanguage(newLang);
-    if (problem.starterCode && problem.starterCode[newLang]) {
-      setCode(problem.starterCode[newLang]);
-    }
+    const fallbackCode = {
+      javascript: `// Write your JavaScript solution here\nfunction solve(nums, target) {\n  // TODO\n}`,
+      python: `# Write your Python solution here\ndef solve(nums, target):\n    pass`,
+      java: `// Write your Java solution here\nimport java.util.*;\n\nclass Solution {\n    public int solve(int[] nums) {\n        // TODO\n        return 0;\n    }\n}`,
+      cpp: `// Write your C++ solution here\n#include <iostream>\n#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(vector<int>& nums) {\n        // TODO\n        return 0;\n    }\n};`
+    };
+    const starter = problem.starterCode?.[newLang] || fallbackCode[newLang] || '';
+    setCode(starter);
   };
 
   const handleRunCode = async () => {
+    if (requestLock.current) return;
+    requestLock.current = true;
     setRunning(true);
     setConsoleTab('result');
     try {
-      const res = await scholasticApi.runCodingSolution({
-        questionId: problem._id,
+      const res = await scholasticApi.runCodingSolution(problem._id, {
+        sourceCode: code,
         code,
         language,
-        customInput: customInput || undefined
+        stdin: customInput || undefined
       });
-      if (res.data && res.data.success) {
-        setResult(res.data.executionResult);
+      if (res.data?.success) {
+        const data = res.data.executionResult || res.data.data || {};
+        setResult({
+          ...data,
+          status: data.verdict,
+          serviceReason: data.serviceReason,
+          testcasesPassed: data.passedTests ?? data.passedTestCases ?? 0,
+          totalTestcases: data.totalTests ?? data.totalTestCases ?? 0,
+          executionTimeMs: data.runtime ?? data.runtimeMs ?? 0,
+          memoryUsageKb: data.memory ?? data.memoryKb ?? 0,
+          output: data.output || data.stdout || '',
+          stderr: data.stderr || '',
+          results: (data.testResults || data.testCaseResults || []).map(test => ({ ...test, isPassed: test.passed }))
+        });
       }
     } catch (err) {
       console.error('Error running code:', err);
       setResult({
-        status: 'Runtime Error',
-        errorMessage: err.response?.data?.error || err.message
+        status: err.response?.status === 404 ? 'Problem unavailable' : 'Server Error',
+        errorMessage: getExecutionRequestError(err, 'run')
       });
     } finally {
       setRunning(false);
+      requestLock.current = false;
     }
   };
 
   const handleSubmitCode = async () => {
+    if (requestLock.current) return;
+    requestLock.current = true;
     setSubmitting(true);
     setConsoleTab('result');
     try {
-      const res = await scholasticApi.submitCodingSolution({
-        questionId: problem._id,
+      const res = await scholasticApi.submitCodingSolution(problem._id, {
+        sourceCode: code,
         code,
         language
       });
-      if (res.data && res.data.success) {
+      if (res.data?.success) {
+        const data = res.data.executionResult || res.data.data || {};
         setResult({
-          ...res.data.executionResult,
-          xpReward: res.data.xpReward
+          ...data,
+          status: data.verdict,
+          serviceReason: data.serviceReason,
+          testcasesPassed: data.passedTests ?? data.passedTestCases ?? 0,
+          totalTestcases: data.totalTests ?? data.totalTestCases ?? 0,
+          executionTimeMs: data.runtime ?? data.runtimeMs ?? 0,
+          memoryUsageKb: data.memory ?? data.memoryKb ?? 0,
+          output: data.output || data.stdout || '',
+          stderr: data.stderr || '',
+          results: (data.testResults || data.testCaseResults || []).map(test => ({ ...test, isPassed: test.passed }))
         });
+        const historyRes = await scholasticApi.getCodingSubmissions(problem._id);
+        setHistory(historyRes.data?.data || []);
       }
     } catch (err) {
       console.error('Error submitting code:', err);
       setResult({
-        status: 'Runtime Error',
-        errorMessage: err.response?.data?.error || err.message
+        status: err.response?.status === 404 ? 'Problem unavailable' : 'Server Error',
+        errorMessage: getExecutionRequestError(err, 'submit')
       });
     } finally {
       setSubmitting(false);
+      requestLock.current = false;
     }
   };
 
@@ -101,7 +141,7 @@ function solve(nums, target) {
         <div className="ide-actions">
           <button className="ide-btn run" onClick={handleRunCode} disabled={running || submitting}>
             <i className={`fas fa-${running ? 'spinner fa-spin' : 'play'}`}></i>
-            <span>{running ? 'Running...' : 'Run Sample'}</span>
+            <span>{running ? 'Running...' : 'Run Code'}</span>
           </button>
           <button className="ide-btn submit" onClick={handleSubmitCode} disabled={running || submitting}>
             <i className={`fas fa-${submitting ? 'spinner fa-spin' : 'check'}`}></i>
@@ -153,18 +193,18 @@ function solve(nums, target) {
           {activeTab === 'problem' ? (
             <div>
               <p style={{ lineHeight: '1.7', color: '#cbd5e1', fontSize: '1rem', whiteSpace: 'pre-wrap' }}>
-                {problem.problemStatement}
+                {problem.description || problem.statementMarkdown || problem.problemStatement}
               </p>
 
-              {problem.examples && problem.examples.length > 0 && (
+              {problem.testCases && problem.testCases.length > 0 && (
                 <div style={{ marginTop: '1.5rem' }}>
                   <h4 style={{ color: '#ffffff', fontSize: '1rem', marginBottom: '0.75rem' }}>Examples:</h4>
-                  {problem.examples.map((ex, idx) => (
+                  {problem.testCases.map((testCase, idx) => (
                     <div key={idx} style={{ background: '#0f172a', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid #334155' }}>
-                      <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}><strong>Input:</strong> {ex.input}</div>
-                      <div style={{ color: '#10b981', fontSize: '0.85rem', marginTop: '0.4rem' }}><strong>Output:</strong> {ex.output}</div>
-                      {ex.explanation && (
-                        <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '0.4rem' }}><em>Explanation: {ex.explanation}</em></div>
+                      <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}><strong>Input:</strong> {testCase.input}</div>
+                      <div style={{ color: '#10b981', fontSize: '0.85rem', marginTop: '0.4rem' }}><strong>Output:</strong> {testCase.expectedOutput}</div>
+                      {testCase.explanation && (
+                        <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '0.4rem' }}><em>Explanation: {testCase.explanation}</em></div>
                       )}
                     </div>
                   ))}
@@ -291,12 +331,23 @@ function solve(nums, target) {
                         )}
                       </div>
 
-                      {result.errorMessage ? (
+                      {result.status === 'Execution Service Error' ? (
+                        <div style={{ background: '#7f1d1d', color: '#fecaca', padding: '15px', borderRadius: '8px', margin: '15px 0', border: '1px solid #ef4444' }}>
+                          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}><i className="fas fa-exclamation-triangle"></i> Execution Service Unavailable</div>
+                          <div style={{ fontSize: '0.9rem' }}>{getExecutionServiceMessage(result.serviceReason)}</div>
+                        </div>
+                      ) : result.errorMessage || result.stderr ? (
                         <div style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '0.75rem', borderRadius: '6px', marginTop: '0.5rem' }}>
-                          <strong>Error:</strong> {result.errorMessage}
+                          <strong>{result.status}:</strong> {result.errorMessage || result.stderr}
                         </div>
                       ) : (
                         <div style={{ marginTop: '0.5rem' }}>
+                          {result.output !== undefined && (
+                            <div style={{ background: '#0f172a', color: '#e2e8f0', padding: '0.75rem', borderRadius: '6px', marginBottom: '0.75rem', whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                              <strong style={{ display: 'block', color: '#94a3b8', marginBottom: '0.35rem' }}>Actual Output</strong>
+                              {result.output || '(empty output)'}
+                            </div>
+                          )}
                           <div style={{ display: 'flex', gap: '1.5rem', color: '#94a3b8', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
                             <span><strong>Passed:</strong> {result.testcasesPassed} / {result.totalTestcases}</span>
                             <span><strong>Time:</strong> {result.executionTimeMs} ms</span>
@@ -321,7 +372,19 @@ function solve(nums, target) {
                     </div>
                   ) : (
                     <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem 0' }}>
-                      Click "Run Sample" or "Submit Code" to view execution results.
+                      Click "Run Code" or "Submit Code" to view execution results.
+                    </div>
+                  )}
+                  {history.length > 0 && (
+                    <div style={{ marginTop: '1.25rem' }}>
+                      <h4 style={{ color: '#ffffff', marginBottom: '0.6rem' }}>Submission History</h4>
+                      {history.slice(0, 10).map((submission) => (
+                        <div key={submission._id} style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1', borderBottom: '1px solid #334155', padding: '0.45rem 0', fontSize: '0.8rem' }}>
+                          <span>{submission.verdict}</span>
+                          <span>{submission.passedTests}/{submission.totalTests} tests</span>
+                          <span>{new Date(submission.submittedAt || submission.createdAt).toLocaleString()}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

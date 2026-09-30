@@ -4,6 +4,15 @@ const CODING_CATEGORIES = [
   'Bit Manipulation', 'Math', 'Sorting', 'Searching', 'Binary Search', 'Recursion', 'Graphs'
 ];
 
+const CODING_TOPIC_MATCHES = {
+  'Arrays & Hashing': ['Arrays', 'Array', 'Hashing', 'HashMap', 'Hash Map'],
+  'Two Pointers': ['Two Pointers', 'Two-Pointer'],
+  'Dynamic Programming': ['DP', 'Dynamic Programming'],
+  Graphs: ['Graph', 'Graphs', 'BFS', 'DFS'],
+  Trees: ['Tree', 'Trees', 'BST', 'Binary Tree']
+};
+const CODING_TOPICS = Object.keys(CODING_TOPIC_MATCHES);
+
 const LANGUAGES = [
   { id: 'c', name: 'C', piston: 'c', monaco: 'c' },
   { id: 'cpp', name: 'C++', piston: 'c++', monaco: 'cpp' },
@@ -29,8 +38,8 @@ const COMPANY_TAGS = [
 ];
 
 const LANGUAGE_TEMPLATES = {
-  javascript: `/**\n * @param {number[]} nums\n * @param {number} target\n * @return {number[]}\n */\nvar twoSum = function(nums, target) {\n    \n};`,
-  python: `class Solution:\n    def twoSum(self, nums: list[int], target: int) -> list[int]:\n        pass`,
+  javascript: `function solve(nums, target) {\n  return [];\n}`,
+  python: `def solve(nums, target):\n    return []`,
   java: `class Solution {\n    public int[] twoSum(int[] nums, int target) {\n        \n    }\n}`,
   cpp: `class Solution {\npublic:\n    vector<int> twoSum(vector<int>& nums, int target) {\n        \n    }\n};`,
   c: `int* twoSum(int* nums, int numsSize, int target, int* returnSize) {\n    \n}`,
@@ -42,6 +51,8 @@ const LANGUAGE_TEMPLATES = {
 
 module.exports = {
   CODING_CATEGORIES,
+  CODING_TOPICS,
+  CODING_TOPIC_MATCHES,
   LANGUAGES,
   VERDICTS,
   DIFFICULTIES,

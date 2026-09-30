@@ -24,6 +24,15 @@ const codingQuestionSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
+  isDailyChallenge: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
+  dailyLabel: {
+    type: String,
+    default: '',
+  },
   tags: [{
     type: String,
     index: true,

@@ -72,13 +72,11 @@ class XPCalculator {
     }
     progress.lastActiveDate = now;
 
-    // Update heatmap
-    const heatmapEntry = progress.heatmap.find(h => h.date === todayStr);
-    if (heatmapEntry) {
-      heatmapEntry.count += 1;
-    } else {
-      progress.heatmap.push({ date: todayStr, count: 1 });
-    }
+    // Call the shared daily activity recorder
+    await this.recordDailyActivity(userId, { 
+      aptitude: questionType === 'aptitude' ? 1 : 0, 
+      coding: questionType === 'coding' ? 1 : 0 
+    });
 
     const totalSolved = (progress.questionsSolved.aptitude.total || 0) + (progress.questionsSolved.coding.total || 0);
     progress.overallAccuracy = isCorrect ? Math.min(100, (progress.overallAccuracy * 0.9 + 10)) : Math.max(0, progress.overallAccuracy * 0.9);
@@ -102,8 +100,7 @@ class XPCalculator {
     leaderboard.updatedAt = now;
     await leaderboard.save();
 
-    // 4. Check badges unlocking
-    await this.checkBadges(userId, stats, progress);
+    // 4. (Check badges is now handled by recordDailyActivity)
 
     return {
       xpGain,
@@ -115,6 +112,62 @@ class XPCalculator {
     };
   }
 
+  async recordDailyActivity(userId, { aptitude = 0, coding = 0 }) {
+    if (!userId || (aptitude === 0 && coding === 0)) return;
+
+    let progress = await Progress.findOne({ userId });
+    if (!progress) {
+      progress = new Progress({ userId });
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // 1. Update Heatmap
+    const heatmapEntry = progress.heatmap.find(h => h.date === todayStr);
+    if (heatmapEntry) {
+      heatmapEntry.aptitudeCount = (heatmapEntry.aptitudeCount || 0) + aptitude;
+      heatmapEntry.codingCount = (heatmapEntry.codingCount || 0) + coding;
+      heatmapEntry.total = heatmapEntry.aptitudeCount + heatmapEntry.codingCount;
+      heatmapEntry.count = heatmapEntry.total; // Legacy fallback
+    } else {
+      progress.heatmap.push({
+        date: todayStr,
+        aptitudeCount: aptitude,
+        codingCount: coding,
+        total: aptitude + coding,
+        count: aptitude + coding
+      });
+    }
+
+    // 2. Update dailySolved
+    const dailyEntry = progress.dailySolved.find(d => d.date === todayStr);
+    let todayTotal = 0;
+    if (dailyEntry) {
+      dailyEntry.aptitude = (dailyEntry.aptitude || 0) + aptitude;
+      dailyEntry.coding = (dailyEntry.coding || 0) + coding;
+      todayTotal = dailyEntry.aptitude + dailyEntry.coding;
+    } else {
+      progress.dailySolved.push({
+        date: todayStr,
+        aptitude,
+        coding
+      });
+      todayTotal = aptitude + coding;
+    }
+
+    // 3. Update bestDailySolvedCount
+    if (todayTotal > (progress.bestDailySolvedCount || 0)) {
+      progress.bestDailySolvedCount = todayTotal;
+    }
+
+    await progress.save();
+    
+    // Also trigger badge check here for generic solves (like from main coding module)
+    let stats = await UserStatistics.findOne({ userId });
+    if (!stats) stats = new UserStatistics({ userId });
+    await this.checkBadges(userId, stats, progress);
+  }
+
   async checkBadges(userId, stats, progress) {
     try {
       const allBadges = await Badge.find({});
@@ -124,16 +177,54 @@ class XPCalculator {
         if (earnedBadgeIds.includes(badge._id.toString())) continue;
 
         let shouldUnlock = false;
-        if (badge.key === 'first_solve' && (progress.questionsSolved.aptitude.total + progress.questionsSolved.coding.total) >= 1) {
-          shouldUnlock = true;
-        } else if (badge.key === 'streak_3' && progress.dailyStreak >= 3) {
-          shouldUnlock = true;
-        } else if (badge.key === 'streak_7' && progress.dailyStreak >= 7) {
-          shouldUnlock = true;
-        } else if (badge.key === 'quant_10' && progress.questionsSolved.aptitude.total >= 10) {
-          shouldUnlock = true;
-        } else if (badge.key === 'code_wizard' && progress.questionsSolved.coding.total >= 10) {
-          shouldUnlock = true;
+        
+        // Data-driven criteria evaluation
+        if (badge.criteria && badge.criteria.metric && badge.criteria.threshold !== undefined) {
+          const { metric, threshold } = badge.criteria;
+          const totalAptitude = progress.questionsSolved.aptitude.total || 0;
+          const totalCoding = progress.questionsSolved.coding.total || 0;
+
+          switch (metric) {
+            case 'lifetime_solved_total':
+              shouldUnlock = (totalAptitude + totalCoding) >= threshold;
+              break;
+            case 'lifetime_solved_aptitude':
+              shouldUnlock = totalAptitude >= threshold;
+              break;
+            case 'lifetime_solved_coding':
+              shouldUnlock = totalCoding >= threshold;
+              break;
+            case 'daily_solved_count':
+              shouldUnlock = progress.bestDailySolvedCount >= threshold;
+              break;
+            case 'daily_streak':
+              shouldUnlock = progress.dailyStreak >= threshold;
+              break;
+            case 'perfect_score_count':
+              shouldUnlock = (progress.perfectScoreCount || 0) >= threshold;
+              break;
+            case 'combo_day':
+              // Check if there is any day in dailySolved where both aptitude and coding are >= 1
+              const hasCombo = progress.dailySolved.some(day => day.aptitude >= 1 && day.coding >= 1);
+              shouldUnlock = hasCombo && (threshold <= 1); // Simple threshold check for now
+              break;
+            case 'subject_mastery_count':
+              // Implementation specific to subject mastery
+              break;
+          }
+        } else {
+          // Legacy hardcoded fallback just in case old badges exist without valid criteria
+          if (badge.key === 'first_solve' && (progress.questionsSolved.aptitude.total + progress.questionsSolved.coding.total) >= 1) {
+            shouldUnlock = true;
+          } else if (badge.key === 'streak_3' && progress.dailyStreak >= 3) {
+            shouldUnlock = true;
+          } else if (badge.key === 'streak_7' && progress.dailyStreak >= 7) {
+            shouldUnlock = true;
+          } else if (badge.key === 'quant_10' && progress.questionsSolved.aptitude.total >= 10) {
+            shouldUnlock = true;
+          } else if (badge.key === 'code_wizard' && progress.questionsSolved.coding.total >= 10) {
+            shouldUnlock = true;
+          }
         }
 
         if (shouldUnlock) {

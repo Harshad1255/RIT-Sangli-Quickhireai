@@ -43,8 +43,18 @@ const progressSchema = new mongoose.Schema({
   }],
   heatmap: [{
     date: { type: String }, // 'YYYY-MM-DD'
-    count: { type: Number, default: 0 }
+    count: { type: Number, default: 0 },
+    aptitudeCount: { type: Number, default: 0 },
+    codingCount: { type: Number, default: 0 },
+    total: { type: Number, default: 0 }
   }],
+  dailySolved: [{ 
+    date: String, 
+    aptitude: { type: Number, default: 0 }, 
+    coding: { type: Number, default: 0 } 
+  }],
+  bestDailySolvedCount: { type: Number, default: 0 },
+  perfectScoreCount: { type: Number, default: 0 },
   averageTimeSeconds: {
     type: Number,
     default: 0,

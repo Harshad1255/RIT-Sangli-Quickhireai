@@ -5,6 +5,7 @@ const testResultSchema = new mongoose.Schema({
   input: { type: String },
   expectedOutput: { type: String },
   actualOutput: { type: String },
+  stderr: { type: String, default: '' },
   passed: { type: Boolean, default: false },
   runtime: { type: Number, default: 0 },
   memory: { type: Number, default: 0 },
@@ -22,7 +23,7 @@ const codingSubmissionSchema = new mongoose.Schema({
   sourceCode: { type: String },
   verdict: { 
     type: String, 
-    enum: ['Accepted', 'Wrong Answer', 'Time Limit Exceeded', 'Runtime Error', 'Compilation Error', 'Pending'], 
+    enum: ['Accepted', 'Wrong Answer', 'Time Limit Exceeded', 'Runtime Error', 'Compilation Error', 'Execution Service Error', 'Validation Error', 'Pending'],
     default: 'Wrong Answer' 
   },
   testResults: [testResultSchema],
@@ -33,11 +34,34 @@ const codingSubmissionSchema = new mongoose.Schema({
   runtime: { type: Number, default: 0 },
   runtimeMs: { type: Number, default: 0 },
   memory: { type: Number, default: 0 },
+  score: { type: Number, default: 0 },
   executionLogs: { type: String, default: '' },
   xpEarned: { type: Number, default: 0 },
   isRun: { type: Boolean, default: false },
   isRunOnly: { type: Boolean, default: false },
-  submittedAt: { type: Date, default: Date.now }
+  submittedAt: { type: Date, default: Date.now },
+  
+  // Security and Exam Mode tracking
+  sessionId: { type: String },
+  fullscreenExitCount: { type: Number, default: 0 },
+  tabSwitchCount: { type: Number, default: 0 },
+  copyAttemptCount: { type: Number, default: 0 },
+  pasteAttemptCount: { type: Number, default: 0 },
+  cutAttemptCount: { type: Number, default: 0 },
+  violationEvents: [{
+    type: { type: String }, 
+    message: { type: String },
+    severity: { type: String, enum: ['info', 'warning', 'critical'], default: 'warning' },
+    timestamp: { type: Date, default: Date.now },
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} }
+  }],
+  lastActivityAt: { type: Date },
+  submissionStatus: { type: String, enum: ['in_progress', 'submitted', 'auto_submitted', 'terminated_violation'], default: 'submitted' },
+  securitySummary: {
+    totalViolations: { type: Number, default: 0 },
+    highestSeverity: { type: String, enum: ['info', 'warning', 'critical'], default: 'info' },
+    lastViolationAt: { type: Date }
+  }
 }, { timestamps: true });
 
 codingSubmissionSchema.pre('save', function(next) {

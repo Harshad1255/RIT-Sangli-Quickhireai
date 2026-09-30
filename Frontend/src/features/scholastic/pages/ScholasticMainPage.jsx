@@ -9,6 +9,8 @@ import ProgressPage from '../components/ProgressPage';
 import BookmarksPage from '../components/BookmarksPage';
 import MockTestsPage from '../components/MockTestsPage';
 import ProfilePage from '../components/ProfilePage';
+import PracticeSetRunner from '../components/PracticeSetRunner';
+import PracticeSetResult from '../components/PracticeSetResult';
 
 const ScholasticMainPage = () => {
   const location = useLocation();
@@ -17,6 +19,8 @@ const ScholasticMainPage = () => {
   const path = location.pathname;
 
   const getActiveTab = () => {
+    if (path.includes('/practice-sets/result')) return 'practice-set-result';
+    if (path.includes('/practice-sets/')) return 'practice-set-runner'; // Includes ID
     if (path.includes('/aptitude')) return 'aptitude';
     if (path.includes('/coding')) return 'coding';
     if (path.includes('/contests')) return 'contests';
@@ -115,6 +119,8 @@ const ScholasticMainPage = () => {
       <div>
         {activeTab === 'dashboard' && <ScholasticDashboard setActiveSection={handleSectionSwitch} />}
         {activeTab === 'aptitude' && <AptitudePractice />}
+        {activeTab === 'practice-set-runner' && <PracticeSetRunner />}
+        {activeTab === 'practice-set-result' && <PracticeSetResult />}
         {activeTab === 'coding' && <CodingPractice />}
         {activeTab === 'contests' && <ContestsPage />}
         {activeTab === 'leaderboard' && <LeaderboardPage />}

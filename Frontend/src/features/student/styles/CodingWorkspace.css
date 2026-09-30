@@ -43,6 +43,10 @@
   flex-direction: column;
   overflow-y: auto;
   max-height: calc(100vh - 100px);
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 .workspace-right {

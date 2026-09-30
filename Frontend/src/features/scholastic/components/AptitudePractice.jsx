@@ -10,7 +10,9 @@ const AptitudePractice = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Active question modal state
+  const [activeTab, setActiveTab] = useState('questions'); // 'questions' or 'sets'
+  const [practiceSets, setPracticeSets] = useState([]);
+  const [loadingSets, setLoadingSets] = useState(false);
   const [activeQuestion, setActiveQuestion] = useState(null);
   const [selectedOption, setSelectedOption] = useState(null);
   const [submitted, setSubmitted] = useState(false);
@@ -18,8 +20,26 @@ const AptitudePractice = () => {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetchQuestions();
-  }, [selectedCategory, selectedDifficulty]);
+    if (activeTab === 'questions') {
+      fetchQuestions();
+    } else {
+      fetchPracticeSets();
+    }
+  }, [activeTab, selectedCategory, selectedDifficulty]);
+
+  const fetchPracticeSets = async () => {
+    setLoadingSets(true);
+    try {
+      const res = await scholasticApi.getPracticeSets();
+      if (res.data?.success) {
+        setPracticeSets(res.data.practiceSets || []);
+      }
+    } catch (err) {
+      console.error('Error fetching practice sets', err);
+    } finally {
+      setLoadingSets(false);
+    }
+  };
 
   const fetchQuestions = async () => {
     setLoading(true);
@@ -42,7 +62,7 @@ const AptitudePractice = () => {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    fetchQuestions();
+    if (activeTab === 'questions') fetchQuestions();
   };
 
   const openQuestionModal = (q) => {
@@ -78,88 +98,165 @@ const AptitudePractice = () => {
   };
 
   return (
-    <div className="aptitude-practice">
-      <div className="aptitude-header">
+    <div className="aptitude-practice premium-shell">
+      <div className="aptitude-header premium-header">
         <div>
-          <h2>Aptitude Practice Bank</h2>
-          <p>Solve curated quantitative, reasoning, and verbal aptitude questions with instant detailed explanations.</p>
+          <h2>Aptitude Practice Hub</h2>
+          <p>Solve curated questions or attempt company-published practice sets.</p>
+        </div>
+        <div className="header-badge">Live Prep</div>
+      </div>
+
+      <div className="stats-strip">
+        <div className="stat-card">
+          <span>Questions</span>
+          <strong>{questions.length}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Difficulty</span>
+          <strong>{selectedDifficulty}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Practice Sets</span>
+          <strong>{practiceSets.length}</strong>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="filter-bar">
-        <div className="category-chips">
-          {categories.map((cat, idx) => (
-            <button
-              key={idx}
-              className={`cat-chip ${selectedCategory === cat ? 'active' : ''}`}
-              onClick={() => setSelectedCategory(cat)}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <select
-            value={selectedDifficulty}
-            onChange={(e) => setSelectedDifficulty(e.target.value)}
-            style={{ padding: '0.5rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc', fontWeight: 600 }}
-          >
-            <option value="All">All Difficulties</option>
-            <option value="Easy">Easy</option>
-            <option value="Medium">Medium</option>
-            <option value="Hard">Hard</option>
-          </select>
-
-          <form onSubmit={handleSearchSubmit} className="search-box">
-            <i className="fas fa-search" style={{ color: '#94a3b8' }}></i>
-            <input
-              type="text"
-              placeholder="Search topics, questions..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </form>
-        </div>
+      <div style={{ display: 'flex', gap: '20px', borderBottom: '1px solid #e2e8f0', marginBottom: '24px' }}>
+        <button 
+          onClick={() => setActiveTab('questions')} 
+          style={{ padding: '10px 0', border: 'none', background: 'transparent', borderBottom: activeTab === 'questions' ? '3px solid #2563eb' : '3px solid transparent', color: activeTab === 'questions' ? '#2563eb' : '#64748b', fontWeight: 600, fontSize: '1rem', cursor: 'pointer' }}
+        >
+          Individual Questions
+        </button>
+        <button 
+          onClick={() => setActiveTab('sets')} 
+          style={{ padding: '10px 0', border: 'none', background: 'transparent', borderBottom: activeTab === 'sets' ? '3px solid #2563eb' : '3px solid transparent', color: activeTab === 'sets' ? '#2563eb' : '#64748b', fontWeight: 600, fontSize: '1rem', cursor: 'pointer' }}
+        >
+          Company Practice Sets
+        </button>
       </div>
 
-      {/* Questions Grid */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '4rem 0', color: '#64748b' }}>
-          <i className="fas fa-spinner fa-spin fa-2x"></i>
-          <p style={{ marginTop: '1rem' }}>Loading questions...</p>
-        </div>
-      ) : questions.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '4rem 0', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          <i className="fas fa-search fa-2x" style={{ color: '#cbd5e1' }}></i>
-          <p style={{ marginTop: '1rem', color: '#64748b' }}>No questions found for the selected filters.</p>
-        </div>
-      ) : (
-        <div className="questions-grid">
-          {questions.map((q) => (
-            <div
-              key={q._id}
-              className="apt-question-card"
-              onClick={() => openQuestionModal(q)}
+      {/* Filter Bar (Only show for questions for now to simplify) */}
+      {activeTab === 'questions' && (
+        <div className="filter-bar">
+          <div className="category-chips">
+            {categories.map((cat, idx) => (
+              <button
+                key={idx}
+                className={`cat-chip ${selectedCategory === cat ? 'active' : ''}`}
+                onClick={() => setSelectedCategory(cat)}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <select
+              value={selectedDifficulty}
+              onChange={(e) => setSelectedDifficulty(e.target.value)}
+              style={{ padding: '0.5rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc', fontWeight: 600 }}
             >
-              <div>
-                <div className="card-top">
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#3b82f6' }}>{q.category}</span>
-                  <span className={`diff-badge ${q.difficulty}`}>{q.difficulty}</span>
+              <option value="All">All Difficulties</option>
+              <option value="Easy">Easy</option>
+              <option value="Medium">Medium</option>
+              <option value="Hard">Hard</option>
+            </select>
+
+            <form onSubmit={handleSearchSubmit} className="search-box">
+              <i className="fas fa-search" style={{ color: '#94a3b8' }}></i>
+              <input
+                type="text"
+                placeholder="Search topics, questions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Questions or Sets Grid */}
+      {activeTab === 'questions' ? (
+        loading ? (
+          <div style={{ textAlign: 'center', padding: '4rem 0', color: '#64748b' }}>
+            <i className="fas fa-spinner fa-spin fa-2x"></i>
+            <p style={{ marginTop: '1rem' }}>Loading questions...</p>
+          </div>
+        ) : questions.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '4rem 0', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+            <i className="fas fa-search fa-2x" style={{ color: '#cbd5e1' }}></i>
+            <p style={{ marginTop: '1rem', color: '#64748b' }}>No questions found for the selected filters.</p>
+          </div>
+        ) : (
+          <div className="questions-grid">
+            {questions.map((q) => (
+              <div
+                key={q._id}
+                className="apt-question-card"
+                onClick={() => openQuestionModal(q)}
+              >
+                <div>
+                  <div className="card-top">
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#3b82f6' }}>{q.category}</span>
+                    <span className={`diff-badge ${q.difficulty}`}>{q.difficulty}</span>
+                  </div>
+                  <h4>{q.title}</h4>
+                  <p style={{ fontSize: '0.9rem', color: '#475569', margin: '0.5rem 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {q.questionText}
+                  </p>
                 </div>
-                <h4>{q.title}</h4>
-                <p style={{ fontSize: '0.9rem', color: '#475569', margin: '0.5rem 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {q.questionText}
-                </p>
+                <div className="card-meta">
+                  <span><i className="fas fa-check-circle" style={{ marginRight: '4px', color: '#10b981' }}></i> {q.accuracy || 75}% Accuracy</span>
+                  <span><i className="fas fa-users" style={{ marginRight: '4px' }}></i> {q.totalAttempts || 0} Attempts</span>
+                </div>
               </div>
-              <div className="card-meta">
-                <span><i className="fas fa-check-circle" style={{ marginRight: '4px', color: '#10b981' }}></i> {q.accuracy || 75}% Accuracy</span>
-                <span><i className="fas fa-users" style={{ marginRight: '4px' }}></i> {q.totalAttempts || 0} Attempts</span>
+            ))}
+          </div>
+        )
+      ) : (
+        /* PRACTICE SETS GRID */
+        loadingSets ? (
+          <div style={{ textAlign: 'center', padding: '4rem 0', color: '#64748b' }}>
+            <i className="fas fa-spinner fa-spin fa-2x"></i>
+            <p style={{ marginTop: '1rem' }}>Loading Practice Sets...</p>
+          </div>
+        ) : practiceSets.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '4rem 0', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+            <i className="fas fa-layer-group fa-2x" style={{ color: '#cbd5e1' }}></i>
+            <p style={{ marginTop: '1rem', color: '#64748b' }}>No company practice sets published yet.</p>
+          </div>
+        ) : (
+          <div className="questions-grid">
+            {practiceSets.map(set => (
+              <div
+                key={set._id}
+                className="apt-question-card"
+                style={{ cursor: 'pointer', border: '2px solid transparent' }}
+                onClick={() => window.location.href = `/dashboard/scholastic/practice-sets/${set._id}`}
+              >
+                <div>
+                  <div className="card-top">
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#3b82f6' }}>{set.category}</span>
+                    <span className={`diff-badge ${set.difficulty}`}>{set.difficulty}</span>
+                  </div>
+                  <h4>{set.title}</h4>
+                  <p style={{ fontSize: '0.9rem', color: '#475569', margin: '0.5rem 0' }}>
+                    {set.description || 'Practice your skills with this company-curated set.'}
+                  </p>
+                  <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0, fontWeight: 500 }}>
+                    By {set.companyId?.companyName || set.companyId?.name || 'QuickHire Partner'}
+                  </p>
+                </div>
+                <div className="card-meta">
+                  <span><i className="fas fa-list-ul" style={{ marginRight: '4px' }}></i> {set.questions?.length || 0} Questions</span>
+                  <span><i className="fas fa-clock" style={{ marginRight: '4px' }}></i> {set.timeLimitMinutes > 0 ? `${set.timeLimitMinutes} min` : 'No Limit'}</span>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )
       )}
 
       {/* Question Solving Modal */}

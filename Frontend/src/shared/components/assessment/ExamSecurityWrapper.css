@@ -1,0 +1,142 @@
+.exam-security-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+  padding: 24px;
+}
+
+.exam-security-card {
+  width: min(760px, 100%);
+  background: rgba(255,255,255,0.95);
+  border: 1px solid #e2e8f0;
+  border-radius: 24px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+  padding: 40px 32px;
+  text-align: center;
+}
+
+.exam-security-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+}
+
+.exam-security-card h2 {
+  margin: 0 0 10px;
+  color: #0f172a;
+  font-size: clamp(2rem, 3vw, 2.75rem);
+}
+
+.exam-security-card p {
+  color: #475569;
+  line-height: 1.7;
+  margin: 0 auto 18px;
+  max-width: 620px;
+}
+
+.exam-security-message {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  font-weight: 600;
+}
+
+.exam-security-message.error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.exam-security-button {
+  appearance: none;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2563eb, #14b8a6);
+  color: white;
+  font-weight: 700;
+  padding: 14px 28px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.exam-security-button:hover {
+  transform: translateY(-1px);
+}
+
+.exam-security-shell {
+  position: relative;
+}
+
+.exam-fullscreen-indicator {
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15,23,42,0.8);
+  color: white;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+}
+
+.exam-fullscreen-indicator .online,
+.exam-fullscreen-indicator .offline {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.exam-fullscreen-indicator .online {
+  background: #22c55e;
+}
+
+.exam-fullscreen-indicator .offline {
+  background: #ef4444;
+}
+
+.exam-security-warning {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.42);
+  z-index: 1200;
+}
+
+.exam-security-warning-box {
+  width: min(500px, calc(100vw - 40px));
+  background: #fff;
+  border-radius: 18px;
+  padding: 22px 24px;
+  box-shadow: 0 18px 40px rgba(15,23,42,0.18);
+}
+
+.exam-security-warning-box strong {
+  display: block;
+  color: #b45309;
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+}
+
+.exam-security-warning-box p {
+  color: #334155;
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+
+.exam-security-warning-box button {
+  border: none;
+  border-radius: 10px;
+  background: #f59e0b;
+  color: white;
+  font-weight: 700;
+  padding: 10px 16px;
+  cursor: pointer;
+}

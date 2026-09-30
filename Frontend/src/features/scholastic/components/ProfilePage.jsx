@@ -1,23 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import scholasticApi from '../services/scholasticApi';
 
+const getStoredUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem('user') || 'null');
+  } catch (error) {
+    return null;
+  }
+};
+
 const ProfilePage = () => {
-  const [stats, setStats] = useState({ xp: 350, coins: 120, level: 2 });
+  const storedUser = getStoredUser();
+
+  const [stats, setStats] = useState({ xp: 0, coins: 0, level: 1 });
   const [profile, setProfile] = useState({
-    name: 'Aarav Sharma',
-    email: 'aarav.sharma@university.edu.in',
-    university: 'Indian Institute of Technology / NIT',
-    degree: 'B.Tech Computer Science & Engineering',
-    graduationYear: '2026',
-    targetCompanies: ['Google', 'Microsoft', 'TCS NQT', 'Amazon'],
-    githubUsername: 'aarav-codes',
-    leetcodeUsername: 'aarav_sharma',
-    rating: 1420
+    name: storedUser?.name || 'Student',
+    email: storedUser?.email || '',
+    university: storedUser?.university || '',
+    degree: storedUser?.degree || 'B.Tech',
+    graduationYear: storedUser?.graduationYear || new Date().getFullYear() + 2,
+    targetCompanies: [],
+    githubUsername: '',
+    leetcodeUsername: '',
+    rating: 1200
   });
 
   const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
+    const user = getStoredUser();
+    if (user) {
+      setProfile((prev) => ({
+        ...prev,
+        name: user.name || prev.name,
+        email: user.email || prev.email,
+        university: user.university || prev.university,
+        degree: user.degree || prev.degree,
+        graduationYear: user.graduationYear || prev.graduationYear,
+      }));
+    }
+
     fetchProfile();
   }, []);
 
@@ -25,7 +47,7 @@ const ProfilePage = () => {
     try {
       const res = await scholasticApi.getProgress();
       if (res.data && res.data.success) {
-        setStats(res.data.stats || { xp: 350, coins: 120, level: 2 });
+        setStats(res.data.stats || { xp: 0, coins: 0, level: 1 });
       }
     } catch (err) {
       console.error('Error fetching profile stats:', err);
@@ -35,7 +57,6 @@ const ProfilePage = () => {
   const handleSave = (e) => {
     e.preventDefault();
     setIsEditing(false);
-    // Persisted to UI state
   };
 
   return (
@@ -71,7 +92,6 @@ const ProfilePage = () => {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
-        {/* Left Column: Avatar & Quick Stats */}
         <div style={{
           background: '#ffffff',
           border: '1px solid #e2e8f0',
@@ -95,14 +115,14 @@ const ProfilePage = () => {
             margin: '0 auto 1.25rem auto',
             boxShadow: '0 8px 20px -4px rgba(59, 130, 246, 0.4)'
           }}>
-            {profile.name[0].toUpperCase()}
+            {(profile.name || 'S').charAt(0).toUpperCase()}
           </div>
 
           <h3 style={{ fontSize: '1.35rem', fontWeight: 800, margin: '0 0 0.25rem 0', color: '#0f172a' }}>
             {profile.name}
           </h3>
           <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0 0 1rem 0' }}>
-            {profile.university}
+            {profile.university || 'University profile pending'}
           </p>
 
           <div style={{ display: 'inline-block', background: '#eff6ff', color: '#2563eb', padding: '0.35rem 0.85rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 700, marginBottom: '1.5rem' }}>
@@ -126,7 +146,6 @@ const ProfilePage = () => {
           </div>
         </div>
 
-        {/* Right Column: Detailed Info / Form */}
         <div style={{
           background: '#ffffff',
           border: '1px solid #e2e8f0',
@@ -212,7 +231,7 @@ const ProfilePage = () => {
                   type="text"
                   value={profile.targetCompanies.join(', ')}
                   disabled={!isEditing}
-                  onChange={(e) => setProfile({ ...profile, targetCompanies: e.target.value.split(',').map(s => s.trim()) })}
+                  onChange={(e) => setProfile({ ...profile, targetCompanies: e.target.value.split(',').map((s) => s.trim()) })}
                   style={{ width: '100%', padding: '0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0', background: isEditing ? '#ffffff' : '#f8fafc', color: '#0f172a' }}
                 />
               </div>
@@ -223,12 +242,16 @@ const ProfilePage = () => {
                 Your Target Placement Badges:
               </label>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                {profile.targetCompanies.map((comp, idx) => (
-                  <span key={idx} style={{ background: '#f1f5f9', color: '#334155', padding: '0.4rem 0.85rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
-                    <i className="fas fa-building" style={{ marginRight: '6px', color: '#3b82f6' }}></i>
-                    {comp}
-                  </span>
-                ))}
+                {profile.targetCompanies.length > 0 ? (
+                  profile.targetCompanies.map((comp, idx) => (
+                    <span key={idx} style={{ background: '#f1f5f9', color: '#334155', padding: '0.4rem 0.85rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
+                      <i className="fas fa-building" style={{ marginRight: '6px', color: '#3b82f6' }}></i>
+                      {comp}
+                    </span>
+                  ))
+                ) : (
+                  <span style={{ color: '#64748b' }}>Add target companies to track your shortlist.</span>
+                )}
               </div>
             </div>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../../../shared/services/api';
 import CompanySidebar from './CompanySidebar';
 import '../styles/CompanyCodingProblems.css';
@@ -18,8 +18,10 @@ const CompanyCodingProblems = () => {
   // Form State for Create/Edit
   const [formData, setFormData] = useState({
     title: '',
+    entryFunction: 'solve',
     difficulty: 'Medium',
-    category: 'Algorithms',
+    category: 'Arrays & Hashing',
+    tags: '',
     statementMarkdown: '',
     description: '',
     constraints: [''],
@@ -34,6 +36,9 @@ const CompanyCodingProblems = () => {
       }
     ]
   });
+  const [codingTopics, setCodingTopics] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const saveInProgress = useRef(false);
 
   const fetchProblems = async () => {
     try {
@@ -52,6 +57,9 @@ const CompanyCodingProblems = () => {
 
   useEffect(() => {
     fetchProblems();
+    api.get('/coding/problems/topics')
+      .then(res => setCodingTopics(res.data?.data || []))
+      .catch(err => console.error('Error fetching coding topics:', err));
   }, []);
 
   const handleOpenCreateModal = (prob = null) => {
@@ -59,8 +67,10 @@ const CompanyCodingProblems = () => {
       setSelectedProblem(prob);
       setFormData({
         title: prob.title || '',
+        entryFunction: prob.entryFunction || 'solve',
         difficulty: prob.difficulty || 'Medium',
         category: prob.category || 'Algorithms',
+        tags: Array.isArray(prob.tags) ? prob.tags.join(', ') : '',
         statementMarkdown: prob.statementMarkdown || prob.description || '',
         description: prob.description || prob.statementMarkdown || '',
         constraints: prob.constraints && prob.constraints.length > 0 ? prob.constraints : [''],
@@ -79,8 +89,10 @@ const CompanyCodingProblems = () => {
       setSelectedProblem(null);
       setFormData({
         title: '',
+        entryFunction: 'solve',
         difficulty: 'Medium',
-        category: 'Algorithms',
+        category: 'Arrays & Hashing',
+        tags: '',
         statementMarkdown: '',
         description: '',
         constraints: [''],
@@ -100,10 +112,16 @@ const CompanyCodingProblems = () => {
   };
 
   const submitProblemData = async (dataToSave) => {
+    if (saveInProgress.current) return;
+    saveInProgress.current = true;
+    setSaving(true);
     try {
       const payload = {
         ...dataToSave,
-        description: dataToSave.statementMarkdown || dataToSave.description
+        description: dataToSave.statementMarkdown || dataToSave.description,
+        tags: Array.isArray(dataToSave.tags)
+          ? dataToSave.tags
+          : String(dataToSave.tags || '').split(',').map(tag => tag.trim()).filter(Boolean)
       };
       if (selectedProblem) {
         await api.put(`/coding/problems/${selectedProblem._id}`, payload);
@@ -114,7 +132,21 @@ const CompanyCodingProblems = () => {
       setShowAIGenerateModal(false);
       fetchProblems();
     } catch (err) {
-      alert(err.message || 'Error saving coding problem');
+      alert(err.response?.data?.error || err.message || 'Error saving coding problem');
+    } finally {
+      saveInProgress.current = false;
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteProblem = async (problemId) => {
+    if (!window.confirm("Are you sure you want to delete this coding problem? This will also remove it from any existing tests.")) return;
+    try {
+      await api.delete(`/coding/problems/${problemId}`);
+      fetchProblems();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.error || err.message || 'Error deleting coding problem');
     }
   };
 
@@ -169,6 +201,7 @@ const CompanyCodingProblems = () => {
           title: parsed.title || formData.title,
           difficulty: parsed.difficulty || formData.difficulty,
           category: parsed.category || formData.category,
+          tags: Array.isArray(parsed.tags) ? parsed.tags.join(', ') : formData.tags,
           statementMarkdown: parsed.statementMarkdown || parsed.description || formData.statementMarkdown,
           constraints: parsed.constraints || formData.constraints,
           testCases: Array.isArray(parsed.testCases) ? [...formData.testCases, ...parsed.testCases] : formData.testCases
@@ -239,6 +272,9 @@ const CompanyCodingProblems = () => {
                   <button className="btn-secondary" onClick={() => handleOpenStatsModal(prob)}>
                     <i className="fas fa-chart-line"></i> Stats & Submissions
                   </button>
+                  <button className="btn-secondary" style={{ color: '#ef4444', borderColor: '#ef4444' }} onClick={() => handleDeleteProblem(prob._id)}>
+                    <i className="fas fa-trash"></i> Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -275,12 +311,27 @@ const CompanyCodingProblems = () => {
                   </div>
                   <div className="form-group" style={{ flex: 1 }}>
                     <label>Category</label>
-                    <input
-                      type="text"
+                    <select
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    />
+                    >
+                      {!codingTopics.includes(formData.category) && formData.category && (
+                        <option value={formData.category}>{formData.category} (legacy)</option>
+                      )}
+                      {codingTopics.filter(topic => topic !== 'All').map(topic => (
+                        <option key={topic} value={topic}>{topic}</option>
+                      ))}
+                    </select>
                   </div>
+                </div>
+                <div className="form-group">
+                  <label>Tags</label>
+                  <input
+                    type="text"
+                    value={formData.tags}
+                    onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                    placeholder="e.g. BFS, DFS, shortest path"
+                  />
                 </div>
                 <div className="form-group">
                   <label>Problem Statement (Markdown Supported)</label>
@@ -291,6 +342,17 @@ const CompanyCodingProblems = () => {
                     onChange={(e) => setFormData({ ...formData, statementMarkdown: e.target.value })}
                     placeholder="Describe problem, input/output formats, and explanations..."
                   />
+                </div>
+
+                <div className="form-group">
+                  <label>Entry Function (JavaScript / Python)</label>
+                  <input
+                    type="text"
+                    value={formData.entryFunction}
+                    onChange={(e) => setFormData({ ...formData, entryFunction: e.target.value })}
+                    placeholder="solve"
+                  />
+                  <small>Function inputs are JSON values separated by spaces, for example [2,7,11,15] 9. Return values are compared as JSON. Other languages use stdin/stdout directly.</small>
                 </div>
 
                 <h4>Test Cases ({formData.testCases.length})</h4>
@@ -365,8 +427,8 @@ const CompanyCodingProblems = () => {
                   <button type="button" className="btn-secondary" onClick={() => setShowCreateModal(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn-primary">
-                    Save Problem
+                  <button type="submit" className="btn-primary" disabled={saving}>
+                    {saving ? 'Saving...' : 'Save Problem'}
                   </button>
                 </div>
               </form>
@@ -384,10 +446,16 @@ const CompanyCodingProblems = () => {
                 ...formData,
                 title: generated.title || '',
                 difficulty: generated.difficulty || 'Medium',
-                category: generated.tags ? generated.tags.join(', ') : 'Algorithms',
+                category: generated.category || generated.tags?.[0] || formData.category,
+                tags: generated.tags || [],
                 statementMarkdown: generated.statementMarkdown || '',
                 constraints: generated.constraints ? [generated.constraints] : [''],
-                testCases: [...(generated.sampleTestCases || []), ...(generated.hiddenTestCases || [])],
+                testCases: (generated.sampleTestCases || generated.hiddenTestCases)
+                  ? [
+                      ...(generated.sampleTestCases || []).map(tc => ({ ...tc, isSample: true, isHidden: false })),
+                      ...(generated.hiddenTestCases || []).map(tc => ({ ...tc, isSample: false, isHidden: true }))
+                    ]
+                  : (generated.testCases || []),
                 starterCode: generated.starterCode || { javascript: '' },
                 referenceSolution: generated.referenceSolution || { javascript: '' }
               };

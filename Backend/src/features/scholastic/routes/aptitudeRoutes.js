@@ -23,6 +23,13 @@ router.get('/categories', aptitudeController.getCategories);
 router.get('/questions', aptitudeController.getQuestions);
 router.get('/questions/random', aptitudeController.getRandomQuestion);
 router.get('/questions/:id', aptitudeController.getQuestionById);
-router.post('/submit', optionalAuth, aptitudeController.submitAnswer);
+router.post('/submit', auth, aptitudeController.submitAnswer);
+
+router.get('/practice-sets', aptitudeController.getPracticeSets);
+router.get('/practice-sets/:id', aptitudeController.getPracticeSetById);
+router.post('/practice-sets/:id/start', auth, aptitudeController.startPracticeSet);
+router.post('/attempts/:attemptId/answers', auth, aptitudeController.savePracticeSetAnswer);
+router.post('/attempts/:attemptId/submit', auth, aptitudeController.submitPracticeSet);
+router.get('/attempts/:attemptId/result', auth, aptitudeController.getPracticeSetResult);
 
 module.exports = router;

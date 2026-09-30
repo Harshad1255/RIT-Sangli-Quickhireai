@@ -1,11 +1,22 @@
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { api } from '../../../shared/services/api';
+import { getApiBaseUrl } from '../../../config/api';
 import CompanySidebar from './CompanySidebar';
 import '../styles/CompanyAptitudeTests.css';
 import AIGenerationPanel from '../../shared/components/AIGenerationPanel';
 
+const formatDateTimeLocal = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+};
+
 const CompanyAptitudeTests = () => {
   const [tests, setTests] = useState([]);
+  const [availableCodingProblems, setAvailableCodingProblems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -14,25 +25,36 @@ const CompanyAptitudeTests = () => {
   const [showAIGenerateModal, setShowAIGenerateModal] = useState(false);
   const [selectedTest, setSelectedTest] = useState(null);
   const [testResults, setTestResults] = useState(null);
+  const [expandedAttemptId, setExpandedAttemptId] = useState(null);
+  const [snapshotImages, setSnapshotImages] = useState({});
 
-  // Form State for Create/Edit
+  const defaultQuestion = {
+    sectionName: 'General',
+    text: '',
+    options: [
+      { originalIndex: 0, text: '' },
+      { originalIndex: 1, text: '' },
+      { originalIndex: 2, text: '' },
+      { originalIndex: 3, text: '' }
+    ],
+    correctAnswer: 0,
+    marks: 1,
+    negativeMarks: 0.25,
+    difficulty: 'Medium'
+  };
+
   const [formData, setFormData] = useState({
     title: '',
     totalTimeMinutes: 60,
+    maxViolationCount: 3,
     passThreshold: 60,
     showAnswersAfterSubmit: true,
     sections: [{ name: 'General', timeLimitMinutes: 0 }],
-    questions: [
-      {
-        sectionName: 'General',
-        text: '',
-        options: ['', '', '', ''],
-        correctIndex: 0,
-        marks: 1,
-        negativeMarks: 0.25,
-        difficulty: 'Medium'
-      }
-    ]
+    questions: [ JSON.parse(JSON.stringify(defaultQuestion)) ],
+    codingProblems: [],
+    isPublished: true,
+    schedulingMode: 'always_open',
+    slots: []
   });
 
   // Assign Form State
@@ -46,9 +68,13 @@ const CompanyAptitudeTests = () => {
       if (res.data && res.data.success) {
         setTests(res.data.data);
       }
+      const codeRes = await api.get('/coding/problems/company');
+      if (codeRes.data && codeRes.data.success) {
+        setAvailableCodingProblems(codeRes.data.data);
+      }
     } catch (err) {
       console.error('Error fetching tests:', err);
-      setError(err.message || 'Failed to fetch aptitude tests');
+      setError(err.message || 'Failed to fetch tests');
     } finally {
       setLoading(false);
     }
@@ -58,46 +84,48 @@ const CompanyAptitudeTests = () => {
     fetchTests();
   }, []);
 
+  useEffect(() => {
+    if (!showResultsModal) {
+      Object.values(snapshotImages).forEach(imageUrl => URL.revokeObjectURL(imageUrl));
+      setSnapshotImages({});
+      setExpandedAttemptId(null);
+    }
+  }, [showResultsModal]);
+
   const handleOpenCreateModal = (test = null) => {
     if (test) {
       setSelectedTest(test);
       setFormData({
         title: test.title || '',
         totalTimeMinutes: test.totalTimeMinutes || 60,
+        maxViolationCount: test.maxViolationCount || 3,
         passThreshold: test.passThreshold || 60,
         showAnswersAfterSubmit: test.showAnswersAfterSubmit !== undefined ? test.showAnswersAfterSubmit : true,
         sections: test.sections && test.sections.length > 0 ? test.sections : [{ name: 'General', timeLimitMinutes: 0 }],
-        questions: test.questions && test.questions.length > 0 ? test.questions : [
-          {
-            sectionName: 'General',
-            text: '',
-            options: ['', '', '', ''],
-            correctIndex: 0,
-            marks: 1,
-            negativeMarks: 0.25,
-            difficulty: 'Medium'
-          }
-        ]
+        questions: test.questions && test.questions.length > 0 ? test.questions : [ JSON.parse(JSON.stringify(defaultQuestion)) ],
+        codingProblems: test.codingProblems ? test.codingProblems.map(cp => cp._id || cp) : [],
+        isPublished: test.isPublished !== undefined ? test.isPublished : true,
+        schedulingMode: test.schedulingMode || 'always_open',
+        slots: test.slots ? test.slots.map(s => ({
+          ...s,
+          startTime: formatDateTimeLocal(s.startTime),
+          endTime: formatDateTimeLocal(s.endTime)
+        })) : []
       });
     } else {
       setSelectedTest(null);
       setFormData({
         title: '',
         totalTimeMinutes: 60,
+        maxViolationCount: 3,
         passThreshold: 60,
         showAnswersAfterSubmit: true,
         sections: [{ name: 'General', timeLimitMinutes: 0 }],
-        questions: [
-          {
-            sectionName: 'General',
-            text: '',
-            options: ['', '', '', ''],
-            correctIndex: 0,
-            marks: 1,
-            negativeMarks: 0.25,
-            difficulty: 'Medium'
-          }
-        ]
+        questions: [ JSON.parse(JSON.stringify(defaultQuestion)) ],
+        codingProblems: [],
+        isPublished: true,
+        schedulingMode: 'always_open',
+        slots: []
       });
     }
     setShowCreateModal(true);
@@ -110,15 +138,30 @@ const CompanyAptitudeTests = () => {
     setIsSaving(true);
     setSaveError('');
     try {
+      const normalizedData = {
+        ...dataToSave,
+        slots: (dataToSave.slots || []).map(slot => ({
+          ...slot,
+          startTime: slot.startTime ? new Date(slot.startTime).toISOString() : slot.startTime,
+          endTime: slot.endTime ? new Date(slot.endTime).toISOString() : slot.endTime
+        }))
+      };
+      let res;
       if (selectedTest) {
-        await api.put(`/aptitude/${selectedTest._id}`, dataToSave);
+        res = await api.put(`/aptitude/${selectedTest._id}`, normalizedData);
       } else {
-        await api.post('/aptitude', dataToSave);
+        res = await api.post('/aptitude', normalizedData);
       }
       setShowCreateModal(false);
       setShowAIGenerateModal(false);
       fetchTests();
-      alert('Test published successfully!');
+      
+      const code = res.data?.data?.entranceCode;
+      if (code) {
+        alert(`Test published successfully!\n\n🔑 Candidate Entrance Code: ${code}\n\n(This code is also visible on your dashboard)`);
+      } else {
+        alert('Test published successfully!');
+      }
     } catch (err) {
       setSaveError(err.response?.data?.error || err.message || 'Error saving aptitude test');
     } finally {
@@ -131,20 +174,34 @@ const CompanyAptitudeTests = () => {
     await submitTestData(formData);
   };
 
+  const handleAddSlot = () => {
+    setFormData({
+      ...formData,
+      slots: [
+        ...formData.slots,
+        { label: `Slot ${formData.slots.length + 1}`, startTime: '', endTime: '', capacity: '' }
+      ]
+    });
+  };
+
+  const handleRemoveSlot = (idx) => {
+    const updated = [...formData.slots];
+    updated.splice(idx, 1);
+    setFormData({ ...formData, slots: updated });
+  };
+
+  const handleSlotChange = (idx, field, value) => {
+    const updated = [...formData.slots];
+    updated[idx][field] = value;
+    setFormData({ ...formData, slots: updated });
+  };
+
   const handleAddQuestion = () => {
     setFormData({
       ...formData,
       questions: [
         ...formData.questions,
-        {
-          sectionName: formData.sections[0]?.name || 'General',
-          text: '',
-          options: ['', '', '', ''],
-          correctIndex: 0,
-          marks: 1,
-          negativeMarks: 0.25,
-          difficulty: 'Medium'
-        }
+        JSON.parse(JSON.stringify(defaultQuestion))
       ]
     });
   };
@@ -157,7 +214,7 @@ const CompanyAptitudeTests = () => {
 
   const handleOptionChange = (qIdx, optIdx, val) => {
     const updated = [...formData.questions];
-    updated[qIdx].options[optIdx] = val;
+    updated[qIdx].options[optIdx].text = val;
     setFormData({ ...formData, questions: updated });
   };
 
@@ -178,8 +235,15 @@ const CompanyAptitudeTests = () => {
           const formattedQuestions = parsed.map(q => ({
             sectionName: q.sectionName || 'General',
             text: q.text || '',
-            options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['', '', '', ''],
-            correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+            options: Array.isArray(q.options) && q.options.length === 4 
+              ? q.options.map((opt, i) => ({ originalIndex: i, text: typeof opt === 'string' ? opt : (opt.text || '') })) 
+              : [
+                  { originalIndex: 0, text: '' },
+                  { originalIndex: 1, text: '' },
+                  { originalIndex: 2, text: '' },
+                  { originalIndex: 3, text: '' }
+                ],
+            correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : (typeof q.correctIndex === 'number' ? q.correctIndex : 0),
             marks: typeof q.marks === 'number' ? q.marks : 1,
             negativeMarks: typeof q.negativeMarks === 'number' ? q.negativeMarks : 0.25,
             difficulty: q.difficulty || 'Medium'
@@ -241,6 +305,35 @@ const CompanyAptitudeTests = () => {
     }
   };
 
+  const handleReviewAttempt = async (candidate) => {
+    if (expandedAttemptId === candidate.attemptId) {
+      setExpandedAttemptId(null);
+      return;
+    }
+    setExpandedAttemptId(candidate.attemptId);
+    const snapshots = (candidate.securityTimeline || []).filter(event => event.snapshotUrl && !snapshotImages[event.id]);
+    const loadedImages = await Promise.all(snapshots.map(async event => {
+      try {
+        const response = await api.get(event.snapshotUrl, { responseType: 'blob' });
+        return [event.id, URL.createObjectURL(response.data)];
+      } catch (loadError) {
+        console.warn('Unable to load a private proctoring snapshot:', loadError.message || loadError);
+        return [event.id, null];
+      }
+    }));
+    setSnapshotImages(previous => ({ ...previous, ...Object.fromEntries(loadedImages.filter(([, imageUrl]) => imageUrl)) }));
+  };
+
+  const handleDeleteTest = async (testId) => {
+    if (!window.confirm("Are you sure you want to delete this test? If this test has already been published and attempted by candidates, it will be archived.")) return;
+    try {
+      await api.delete(`/aptitude/${testId}`);
+      fetchTests();
+    } catch (err) {
+      alert(err.message || "Failed to delete test");
+    }
+  };
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc' }}>
       <CompanySidebar />
@@ -267,10 +360,25 @@ const CompanyAptitudeTests = () => {
                 <div>
                   <div className="test-card-title">{test.title}</div>
                   <div className="test-card-meta">
+                    <span><strong>Status:</strong> {test.isPublished !== false ? 'Published' : 'Draft'}</span>
+                    {test.isPublished !== false && test.entranceCode && (
+                      <span style={{ 
+                        background: '#e0e7ff', 
+                        padding: '2px 8px', 
+                        borderRadius: '4px',
+                        color: '#4338ca',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(test.entranceCode);
+                        alert('Entrance Code copied to clipboard: ' + test.entranceCode);
+                      }}>
+                        <i className="fas fa-key"></i> Code: {test.entranceCode}
+                      </span>
+                    )}
                     <span><strong>Duration:</strong> {test.totalTimeMinutes} mins</span>
-                    <span><strong>Pass Threshold:</strong> {test.passThreshold}%</span>
                     <span><strong>Questions:</strong> {test.questions ? test.questions.length : 0}</span>
-                    <span><strong>Assigned:</strong> {test.assignedCandidates ? test.assignedCandidates.length : 0} candidates</span>
                   </div>
                 </div>
                 <div className="test-card-actions">
@@ -282,6 +390,9 @@ const CompanyAptitudeTests = () => {
                   </button>
                   <button className="btn-secondary" onClick={() => handleOpenResultsModal(test)}>
                     <i className="fas fa-chart-bar"></i> Results
+                  </button>
+                  <button className="btn-secondary" style={{ color: '#ef4444', borderColor: '#ef4444' }} onClick={() => handleDeleteTest(test._id)}>
+                    <i className="fas fa-trash"></i> Delete
                   </button>
                 </div>
               </div>
@@ -324,7 +435,77 @@ const CompanyAptitudeTests = () => {
                       onChange={(e) => setFormData({ ...formData, passThreshold: Number(e.target.value) })}
                     />
                   </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Maximum Proctoring Violations</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      required
+                      value={formData.maxViolationCount}
+                      onChange={(e) => setFormData({ ...formData, maxViolationCount: Math.max(1, Number(e.target.value)) })}
+                    />
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Status</label>
+                    <select
+                      value={formData.isPublished ? 'published' : 'draft'}
+                      onChange={(e) => setFormData({ ...formData, isPublished: e.target.value === 'published' })}
+                    >
+                      <option value="published">Published (Active)</option>
+                      <option value="draft">Draft (Unpublished)</option>
+                    </select>
+                  </div>
                 </div>
+
+                <hr style={{ margin: '20px 0', borderColor: '#e2e8f0' }} />
+                <h4>Scheduling</h4>
+                <div className="form-group">
+                  <label>Scheduling Mode</label>
+                  <select 
+                    value={formData.schedulingMode}
+                    onChange={(e) => setFormData({ ...formData, schedulingMode: e.target.value })}
+                  >
+                    <option value="always_open">Always Open (No slots)</option>
+                    <option value="multi_slot">Multi-Slot / Time Window</option>
+                  </select>
+                </div>
+
+                {formData.schedulingMode !== 'always_open' && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <label style={{ margin: 0 }}>Time Slots</label>
+                      <button type="button" className="btn-secondary" onClick={handleAddSlot} style={{ padding: '4px 10px', fontSize: '0.85rem' }}>
+                        + Add Slot
+                      </button>
+                    </div>
+                    {formData.slots.length === 0 && (
+                      <p style={{ color: '#ef4444', fontSize: '0.85rem' }}>Please add at least one slot, or change scheduling mode to Always Open.</p>
+                    )}
+                    {formData.slots.map((slot, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10, background: '#f8fafc', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                        <div className="form-group" style={{ flex: 1, margin: 0 }}>
+                          <label style={{ fontSize: '0.8rem' }}>Label</label>
+                          <input type="text" value={slot.label || ''} onChange={(e) => handleSlotChange(idx, 'label', e.target.value)} placeholder="e.g. Morning Batch" />
+                        </div>
+                        <div className="form-group" style={{ flex: 1, margin: 0 }}>
+                          <label style={{ fontSize: '0.8rem' }}>Start Time</label>
+                          <input type="datetime-local" required value={slot.startTime} onChange={(e) => handleSlotChange(idx, 'startTime', e.target.value)} />
+                        </div>
+                        <div className="form-group" style={{ flex: 1, margin: 0 }}>
+                          <label style={{ fontSize: '0.8rem' }}>End Time</label>
+                          <input type="datetime-local" required value={slot.endTime} onChange={(e) => handleSlotChange(idx, 'endTime', e.target.value)} />
+                        </div>
+                        <div className="form-group" style={{ width: 80, margin: 0 }}>
+                          <label style={{ fontSize: '0.8rem' }}>Capacity</label>
+                          <input type="number" placeholder="&#8734;" value={slot.capacity || ''} onChange={(e) => handleSlotChange(idx, 'capacity', e.target.value ? Number(e.target.value) : null)} />
+                        </div>
+                        <button type="button" className="btn-danger" style={{ padding: '8px 12px' }} onClick={() => handleRemoveSlot(idx)}>X</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <hr style={{ margin: '20px 0', borderColor: '#e2e8f0' }} />
 
                 <h4>Questions ({formData.questions.length})</h4>
                 {formData.questions.map((q, qIdx) => (
@@ -347,14 +528,46 @@ const CompanyAptitudeTests = () => {
                         placeholder="Enter question text"
                       />
                     </div>
+                    <div className="form-group">
+                      <label>Question Image (Optional)</label>
+                      <div className="image-upload-wrapper">
+                        {q.imageUrl && (
+                          <div className="image-preview" style={{ marginBottom: '10px' }}>
+                            <img src={`${getApiBaseUrl().replace('/api', '')}${q.imageUrl}`} alt="Question visual" style={{ maxWidth: '100%', maxHeight: '150px', borderRadius: '4px' }} />
+                            <button type="button" onClick={() => handleQuestionChange(qIdx, 'imageUrl', '')} style={{ marginLeft: '10px', color: 'red', cursor: 'pointer', border: 'none', background: 'none' }}><i className="fas fa-trash"></i> Remove</button>
+                          </div>
+                        )}
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (!file) return;
+                            try {
+                              const token = localStorage.getItem('token');
+                              const imgData = new FormData();
+                              imgData.append('image', file);
+                              const res = await axios.post(`${getApiBaseUrl()}/upload/image`, imgData, {
+                                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
+                              });
+                              if (res.data.success) {
+                                handleQuestionChange(qIdx, 'imageUrl', res.data.url);
+                              }
+                            } catch (err) {
+                              alert('Image upload failed');
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                       {q.options.map((opt, optIdx) => (
-                        <div key={optIdx} className="form-group" style={{ margin: 0 }}>
-                          <label>Option {optIdx + 1} {q.correctIndex === optIdx ? ' (Correct)' : ''}</label>
+                        <div key={opt.originalIndex} className="form-group" style={{ margin: 0 }}>
+                          <label>Option {optIdx + 1} {Number(q.correctAnswer) === Number(opt.originalIndex) ? ' (Correct)' : ''}</label>
                           <input
                             type="text"
                             required
-                            value={opt}
+                            value={opt.text}
                             onChange={(e) => handleOptionChange(qIdx, optIdx, e.target.value)}
                           />
                         </div>
@@ -362,10 +575,10 @@ const CompanyAptitudeTests = () => {
                     </div>
                     <div style={{ display: 'flex', gap: 12 }}>
                       <div className="form-group" style={{ flex: 1 }}>
-                        <label>Correct Option Index (0 to 3)</label>
+                        <label>Correct Option</label>
                         <select
-                          value={q.correctIndex}
-                          onChange={(e) => handleQuestionChange(qIdx, 'correctIndex', Number(e.target.value))}
+                          value={q.correctAnswer}
+                          onChange={(e) => handleQuestionChange(qIdx, 'correctAnswer', Number(e.target.value))}
                         >
                           <option value={0}>Option 1</option>
                           <option value={1}>Option 2</option>
@@ -394,6 +607,28 @@ const CompanyAptitudeTests = () => {
                     </div>
                   </div>
                 ))}
+                
+                <hr style={{ margin: '30px 0', borderColor: '#e2e8f0' }} />
+                <h4>Coding Problems (Optional)</h4>
+                <div className="form-group" style={{ marginBottom: 20 }}>
+                  <label>Select coding problems to include in this test</label>
+                  <select 
+                    multiple 
+                    style={{ height: '120px' }}
+                    value={formData.codingProblems}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions, option => option.value);
+                      setFormData({ ...formData, codingProblems: selected });
+                    }}
+                  >
+                    {availableCodingProblems.map(prob => (
+                      <option key={prob._id} value={prob._id}>
+                        {prob.title} ({prob.difficulty})
+                      </option>
+                    ))}
+                  </select>
+                  <small style={{ color: '#64748b', display: 'block', marginTop: 4 }}>Hold Ctrl/Cmd to select multiple coding problems.</small>
+                </div>
 
                 <div style={{ marginBottom: 20, display: 'flex', gap: '10px' }}>
                   <button type="button" className="btn-secondary" onClick={handleAddQuestion}>
@@ -446,9 +681,16 @@ const CompanyAptitudeTests = () => {
               if (existingQuestions.length === 1 && !existingQuestions[0].text.trim() && !existingQuestions[0].options.some(o => o.trim())) {
                 existingQuestions = [];
               }
+              // Map the generated questions to backend schema
+              const formattedGeneratedData = generatedData.map(q => ({
+                ...q,
+                options: q.options.map((opt, i) => ({ originalIndex: i, text: opt })),
+                correctAnswer: q.correctIndex
+              }));
+
               const updatedFormData = {
                 ...formData,
-                questions: [...existingQuestions, ...generatedData]
+                questions: [...existingQuestions, ...formattedGeneratedData]
               };
               
               // Ensure a title exists if we are publishing immediately
@@ -531,23 +773,104 @@ const CompanyAptitudeTests = () => {
                       <th>Score</th>
                       <th>Percentage</th>
                       <th>Status</th>
+                      <th>Violations</th>
+                      <th>Suspicion Score</th>
+                      <th>Proctoring</th>
                       <th>Submitted At</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {testResults.candidates.map((cand, idx) => (
-                      <tr key={idx}>
-                        <td>{cand.student?.name || cand.student?.email || 'Candidate'}</td>
-                        <td>{cand.totalScore} / {cand.maxScore}</td>
-                        <td>{cand.percentage}%</td>
+                    {testResults.candidates.flatMap(candidate => [
+                      <tr key={`candidate-${candidate.attemptId}`}>
+                        <td>{candidate.student?.name || candidate.student?.email || 'Candidate'}</td>
+                        <td>{candidate.totalScore} / {candidate.maxScore}</td>
+                        <td>{candidate.percentage}%</td>
                         <td>
-                          <span className={cand.passed ? 'badge-pass' : 'badge-fail'}>
-                            {cand.passed ? 'PASSED' : 'FAILED'}
+                          <span className={candidate.passed ? 'badge-pass' : 'badge-fail'}>{candidate.passed ? 'PASSED' : 'FAILED'}</span>
+                        </td>
+                        <td>{candidate.violationsCount ?? 0}</td>
+                        <td>{candidate.suspicionScore ?? 0}/100</td>
+                        <td>
+                          <span className={candidate.suspicious ? 'badge-fail' : candidate.proctoringStatus === 'CLEAN' ? 'badge-pass' : 'badge-warning'}>
+                            {candidate.suspicious ? 'SUSPICIOUS' : (candidate.proctoringStatus || 'CLEAN')}
                           </span>
                         </td>
-                        <td>{new Date(cand.submittedAt).toLocaleDateString()}</td>
-                      </tr>
-                    ))}
+                        <td>{new Date(candidate.submittedAt).toLocaleDateString()}</td>
+                        <td>
+                          <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem' }} onClick={() => handleReviewAttempt(candidate)}>
+                            {expandedAttemptId === candidate.attemptId ? 'Hide Review' : 'Review'}
+                          </button>
+                          <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem', marginLeft: 6 }} onClick={async () => {
+                            try {
+                              const response = await api.get(`/aptitude/attempt/${candidate.attemptId}/pdf`, { responseType: 'blob' });
+                              const url = window.URL.createObjectURL(new Blob([response.data]));
+                              const link = document.createElement('a');
+                              link.href = url;
+                              link.setAttribute('download', `Assessment_Report_${candidate.attemptId}.pdf`);
+                              document.body.appendChild(link);
+                              link.click();
+                              link.remove();
+                              window.URL.revokeObjectURL(url);
+                            } catch (downloadError) {
+                              console.error(downloadError);
+                              alert('Failed to download PDF report');
+                            }
+                          }}>PDF</button>
+                        </td>
+                      </tr>,
+                      expandedAttemptId === candidate.attemptId && (
+                        <tr key={`review-${candidate.attemptId}`}>
+                          <td colSpan="11" style={{ background: '#f8fafc', padding: 16 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                              <strong>Security timeline</strong>
+                              {candidate.suspicious && (
+                                <button className="btn-secondary" style={{ padding: '4px 12px', fontSize: '0.85rem' }} onClick={async () => {
+                                  if (!window.confirm('Are you sure you want to mark this candidate\'s attempt as a false alarm? This will reset their suspicion score.')) return;
+                                  try {
+                                    await api.post(`/aptitude/attempt/${candidate.attemptId}/false-alarm`);
+                                    // Update locally for immediate feedback
+                                    setTestResults(prev => ({
+                                      ...prev,
+                                      candidates: prev.candidates.map(c => 
+                                        c.attemptId === candidate.attemptId ? { ...c, suspicious: false, suspicionScore: 0, proctoringStatus: 'CLEAN' } : c
+                                      )
+                                    }));
+                                  } catch (err) {
+                                    alert('Failed to mark as false alarm');
+                                  }
+                                }}>Mark as False Alarm</button>
+                              )}
+                            </div>
+                            {(candidate.referencePhotoUrl || candidate.idCardPhotoUrl) && (
+                              <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+                                {candidate.referencePhotoUrl && (
+                                  <div>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: 4 }}>Reference Photo</div>
+                                    <img src={candidate.referencePhotoUrl} alt="Reference" style={{ width: 144, height: 108, objectFit: 'cover', borderRadius: 4, border: '1px solid #ccc' }} />
+                                  </div>
+                                )}
+                                {candidate.idCardPhotoUrl && (
+                                  <div>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: 4 }}>ID Card</div>
+                                    <img src={candidate.idCardPhotoUrl} alt="ID Card" style={{ width: 144, height: 108, objectFit: 'cover', borderRadius: 4, border: '1px solid #ccc' }} />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {candidate.securityTimeline?.length ? candidate.securityTimeline.map(event => (
+                              <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '180px 1fr minmax(120px, 220px)', gap: 12, alignItems: 'start', padding: '10px 0', borderBottom: '1px solid #e2e8f0' }}>
+                                <span>{new Date(event.timestamp).toLocaleString()}</span>
+                                <span><strong>{event.type.replace(/_/g, ' ')}</strong> · {event.message} · {event.severity}</span>
+                                {event.snapshotUrl ? (snapshotImages[event.id]
+                                  ? <img src={snapshotImages[event.id]} alt={`Snapshot for ${event.type}`} style={{ width: '100%', maxWidth: 220, borderRadius: 4 }} />
+                                  : <span>Loading snapshot…</span>) : <span>No snapshot</span>}
+                              </div>
+                            )) : <p>No security events recorded.</p>}
+                          </td>
+                        </tr>
+                      )
+                    ])}
                   </tbody>
                 </table>
               )}
