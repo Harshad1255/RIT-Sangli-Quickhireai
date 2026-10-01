@@ -377,134 +377,164 @@ const InnerAptitudeTestAttempt = ({ test, onExit, mode = 'take', violations = []
     const integrityLabel = violationsCount === 0 ? 'Completely clean attempt' : violationsCount <= 2 ? 'Mostly clean attempt' : 'Needs improvement';
 
     return (
-      <div className="results-screen">
-        <div style={{ display: 'flex', justifySelf: 'space-between', alignItems: 'center' }}>
-          <h2>Test Results: {result.testTitle}</h2>
+      <div className="results-screen" style={{ maxWidth: '1000px', margin: '0 auto', padding: '40px 20px', fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #e2e8f0', paddingBottom: '20px', marginBottom: '30px' }}>
           <div>
-            <span className={result.passed ? 'badge-pass' : 'badge-fail'} style={{ fontSize: '1.1rem', padding: '6px 14px', marginRight: '15px' }}>
+            <h2 style={{ fontSize: '2.2rem', color: '#0f172a', margin: '0 0 10px 0' }}>Performance Report</h2>
+            <p style={{ margin: 0, color: '#64748b', fontSize: '1.1rem' }}>{result.testTitle}</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <span style={{
+              fontSize: '1.2rem',
+              fontWeight: 800,
+              padding: '8px 20px',
+              borderRadius: '30px',
+              backgroundColor: result.passed ? '#dcfce7' : '#fee2e2',
+              color: result.passed ? '#16a34a' : '#dc2626',
+              boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+            }}>
               {result.passed ? 'PASSED' : 'FAILED'} ({result.percentage}%)
             </span>
-            <button onClick={handleDownloadReport} className="btn-primary" style={{ padding: '6px 12px' }}>
-              <i className="fas fa-file-pdf"></i> Download Report
+            <button onClick={handleDownloadReport} className="btn-primary" style={{ padding: '10px 20px', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <i className="fas fa-download"></i> Download PDF
             </button>
           </div>
         </div>
 
-        <div className="results-summary-cards">
-          <div className="summary-card">
-            <div className="summary-card-val">{result.totalScore} / {result.maxScore}</div>
-            <div>Score Earned</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', border: '1px solid #f1f5f9', textAlign: 'center' }}>
+            <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#3b82f6', marginBottom: '5px' }}>{result.totalScore}<span style={{ fontSize: '1.2rem', color: '#94a3b8' }}>/{result.maxScore}</span></div>
+            <div style={{ color: '#64748b', fontWeight: 600, textTransform: 'uppercase', fontSize: '0.85rem', letterSpacing: '1px' }}>Total Score</div>
           </div>
-          <div className="summary-card">
-            <div className="summary-card-val">{result.accuracy}%</div>
-            <div>Accuracy</div>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', border: '1px solid #f1f5f9', textAlign: 'center' }}>
+            <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#8b5cf6', marginBottom: '5px' }}>{result.accuracy}%</div>
+            <div style={{ color: '#64748b', fontWeight: 600, textTransform: 'uppercase', fontSize: '0.85rem', letterSpacing: '1px' }}>Accuracy</div>
           </div>
-          <div className="summary-card">
-            <div className="summary-card-val">{result.correctCount} / {result.totalQuestions}</div>
-            <div>Correct Answers</div>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', border: '1px solid #f1f5f9', textAlign: 'center' }}>
+            <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#10b981', marginBottom: '5px' }}>{result.correctCount}<span style={{ fontSize: '1.2rem', color: '#94a3b8' }}>/{result.totalQuestions}</span></div>
+            <div style={{ color: '#64748b', fontWeight: 600, textTransform: 'uppercase', fontSize: '0.85rem', letterSpacing: '1px' }}>Correct</div>
           </div>
-          <div className="summary-card">
-            <div className="summary-card-val">{violationsCount}</div>
-            <div>Violations</div>
-          </div>
-          <div className="summary-card">
-            <div className="summary-card-val">{cleanlinessScore}%</div>
-            <div>Cleanliness</div>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', border: '1px solid #f1f5f9', textAlign: 'center' }}>
+            <div style={{ fontSize: '2.5rem', fontWeight: 800, color: cleanlinessScore >= 80 ? '#10b981' : '#f59e0b', marginBottom: '5px' }}>{cleanlinessScore}%</div>
+            <div style={{ color: '#64748b', fontWeight: 600, textTransform: 'uppercase', fontSize: '0.85rem', letterSpacing: '1px' }}>Cleanliness</div>
           </div>
         </div>
 
-        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 20, marginTop: 20 }}>
-          <h3 style={{ marginTop: 0 }}>Exam Integrity</h3>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{integrityLabel}</div>
-              <div style={{ color: '#475569' }}>
-                {violationsCount === 0
-                  ? 'No security violations were detected during the assessment.'
-                  : `Detected ${violationsCount} violation${violationsCount > 1 ? 's' : ''} during the test.`}
-              </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '30px', marginBottom: '40px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 15px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            <div style={{ background: '#f8fafc', padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.2rem' }}>Section Performance</h3>
             </div>
-            <div style={{ minWidth: 140, textAlign: 'right' }}>
-              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: cleanlinessScore >= 80 ? '#10b981' : cleanlinessScore >= 50 ? '#f59e0b' : '#ef4444' }}>{cleanlinessScore}%</div>
-              <div style={{ color: '#64748b', fontSize: '0.85rem' }}>Cleanliness score</div>
+            <div style={{ padding: '24px' }}>
+              {(result.sectionScores || []).map((sec, idx) => (
+                <div key={idx} style={{ marginBottom: idx !== result.sectionScores.length - 1 ? '24px' : '0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: 600, color: '#334155' }}>{sec.sectionName}</span>
+                    <span style={{ fontWeight: 700, color: '#0f172a' }}>{sec.score} pts</span>
+                  </div>
+                  <div style={{ display: 'flex', height: '10px', borderRadius: '5px', overflow: 'hidden', background: '#f1f5f9' }}>
+                    <div style={{ width: `${(sec.correct / Math.max(1, sec.correct + sec.incorrect)) * 100}%`, background: '#10b981' }}></div>
+                    <div style={{ width: `${(sec.incorrect / Math.max(1, sec.correct + sec.incorrect)) * 100}%`, background: '#ef4444' }}></div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#64748b', marginTop: '6px' }}>
+                    <span>{sec.correct} Correct</span>
+                    <span>{sec.incorrect} Incorrect</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
+        </div>
 
-          {Array.isArray(result.violationEvents) && result.violationEvents.length > 0 ? (
-            <div style={{ marginTop: 18 }}>
-              <h4 style={{ marginBottom: 10 }}>Violation Details</h4>
-              <ul style={{ margin: 0, paddingLeft: 20, color: '#334155' }}>
+        <div style={{ background: violationsCount === 0 ? '#f0fdf4' : '#fff7ed', border: `1px solid ${violationsCount === 0 ? '#bbf7d0' : '#fed7aa'}`, borderRadius: '16px', padding: '24px', marginBottom: '40px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '15px' }}>
+            <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: violationsCount === 0 ? '#dcfce7' : '#ffedd5', color: violationsCount === 0 ? '#16a34a' : '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>
+              <i className={`fas fa-${violationsCount === 0 ? 'shield-check' : 'shield-alt'}`}></i>
+            </div>
+            <div>
+              <h3 style={{ margin: '0 0 5px 0', color: violationsCount === 0 ? '#166534' : '#9a3412', fontSize: '1.3rem' }}>Exam Integrity: {integrityLabel}</h3>
+              <p style={{ margin: 0, color: violationsCount === 0 ? '#15803d' : '#c2410c' }}>
+                {violationsCount === 0 ? 'No security violations were detected during your assessment.' : `Detected ${violationsCount} security violation${violationsCount > 1 ? 's' : ''} during the test.`}
+              </p>
+            </div>
+          </div>
+          {Array.isArray(result.violationEvents) && result.violationEvents.length > 0 && (
+            <div style={{ background: '#fff', borderRadius: '10px', padding: '16px', border: '1px solid #fdba74' }}>
+              <h4 style={{ margin: '0 0 10px 0', color: '#9a3412' }}>Violation Log</h4>
+              <ul style={{ margin: 0, paddingLeft: '20px', color: '#7c2d12' }}>
                 {result.violationEvents.map((event, idx) => (
-                  <li key={`${event.type}-${idx}`} style={{ marginBottom: 6 }}>
+                  <li key={`${event.type}-${idx}`} style={{ marginBottom: '8px' }}>
                     <strong>{event.type.replace(/_/g, ' ')}</strong> · {event.severity} · {new Date(event.timestamp).toLocaleString()}
                   </li>
                 ))}
               </ul>
             </div>
-          ) : (
-            <div style={{ marginTop: 18, color: '#0f766e', fontWeight: 600 }}>
-              No violation events were recorded for this attempt.
-            </div>
           )}
         </div>
 
-        <h3>Section Breakdown</h3>
-        <table className="stats-table">
-          <thead>
-            <tr>
-              <th>Section</th>
-              <th>Correct</th>
-              <th>Incorrect</th>
-              <th>Score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(result.sectionScores || []).map((sec, idx) => (
-              <tr key={idx}>
-                <td><strong>{sec.sectionName}</strong></td>
-                <td style={{ color: '#059669' }}>{sec.correct}</td>
-                <td style={{ color: '#dc2626' }}>{sec.incorrect}</td>
-                <td>{sec.score}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
         {result.questions && result.questions.length > 0 && (
-          <div style={{ marginTop: 24 }}>
-            <h3>Question Review & Explanations</h3>
-            {result.questions.map((q, idx) => (
-              <div key={idx} style={{ background: '#f8fafc', padding: 16, borderRadius: 8, marginBottom: 12, border: '1px solid #e5e7eb' }}>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                  Q{idx + 1}: {q.text} ({q.marks} marks)
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {q.options.map((opt, optIdx) => {
-                    const actualIdx = opt.originalIndex !== undefined ? opt.originalIndex : optIdx;
-                    const isStudentSel = q.selectedAnswer === actualIdx;
-                    const isCorrectOpt = q.correctIndex === actualIdx;
-                    return (
-                      <div
-                        key={optIdx}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: 6,
-                          border: '1px solid #e2e8f0',
-                          background: isCorrectOpt ? '#d1fae5' : (isStudentSel ? '#fee2e2' : 'white')
-                        }}
-                      >
-                        {opt.text || opt} {isCorrectOpt ? ' ✅ (Correct)' : ''} {isStudentSel && !isCorrectOpt ? ' ❌ (Your Answer)' : ''}
+          <div>
+            <h3 style={{ color: '#0f172a', fontSize: '1.5rem', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>Detailed Answer Review</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {result.questions.map((q, idx) => {
+                const isStudentCorrect = q.selectedAnswer === q.correctIndex;
+                const isSkipped = q.selectedAnswer === undefined || q.selectedAnswer === null;
+                
+                return (
+                  <div key={idx} style={{ 
+                    background: '#fff', 
+                    borderRadius: '16px', 
+                    boxShadow: '0 4px 15px rgba(0,0,0,0.03)', 
+                    border: '1px solid #e2e8f0', 
+                    borderLeft: `6px solid ${isStudentCorrect ? '#10b981' : isSkipped ? '#94a3b8' : '#ef4444'}`,
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ fontWeight: 600, fontSize: '1.1rem', color: '#1e293b', flex: 1, paddingRight: '20px' }}>
+                        <span style={{ color: '#64748b', marginRight: '10px' }}>Q{idx + 1}.</span> {q.text}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+                      <span style={{ 
+                        padding: '6px 14px', 
+                        borderRadius: '20px', 
+                        fontSize: '0.85rem', 
+                        fontWeight: 700,
+                        background: isStudentCorrect ? '#dcfce7' : isSkipped ? '#f1f5f9' : '#fee2e2',
+                        color: isStudentCorrect ? '#16a34a' : isSkipped ? '#64748b' : '#dc2626'
+                      }}>
+                        {isStudentCorrect ? 'Correct' : isSkipped ? 'Skipped' : 'Incorrect'} ({q.marks} marks)
+                      </span>
+                    </div>
+                    <div style={{ padding: '20px 24px', background: '#f8fafc' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px' }}>
+                        {q.options.map((opt, optIdx) => {
+                          const actualIdx = opt.originalIndex !== undefined ? opt.originalIndex : optIdx;
+                          const isStudentSel = q.selectedAnswer === actualIdx;
+                          const isCorrectOpt = q.correctIndex === actualIdx;
+                          
+                          let bg = '#fff';
+                          let border = '1px solid #e2e8f0';
+                          if (isCorrectOpt) { bg = '#dcfce7'; border = '1px solid #22c55e'; }
+                          else if (isStudentSel) { bg = '#fee2e2'; border = '1px solid #ef4444'; }
+
+                          return (
+                            <div key={optIdx} style={{ padding: '12px 16px', borderRadius: '8px', background: bg, border: border, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ color: '#334155', fontWeight: (isCorrectOpt || isStudentSel) ? 600 : 400 }}>{opt.text || opt}</span>
+                              {isCorrectOpt && <i className="fas fa-check-circle" style={{ color: '#16a34a', fontSize: '1.2rem' }}></i>}
+                              {isStudentSel && !isCorrectOpt && <i className="fas fa-times-circle" style={{ color: '#dc2626', fontSize: '1.2rem' }}></i>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        <div style={{ marginTop: 32, textAlign: 'center' }}>
-          <button className="btn-primary" onClick={onExit}>
+        <div style={{ marginTop: '50px', textAlign: 'center' }}>
+          <button className="btn-primary" onClick={onExit} style={{ padding: '12px 30px', fontSize: '1.1rem', borderRadius: '8px' }}>
             <i className="fas fa-arrow-left"></i> Return to Dashboard
           </button>
         </div>

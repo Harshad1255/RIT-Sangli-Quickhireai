@@ -149,7 +149,8 @@ const processAnswer = async (req, res) => {
 
     // Generate next question if no follow-up was generated
     if (!nextQuestion) {
-    const nextSkill = interview.skills[currentIndex];
+    const nextSkillIndex = Math.min(interview.answers.length, interview.skills.length - 1);
+    const nextSkill = interview.skills[nextSkillIndex];
     const previousQuestions = interview.questions?.map(q => q.question) || [];
     try {
       nextQuestion = await geminiService.generateQuestion(nextSkill, previousQuestions);
@@ -157,12 +158,14 @@ const processAnswer = async (req, res) => {
         ...nextQuestion,
         id: Math.random().toString(36).substr(2, 9),
         skill: nextSkill,
-        questionNumber: currentIndex + 1
+        questionNumber: interview.answers.length + 1
       };
       interview.questions.push(nextQuestion);
     } catch (error) {
       console.error('Error generating next question:', error);
       nextQuestion = getFallbackQuestion(nextSkill);
+      nextQuestion.id = Math.random().toString(36).substr(2, 9);
+      nextQuestion.questionNumber = interview.answers.length + 1;
       interview.questions.push(nextQuestion);
       }
     }

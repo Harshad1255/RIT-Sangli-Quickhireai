@@ -745,134 +745,222 @@ const CompanyAptitudeTests = () => {
 
         {/* Results Modal */}
         {showResultsModal && testResults && (
-          <div className="modal-overlay">
-            <div className="modal-content">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3>Results for {selectedTest?.title}</h3>
-                <button className="btn-secondary" onClick={() => setShowResultsModal(false)}>
-                  Close
+          <div className="modal-overlay" style={{ zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="modal-content" style={{ width: '90%', maxWidth: '1200px', maxHeight: '90vh', overflowY: 'auto', padding: '32px', borderRadius: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #f1f5f9', paddingBottom: '20px', marginBottom: '24px' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.8rem', color: '#0f172a', margin: '0 0 8px 0' }}>Assessment Results</h3>
+                  <p style={{ margin: 0, color: '#64748b', fontSize: '1.1rem' }}>{selectedTest?.title}</p>
+                </div>
+                <button className="btn-secondary" style={{ padding: '8px 16px', borderRadius: '8px' }} onClick={() => setShowResultsModal(false)}>
+                  <i className="fas fa-times"></i> Close
                 </button>
               </div>
 
-              <div style={{ display: 'flex', gap: 24, margin: '16px 0', padding: 16, background: '#f3f4f6', borderRadius: 8 }}>
-                <div><strong>Total Assigned:</strong> {testResults.totalAssigned}</div>
-                <div><strong>Completed:</strong> {testResults.totalCompleted}</div>
-                <div><strong>Average Score:</strong> {testResults.averageScore}</div>
-                <div><strong>Passed:</strong> {testResults.passCount}</div>
-                <div><strong>Failed:</strong> {testResults.failCount}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '20px', marginBottom: '32px' }}>
+                <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>{testResults.totalAssigned}</div>
+                  <div style={{ color: '#64748b', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Assigned</div>
+                </div>
+                <div style={{ background: '#eff6ff', padding: '20px', borderRadius: '12px', border: '1px solid #bfdbfe', textAlign: 'center' }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#2563eb', marginBottom: '4px' }}>{testResults.totalCompleted}</div>
+                  <div style={{ color: '#3b82f6', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Completed</div>
+                </div>
+                <div style={{ background: '#f5f3ff', padding: '20px', borderRadius: '12px', border: '1px solid #ddd6fe', textAlign: 'center' }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#7c3aed', marginBottom: '4px' }}>{testResults.averageScore}</div>
+                  <div style={{ color: '#8b5cf6', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Avg Score</div>
+                </div>
+                <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '12px', border: '1px solid #bbf7d0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#16a34a', marginBottom: '4px' }}>{testResults.passCount}</div>
+                  <div style={{ color: '#22c55e', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Passed</div>
+                </div>
+                <div style={{ background: '#fef2f2', padding: '20px', borderRadius: '12px', border: '1px solid #fecaca', textAlign: 'center' }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#dc2626', marginBottom: '4px' }}>{testResults.failCount}</div>
+                  <div style={{ color: '#ef4444', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Failed</div>
+                </div>
               </div>
 
-              <h4>Candidate Results Table</h4>
+              <h4 style={{ color: '#0f172a', fontSize: '1.3rem', marginBottom: '16px' }}>Candidate Performances</h4>
               {testResults.candidates.length === 0 ? (
-                <p style={{ color: '#6b7280' }}>No candidate attempts completed yet.</p>
+                <div style={{ background: '#f8fafc', padding: '40px', borderRadius: '12px', textAlign: 'center', border: '1px dashed #cbd5e1' }}>
+                  <i className="fas fa-users-slash" style={{ fontSize: '2.5rem', color: '#94a3b8', marginBottom: '16px' }}></i>
+                  <p style={{ margin: 0, color: '#64748b', fontSize: '1.1rem' }}>No candidates have completed this test yet.</p>
+                </div>
               ) : (
-                <table className="stats-table">
-                  <thead>
-                    <tr>
-                      <th>Candidate</th>
-                      <th>Score</th>
-                      <th>Percentage</th>
-                      <th>Status</th>
-                      <th>Violations</th>
-                      <th>Suspicion Score</th>
-                      <th>Proctoring</th>
-                      <th>Submitted At</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {testResults.candidates.flatMap(candidate => [
-                      <tr key={`candidate-${candidate.attemptId}`}>
-                        <td>{candidate.student?.name || candidate.student?.email || 'Candidate'}</td>
-                        <td>{candidate.totalScore} / {candidate.maxScore}</td>
-                        <td>{candidate.percentage}%</td>
-                        <td>
-                          <span className={candidate.passed ? 'badge-pass' : 'badge-fail'}>{candidate.passed ? 'PASSED' : 'FAILED'}</span>
-                        </td>
-                        <td>{candidate.violationsCount ?? 0}</td>
-                        <td>{candidate.suspicionScore ?? 0}/100</td>
-                        <td>
-                          <span className={candidate.suspicious ? 'badge-fail' : candidate.proctoringStatus === 'CLEAN' ? 'badge-pass' : 'badge-warning'}>
-                            {candidate.suspicious ? 'SUSPICIOUS' : (candidate.proctoringStatus || 'CLEAN')}
-                          </span>
-                        </td>
-                        <td>{new Date(candidate.submittedAt).toLocaleDateString()}</td>
-                        <td>
-                          <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem' }} onClick={() => handleReviewAttempt(candidate)}>
-                            {expandedAttemptId === candidate.attemptId ? 'Hide Review' : 'Review'}
-                          </button>
-                          <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem', marginLeft: 6 }} onClick={async () => {
-                            try {
-                              const response = await api.get(`/aptitude/attempt/${candidate.attemptId}/pdf`, { responseType: 'blob' });
-                              const url = window.URL.createObjectURL(new Blob([response.data]));
-                              const link = document.createElement('a');
-                              link.href = url;
-                              link.setAttribute('download', `Assessment_Report_${candidate.attemptId}.pdf`);
-                              document.body.appendChild(link);
-                              link.click();
-                              link.remove();
-                              window.URL.revokeObjectURL(url);
-                            } catch (downloadError) {
-                              console.error(downloadError);
-                              alert('Failed to download PDF report');
-                            }
-                          }}>PDF</button>
-                        </td>
-                      </tr>,
-                      expandedAttemptId === candidate.attemptId && (
-                        <tr key={`review-${candidate.attemptId}`}>
-                          <td colSpan="11" style={{ background: '#f8fafc', padding: 16 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                              <strong>Security timeline</strong>
-                              {candidate.suspicious && (
-                                <button className="btn-secondary" style={{ padding: '4px 12px', fontSize: '0.85rem' }} onClick={async () => {
-                                  if (!window.confirm('Are you sure you want to mark this candidate\'s attempt as a false alarm? This will reset their suspicion score.')) return;
-                                  try {
-                                    await api.post(`/aptitude/attempt/${candidate.attemptId}/false-alarm`);
-                                    // Update locally for immediate feedback
-                                    setTestResults(prev => ({
-                                      ...prev,
-                                      candidates: prev.candidates.map(c => 
-                                        c.attemptId === candidate.attemptId ? { ...c, suspicious: false, suspicionScore: 0, proctoringStatus: 'CLEAN' } : c
-                                      )
-                                    }));
-                                  } catch (err) {
-                                    alert('Failed to mark as false alarm');
-                                  }
-                                }}>Mark as False Alarm</button>
-                              )}
-                            </div>
-                            {(candidate.referencePhotoUrl || candidate.idCardPhotoUrl) && (
-                              <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-                                {candidate.referencePhotoUrl && (
-                                  <div>
-                                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: 4 }}>Reference Photo</div>
-                                    <img src={candidate.referencePhotoUrl} alt="Reference" style={{ width: 144, height: 108, objectFit: 'cover', borderRadius: 4, border: '1px solid #ccc' }} />
-                                  </div>
-                                )}
-                                {candidate.idCardPhotoUrl && (
-                                  <div>
-                                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: 4 }}>ID Card</div>
-                                    <img src={candidate.idCardPhotoUrl} alt="ID Card" style={{ width: 144, height: 108, objectFit: 'cover', borderRadius: 4, border: '1px solid #ccc' }} />
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {candidate.securityTimeline?.length ? candidate.securityTimeline.map(event => (
-                              <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '180px 1fr minmax(120px, 220px)', gap: 12, alignItems: 'start', padding: '10px 0', borderBottom: '1px solid #e2e8f0' }}>
-                                <span>{new Date(event.timestamp).toLocaleString()}</span>
-                                <span><strong>{event.type.replace(/_/g, ' ')}</strong> · {event.message} · {event.severity}</span>
-                                {event.snapshotUrl ? (snapshotImages[event.id]
-                                  ? <img src={snapshotImages[event.id]} alt={`Snapshot for ${event.type}`} style={{ width: '100%', maxWidth: 220, borderRadius: 4 }} />
-                                  : <span>Loading snapshot…</span>) : <span>No snapshot</span>}
-                              </div>
-                            )) : <p>No security events recorded.</p>}
+                <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#fff' }}>
+                    <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                      <tr>
+                        <th style={{ padding: '16px', color: '#475569', fontWeight: 600, fontSize: '0.9rem' }}>Candidate</th>
+                        <th style={{ padding: '16px', color: '#475569', fontWeight: 600, fontSize: '0.9rem' }}>Score</th>
+                        <th style={{ padding: '16px', color: '#475569', fontWeight: 600, fontSize: '0.9rem' }}>Status</th>
+                        <th style={{ padding: '16px', color: '#475569', fontWeight: 600, fontSize: '0.9rem' }}>Integrity</th>
+                        <th style={{ padding: '16px', color: '#475569', fontWeight: 600, fontSize: '0.9rem' }}>Submitted At</th>
+                        <th style={{ padding: '16px', color: '#475569', fontWeight: 600, fontSize: '0.9rem', textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {testResults.candidates.flatMap((candidate, index) => [
+                        <tr key={`candidate-${candidate.attemptId}`} style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: index % 2 === 0 ? '#fff' : '#f8fafc', transition: 'background-color 0.2s' }}>
+                          <td style={{ padding: '16px' }}>
+                            <div style={{ fontWeight: 600, color: '#0f172a' }}>{candidate.student?.name || 'Candidate'}</div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{candidate.student?.email || 'N/A'}</div>
                           </td>
-                        </tr>
-                      )
-                    ])}
-                  </tbody>
-                </table>
+                          <td style={{ padding: '16px' }}>
+                            <div style={{ fontWeight: 700, color: '#0f172a' }}>{candidate.totalScore} <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>/ {candidate.maxScore}</span></div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{candidate.percentage}%</div>
+                          </td>
+                          <td style={{ padding: '16px' }}>
+                            <span style={{ 
+                              padding: '6px 12px', 
+                              borderRadius: '20px', 
+                              fontSize: '0.8rem', 
+                              fontWeight: 700,
+                              backgroundColor: candidate.passed ? '#dcfce7' : '#fee2e2',
+                              color: candidate.passed ? '#16a34a' : '#dc2626'
+                            }}>
+                              {candidate.passed ? 'PASSED' : 'FAILED'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ 
+                                width: '10px', 
+                                height: '10px', 
+                                borderRadius: '50%', 
+                                backgroundColor: candidate.suspicious ? '#ef4444' : candidate.proctoringStatus === 'CLEAN' ? '#10b981' : '#f59e0b' 
+                              }}></div>
+                              <div>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
+                                  {candidate.suspicious ? 'Suspicious' : (candidate.proctoringStatus || 'Clean')}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                                  {candidate.violationsCount ?? 0} Violations (Score: {candidate.suspicionScore ?? 0})
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '16px', color: '#475569', fontSize: '0.9rem' }}>
+                            {new Date(candidate.submittedAt).toLocaleDateString()}
+                          </td>
+                          <td style={{ padding: '16px', textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '6px 12px', fontSize: '0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff' }} 
+                                onClick={() => handleReviewAttempt(candidate)}
+                              >
+                                <i className={`fas fa-chevron-${expandedAttemptId === candidate.attemptId ? 'up' : 'down'}`}></i> Review
+                              </button>
+                              <button 
+                                className="btn-primary" 
+                                style={{ padding: '6px 12px', fontSize: '0.85rem', borderRadius: '6px' }} 
+                                onClick={async () => {
+                                  try {
+                                    const response = await api.get(`/aptitude/attempt/${candidate.attemptId}/pdf`, { responseType: 'blob' });
+                                    const url = window.URL.createObjectURL(new Blob([response.data]));
+                                    const link = document.createElement('a');
+                                    link.href = url;
+                                    link.setAttribute('download', `Assessment_Report_${candidate.attemptId}.pdf`);
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    link.remove();
+                                    window.URL.revokeObjectURL(url);
+                                  } catch (downloadError) {
+                                    console.error(downloadError);
+                                    alert('Failed to download PDF report');
+                                  }
+                                }}
+                              >
+                                <i className="fas fa-download"></i> PDF
+                              </button>
+                            </div>
+                          </td>
+                        </tr>,
+                        expandedAttemptId === candidate.attemptId && (
+                          <tr key={`review-${candidate.attemptId}`}>
+                            <td colSpan="6" style={{ padding: 0 }}>
+                              <div style={{ background: '#f8fafc', padding: '24px', borderBottom: '1px solid #e2e8f0', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                                  <h5 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a' }}><i className="fas fa-shield-alt" style={{ color: '#64748b', marginRight: '8px' }}></i> Security Timeline</h5>
+                                  {candidate.suspicious && (
+                                    <button 
+                                      className="btn-secondary" 
+                                      style={{ padding: '6px 16px', fontSize: '0.85rem', borderRadius: '20px', color: '#d97706', borderColor: '#fcd34d', backgroundColor: '#fffbeb' }} 
+                                      onClick={async () => {
+                                        if (!window.confirm('Are you sure you want to mark this candidate\'s attempt as a false alarm? This will reset their suspicion score.')) return;
+                                        try {
+                                          await api.post(`/aptitude/attempt/${candidate.attemptId}/false-alarm`);
+                                          setTestResults(prev => ({
+                                            ...prev,
+                                            candidates: prev.candidates.map(c => 
+                                              c.attemptId === candidate.attemptId ? { ...c, suspicious: false, suspicionScore: 0, proctoringStatus: 'CLEAN' } : c
+                                            )
+                                          }));
+                                        } catch (err) {
+                                          alert('Failed to mark as false alarm');
+                                        }
+                                      }}
+                                    >
+                                      <i className="fas fa-check-circle"></i> Mark as False Alarm
+                                    </button>
+                                  )}
+                                </div>
+                                
+                                {(candidate.referencePhotoUrl || candidate.idCardPhotoUrl) && (
+                                  <div style={{ display: 'flex', gap: '24px', marginBottom: '24px', padding: '16px', backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                                    {candidate.referencePhotoUrl && (
+                                      <div>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Reference Photo</div>
+                                        <img src={candidate.referencePhotoUrl} alt="Reference" style={{ width: '160px', height: '120px', objectFit: 'cover', borderRadius: '8px', border: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }} />
+                                      </div>
+                                    )}
+                                    {candidate.idCardPhotoUrl && (
+                                      <div>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>ID Card</div>
+                                        <img src={candidate.idCardPhotoUrl} alt="ID Card" style={{ width: '160px', height: '120px', objectFit: 'cover', borderRadius: '8px', border: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }} />
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                
+                                {candidate.securityTimeline?.length ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    {candidate.securityTimeline.map(event => (
+                                      <div key={event.id} style={{ display: 'flex', gap: '20px', backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                                        <div style={{ minWidth: '140px', color: '#64748b', fontSize: '0.85rem', fontWeight: 600 }}>
+                                          {new Date(event.timestamp).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                          <div style={{ fontWeight: 600, color: '#0f172a', marginBottom: '4px' }}>{event.type.replace(/_/g, ' ')} <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '10px', backgroundColor: '#f1f5f9', color: '#475569', marginLeft: '8px' }}>{event.severity}</span></div>
+                                          <div style={{ color: '#475569', fontSize: '0.95rem' }}>{event.message}</div>
+                                        </div>
+                                        {event.snapshotUrl && (
+                                          <div style={{ width: '200px' }}>
+                                            {snapshotImages[event.id] ? (
+                                              <img src={snapshotImages[event.id]} alt={`Snapshot for ${event.type}`} style={{ width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }} />
+                                            ) : (
+                                              <div style={{ width: '100%', height: '110px', backgroundColor: '#f1f5f9', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>Loading image...</div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div style={{ backgroundColor: '#f0fdf4', color: '#166534', padding: '16px', borderRadius: '8px', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <i className="fas fa-check-circle" style={{ fontSize: '1.2rem' }}></i>
+                                    <strong>Clean Attempt!</strong> No security events or violations were recorded during this session.
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      ])}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>

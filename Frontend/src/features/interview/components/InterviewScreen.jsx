@@ -362,6 +362,13 @@ const InterviewScreen = (props) => {
         }
         
         setCurrentQuestion(nextQuestion);
+        
+        // Ensure recording is stopped for the next question
+        if (isRecording) {
+          speechRecognitionService.cancel();
+          setIsRecording(false);
+        }
+        
         setTranscript('');
         setInterimTranscript('');
         setCode('');
@@ -404,11 +411,18 @@ const InterviewScreen = (props) => {
       setIsProcessing(true);
       setSkipError(null);
       setSkippedQuestions(prev => [...prev, questionIndex]);
+      
+      // Stop recording if active before skipping or auto-submitting
+      if (isRecording) {
+        speechRecognitionService.cancel();
+        setIsRecording(false);
+      }
+      
       // Auto-submit code/transcript if present before skipping
       const codeTrimmed = code ? code.trim() : '';
       const transcriptTrimmed = transcript ? transcript.trim() : '';
       if (codeTrimmed || transcriptTrimmed) {
-        await submitAnswer({ code, transcript });
+        await submitAnswer({ code: codeTrimmed, transcript: transcriptTrimmed });
         return; // Prevent double-advance: if we submitted, do not run skip logic
       }
       const payload = {

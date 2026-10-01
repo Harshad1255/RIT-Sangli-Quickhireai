@@ -112,7 +112,11 @@ router.post('/evaluate-answer', async (req, res) => {
     }
 
     // Use the processAnswer controller method
-    req.body = { interviewCode, questionNumber: questionNumber - 1, answer };
+    // Do not overwrite req.body, just pass the existing properties
+    req.body = { 
+      ...req.body,
+      questionNumber: questionNumber ? questionNumber - 1 : undefined
+    };
     return interviewController.processAnswer(req, res);
 
   } catch (error) {
