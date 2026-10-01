@@ -251,6 +251,11 @@
   transition: all 0.3s ease;
 }
 
+.practice-card h3 {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+}
+
 .practice-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);

@@ -173,7 +173,8 @@
 .question-text {
   font-size: 1.15rem;
   font-weight: 600;
-  color: #0f172a;
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
   margin-bottom: 20px;
   line-height: 1.6;
   -webkit-user-select: none;
