@@ -125,7 +125,11 @@ const SignupPage = () => {
 
   return (
     <div className="signup-container">
-      {!backendOnline ? (
+      {checkingBackend ? (
+        <div style={{ textAlign: "center", marginTop: 40 }}>
+          <p>Checking backend status...</p>
+        </div>
+      ) : !backendOnline ? (
         <div style={{ textAlign: "center", marginTop: 40 }}>
           <p>
             Backend is sleeping. Click below to turn on the server.<br/>

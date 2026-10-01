@@ -166,7 +166,8 @@ app.get('/healthcheck', (req, res) => {
           <div class="card">
             <h1>Backend is awake!</h1>
             <p>You can now return to the <b>QuickHire AI</b> website.</p>
-            <a class="return-link" href="https://rit-sangli-quickhireai-frontend.vercel.app/">Return to QuickHire AI</a>
+            <button class="return-link" onclick="window.close()" style="border: none; cursor: pointer; font-family: inherit;">Return to QuickHire AI</button>
+            <p style="margin-top: 15px; font-size: 0.9em; color: #666;">(Or simply close this tab and go back to your original window)</p>
           </div>
         </body>
       </html>
