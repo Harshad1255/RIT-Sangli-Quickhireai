@@ -12,7 +12,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: ALLOWED_ORIGINS
-        value: https://quick-hire-ai.vercel.app
+        value: https://quick-hire-ai.vercel.app,https://rit-sangli-quickhireai-frontend-pr8n6h0iy-harshad1255.vercel.app
       - key: CODE_EXECUTION_ENABLED
         value: "true"
       - key: CODE_EXECUTION_PROVIDER

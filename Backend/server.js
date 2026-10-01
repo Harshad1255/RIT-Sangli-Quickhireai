@@ -79,7 +79,7 @@ if (process.env.ALLOWED_ORIGINS) {
     'http://localhost:5174',
     'http://localhost:5175',
     'http://localhost:5001',
-    'https://quick-hire-ai.vercel.app'
+    'https://rit-sangli-quickhireai-frontend.vercel.app'
   ];
 }
 
@@ -166,7 +166,7 @@ app.get('/healthcheck', (req, res) => {
           <div class="card">
             <h1>Backend is awake!</h1>
             <p>You can now return to the <b>QuickHire AI</b> website.</p>
-            <a class="return-link" href="https://quick-hire-ai.vercel.app/">Return to QuickHire AI</a>
+            <a class="return-link" href="https://rit-sangli-quickhireai-frontend.vercel.app/">Return to QuickHire AI</a>
           </div>
         </body>
       </html>

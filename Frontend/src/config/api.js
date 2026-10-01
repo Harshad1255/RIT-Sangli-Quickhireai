@@ -3,12 +3,12 @@
 
 export const API_CONFIG = {
   // Your actual Render backend URL
-  RENDER_BACKEND_URL: 'https://quickhireai.onrender.com',
+  RENDER_BACKEND_URL: 'https://rit-sangli-quickhireai-2.onrender.com',
   // Match the active local backend port in this workspace
   LOCAL_BACKEND_URL: (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) || 'http://localhost:5001',
 
   // Your Vercel frontend URL
-  VERCEL_FRONTEND_URL: 'https://quick-hire-ai.vercel.app'
+  VERCEL_FRONTEND_URL: 'https://rit-sangli-quickhireai-frontend.vercel.app'
 };
 
 export const getApiBaseUrl = () => {
@@ -26,7 +26,7 @@ export const getApiBaseUrl = () => {
   }
 
   // Final fallback (production default if VITE_API_URL is missing)
-  return 'https://quickhireai.onrender.com/api';
+  return 'https://rit-sangli-quickhireai-2.onrender.com/api';
 };
 
 export const getHealthcheckUrl = () => {
@@ -41,7 +41,7 @@ export const getHealthcheckUrl = () => {
     return 'http://localhost:5001/healthcheck';
   }
 
-  return 'https://quickhireai.onrender.com/healthcheck';
+  return 'https://rit-sangli-quickhireai-2.onrender.com/healthcheck';
 };
 
 // Debug function to log current configuration
