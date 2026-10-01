@@ -112,7 +112,15 @@ app.use('/api/interviews/answer', upload.single('audioBlob'));
 app.use('/api/interviews/submit-all', upload.array('answer', 10));
 
 // --- Security Middleware ---
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "script-src": ["'self'", "'unsafe-inline'"],
+      "script-src-attr": ["'unsafe-inline'"],
+    },
+  },
+}));
 // Rate limiting: keep a production-safe cap, but avoid blocking legitimate local login retries.
 // Many dev/test flows and UI retries legitimately hit auth endpoints more than 100 times in a short window.
 const isLocalDevelopment = process.env.NODE_ENV !== 'production' || process.env.RENDER === 'false';
