@@ -71,16 +71,21 @@ const startInterview = async (req, res) => {
 
     // Generate first question
     try {
-      const firstQuestion = await geminiService.generateQuestion(skillsArray[0], []);
-      interviewSession.questions.push({
+      const firstQuestion = await geminiService.generateQuestion(skillsArray[0], [], 0, 'fundamentals');
+      const formattedQ = {
         ...firstQuestion,
         id: Math.random().toString(36).substr(2, 9),
         skill: skillsArray[0],
-        questionNumber: 1
-      });
+        questionNumber: 1,
+        isFollowUp: false
+      };
+      interviewSession.questions.push(formattedQ);
     } catch (error) {
       console.error('Error generating first question:', error);
-      interviewSession.questions.push(getFallbackQuestion(skillsArray[0]));
+      const fbQ = geminiService.getFallbackQuestion(skillsArray[0], [], 'fundamentals');
+      fbQ.questionNumber = 1;
+      fbQ.isFollowUp = false;
+      interviewSession.questions.push(fbQ);
     }
 
     // Store the session
@@ -152,7 +157,12 @@ const getNextQuestion = async (req, res) => {
       ? availableSkills[Math.floor(Math.random() * availableSkills.length)]
       : currentTopic;
 
-    const nextQuestion = await geminiService.generateQuestion(nextTopic);
+    // Pass focus area based on questionNumber or default
+    const focuses = ['fundamentals', 'practical application', 'coding', 'debugging', 'trade-offs'];
+    const qIndex = (questionNumber || 1) - 1;
+    const focusArea = focuses[qIndex % focuses.length];
+
+    const nextQuestion = await geminiService.generateQuestion(nextTopic, [], qIndex, focusArea);
     
     res.json({
       success: true,

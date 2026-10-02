@@ -1,11 +1,4 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-if (!process.env.GEMINI_API_KEY) {
-  console.error('GEMINI_API_KEY is not set in environment variables');
-}
-
-const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
-const model = genAI ? genAI.getGenerativeModel({ model: "gemini-1.5-flash" }) : null;
+const geminiClient = require('../../../shared/services/geminiClient');
 
 const getFallbackCodingProblem = (topic, difficulty, languages = []) => {
   const baseTopic = topic || 'Arrays';
@@ -15,23 +8,7 @@ const getFallbackCodingProblem = (topic, difficulty, languages = []) => {
     title: `${baseTopic} Pattern Mastery`,
     difficulty,
     tags: [baseTopic, 'Arrays', 'Interview Practice'],
-    statementMarkdown: `## Problem
-Given an array of integers \`nums\`, return the sum of all elements in the array.
-
-Write a function that takes an array as input and returns the total sum. The function should handle positive, negative, and zero values.
-
-### Example
-Input: \`[1, -2, 3, 4]\`
-Output: \`6\`
-
-### Explanation
-The sum of the elements is $1 + (-2) + 3 + 4 = 6$.
-
-### Constraints
-- $1 \le nums.length \le 10^5$
-- $-10^9 \le nums[i] \le 10^9$
-- The answer fits in a 64-bit signed integer.
-`,
+    statementMarkdown: `## Problem\nGiven an array of integers \`nums\`, return the sum of all elements in the array.\n\nWrite a function that takes an array as input and returns the total sum. The function should handle positive, negative, and zero values.\n\n### Example\nInput: \`[1, -2, 3, 4]\`\nOutput: \`6\`\n\n### Explanation\nThe sum of the elements is 1 + (-2) + 3 + 4 = 6.\n\n### Constraints\n- 1 <= nums.length <= 10^5\n- -10^9 <= nums[i] <= 10^9\n- The answer fits in a 64-bit signed integer.\n`,
     constraints: '- 1 <= nums.length <= 10^5\n- -10^9 <= nums[i] <= 10^9\n- Output should be a single integer',
     sampleTestCases: [
       { input: '[1, -2, 3, 4]', expectedOutput: '6', explanation: 'Sum of values is 6.' },
@@ -59,11 +36,6 @@ The sum of the elements is $1 + (-2) + 3 + 4 = 6$.
 };
 
 const generateCodingProblem = async (topic, difficulty, languages = null) => {
-  if (!model) {
-    console.warn('Gemini model unavailable; using fallback coding problem');
-    return getFallbackCodingProblem(topic, difficulty, languages);
-  }
-
   const prompt = `Generate a high-quality, professional programming challenge for a technical interview or coding assessment.
 Topic/Pattern: ${topic}
 Difficulty: ${difficulty}
@@ -102,37 +74,20 @@ The JSON object must contain EXACTLY this structure:
 }
 `;
 
-  let lastError;
-  const maxRetries = 3;
+  try {
+    const result = await geminiClient.generateContent(prompt);
+    if (!result.ok) throw new Error(result.error);
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const rawText = await response.text();
-      const text = rawText.replace(/```json\n?/g, '').replace(/\n?```/g, '').trim();
-      const problem = JSON.parse(text);
-
-      if (!problem.title || !problem.statementMarkdown || !Array.isArray(problem.sampleTestCases) || problem.sampleTestCases.length === 0 || !Array.isArray(problem.hiddenTestCases) || problem.hiddenTestCases.length === 0) {
-        throw new Error('Invalid problem format in response: missing test cases');
-      }
-
-      return problem;
-    } catch (error) {
-      const msg = (error && error.message) ? error.message.toLowerCase() : '';
-      const isQuotaError = msg.includes('quota') || msg.includes('429') || msg.includes('too many requests') || msg.includes('generate_content_free_tier_requests');
-      console.error(`Attempt ${attempt} failed:`, msg || error);
-      lastError = error;
-
-      if (attempt < maxRetries) {
-        const delay = isQuotaError ? 4000 : 2000;
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+    const problem = result.data;
+    if (!problem.title || !problem.statementMarkdown || !Array.isArray(problem.sampleTestCases) || problem.sampleTestCases.length === 0 || !Array.isArray(problem.hiddenTestCases) || problem.hiddenTestCases.length === 0) {
+      throw new Error('Invalid problem format in response: missing test cases');
     }
-  }
 
-  console.warn('Gemini coding generation failed after retries. Using fallback data instead.');
-  return getFallbackCodingProblem(topic, difficulty, languages);
+    return problem;
+  } catch (error) {
+    console.warn('Gemini coding generation failed:', error.message);
+    return getFallbackCodingProblem(topic, difficulty, languages);
+  }
 };
 
 module.exports = {

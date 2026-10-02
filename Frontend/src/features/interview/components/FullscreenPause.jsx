@@ -126,14 +126,18 @@ const FullscreenPause = ({ onFullscreenResumed, currentQuestion, questionIndex, 
       }
     };
 
-    const handleBlur = () => {
-      if (!isFullscreen) {
-        console.log('🚨 SUSPICIOUS: Window lost focus - user may have switched applications');
-        isCurrentlyActive = false;
-        suspiciousActivityDetected = true;
-        consecutiveSuspiciousChecks++;
-        incrementCountsOnce('App switch detected via blur event [pause screen]');
-      }
+    const handleBlur = (e) => {
+      if (document.activeElement && document.activeElement.tagName === 'IFRAME') return;
+      
+      setTimeout(() => {
+        if (!isFullscreen && !document.hasFocus() && !recentlyIncrementedRef.current) {
+          console.log('🚨 SUSPICIOUS: Window lost focus - user may have switched applications');
+          isCurrentlyActive = false;
+          suspiciousActivityDetected = true;
+          consecutiveSuspiciousChecks++;
+          incrementCountsOnce('App switch detected via blur event [pause screen]');
+        }
+      }, 1500);
     };
 
     const handleFocus = () => {
@@ -164,7 +168,7 @@ const FullscreenPause = ({ onFullscreenResumed, currentQuestion, questionIndex, 
         keyboardActivityCount++;
         
         // Detect suspicious keyboard patterns (like typing in WhatsApp)
-        if (keyboardActivityCount > 5 && Date.now() - lastActiveTime < 3000) {
+        if (keyboardActivityCount > 30 && Date.now() - lastActiveTime < 3000) {
           console.log('🚨 SUSPICIOUS: High keyboard activity detected - possible messaging app');
           suspiciousActivityDetected = true;
           consecutiveSuspiciousChecks++;
@@ -172,22 +176,12 @@ const FullscreenPause = ({ onFullscreenResumed, currentQuestion, questionIndex, 
         }
         
         // Detect rapid typing patterns
-        if (keyboardActivityCount > 20) {
+        if (keyboardActivityCount > 100) {
           console.log('🚨 SUSPICIOUS: Excessive keyboard activity - possible external app');
           suspiciousActivityDetected = true;
           consecutiveSuspiciousChecks++;
           incrementCountsOnce();
         }
-      }
-    };
-
-    // Monitor clipboard changes
-    const handleClipboardChange = () => {
-      if (!isFullscreen) {
-        console.log('🚨 SUSPICIOUS: Clipboard changed - possible app switching');
-        suspiciousActivityDetected = true;
-        consecutiveSuspiciousChecks++;
-        incrementCountsOnce('Clipboard change detected (possible app switch) [pause screen]');
       }
     };
 
@@ -301,13 +295,6 @@ const FullscreenPause = ({ onFullscreenResumed, currentQuestion, questionIndex, 
     document.addEventListener('selectionchange', handleSelectionChange);
     document.addEventListener('contextmenu', handleContextMenu);
     
-    // Try to monitor clipboard
-    try {
-      navigator.clipboard.addEventListener('clipboardchange', handleClipboardChange);
-    } catch (e) {
-      console.log('Clipboard monitoring not available');
-    }
-    
     // Sync with sessionStorage to ensure consistency with InterviewScreen
     const syncInterval = setInterval(() => {
       const storedSuspicious = sessionStorage.getItem('pauseSuspiciousActivityCount');
@@ -342,12 +329,6 @@ const FullscreenPause = ({ onFullscreenResumed, currentQuestion, questionIndex, 
       document.removeEventListener('keyup', handleKeyPress);
       document.removeEventListener('selectionchange', handleSelectionChange);
       document.removeEventListener('contextmenu', handleContextMenu);
-      
-      try {
-        navigator.clipboard.removeEventListener('clipboardchange', handleClipboardChange);
-      } catch (e) {
-        // Ignore cleanup errors
-      }
       
       clearInterval(checkActivity);
       clearInterval(syncInterval);

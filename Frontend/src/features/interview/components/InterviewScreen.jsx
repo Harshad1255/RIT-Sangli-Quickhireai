@@ -330,7 +330,7 @@ const InterviewScreen = (props) => {
         return;
       }
 
-      const { evaluation, nextQuestion, isFollowUp } = response.data;
+      const { evaluation, nextQuestion, isFollowUp, progress } = response.data;
       
       // Store the answer
       const newAnswer = {
@@ -338,7 +338,7 @@ const InterviewScreen = (props) => {
         answer: answerText.trim(),
         code: codeText || '',
         evaluation,
-        questionNumber: questionIndex + 1,
+        questionNumber: progress ? progress.current : questionIndex + 1,
         isFollowUp: isFollowUpQuestion
       };
       
@@ -358,6 +358,11 @@ const InterviewScreen = (props) => {
         } else {
           setIsFollowUpQuestion(false);
           setFollowUpCount(0);
+        }
+        
+        if (progress) {
+          setQuestionIndex(progress.current - 1);
+        } else if (!isFollowUp) {
           setQuestionIndex(prev => prev + 1);
         }
         
@@ -373,6 +378,9 @@ const InterviewScreen = (props) => {
         setInterimTranscript('');
         setCode('');
         setFeedback(null);
+      } else {
+        // Unexpected missing nextQuestion
+        setError('Error: Next question missing from server response.');
       }
     } catch (error) {
       console.error('Error submitting answer:', error);
@@ -584,14 +592,20 @@ const InterviewScreen = (props) => {
       }
     };
 
-    const handleBlur = () => {
-      if (isCurrentlyFullscreen && !document.hasFocus() && !focusLossIncrementedRef.current) {
-        console.log('🚨 SUSPICIOUS: Window lost focus during interview (actual app/tab switch)');
-        isCurrentlyActive = false;
-        suspiciousActivityDetected = true;
-        consecutiveSuspiciousChecks++;
-        incrementCountsOnce('App switch detected via blur event', 'blur');
-      }
+    const handleBlur = (e) => {
+      // Ignore blur if the document still has focus, or if an internal element/iframe is focused
+      if (document.activeElement && document.activeElement.tagName === 'IFRAME') return;
+      
+      // We debounce/delay the blur check slightly to allow for permission prompts or page interactions
+      setTimeout(() => {
+        if (isCurrentlyFullscreen && !document.hasFocus() && !focusLossIncrementedRef.current) {
+          console.log('🚨 SUSPICIOUS: Window lost focus during interview (actual app/tab switch)');
+          isCurrentlyActive = false;
+          suspiciousActivityDetected = true;
+          consecutiveSuspiciousChecks++;
+          incrementCountsOnce('App switch detected via blur event', 'blur');
+        }
+      }, 1500);
     };
 
     const handleFocus = () => {
@@ -613,7 +627,6 @@ const InterviewScreen = (props) => {
       if (isCurrentlyActive && isWithinBounds) {
         updateActivity();
         mouseMovementCount++;
-        // NEVER increment suspicious count for mouse move in fullscreen
       }
     };
 
@@ -624,29 +637,19 @@ const InterviewScreen = (props) => {
         keyboardActivityCount++;
         // Make thresholds higher and never increment for normal typing in fullscreen
         if (!isCurrentlyFullscreen) {
-          if (keyboardActivityCount > 10 && Date.now() - lastActiveTime < 3000) {
+          if (keyboardActivityCount > 30 && Date.now() - lastActiveTime < 3000) {
             console.log('🚨 SUSPICIOUS: High keyboard activity detected - possible messaging app');
             suspiciousActivityDetected = true;
             consecutiveSuspiciousChecks++;
             incrementCountsOnce('High keyboard activity', 'keyboard');
           }
-          if (keyboardActivityCount > 40) {
+          if (keyboardActivityCount > 100) {
             console.log('🚨 SUSPICIOUS: Excessive keyboard activity - possible external app');
             suspiciousActivityDetected = true;
             consecutiveSuspiciousChecks++;
             incrementCountsOnce('Excessive keyboard activity', 'keyboard');
           }
         }
-      }
-    };
-
-    // Monitor clipboard changes
-    const handleClipboardChange = () => {
-      if (isCurrentlyFullscreen) {
-        console.log('🚨 SUSPICIOUS: Clipboard changed - possible app switching');
-        suspiciousActivityDetected = true;
-        consecutiveSuspiciousChecks++;
-        incrementCountsOnce('Clipboard change detected (possible app switch)', 'clipboardchange');
       }
     };
 
@@ -763,13 +766,7 @@ const InterviewScreen = (props) => {
     document.addEventListener('keyup', handleKeyPress);
     document.addEventListener('selectionchange', handleSelectionChange);
     document.addEventListener('contextmenu', handleContextMenu);
-    
-    // Try to monitor clipboard
-    try {
-      navigator.clipboard.addEventListener('clipboardchange', handleClipboardChange);
-    } catch (e) {
-      console.log('Clipboard monitoring not available');
-    }
+    // Removed clipboard monitoring here as requested
 
     // --- Disable copy/cut/paste in fullscreen ---
     const preventCopyCutPaste = (e) => {
@@ -870,11 +867,7 @@ const InterviewScreen = (props) => {
       document.removeEventListener('paste', preventCopyCutPaste);
       // Remove text selection prevention
       document.removeEventListener('selectstart', preventTextSelection);
-      try {
-        navigator.clipboard.removeEventListener('clipboardchange', handleClipboardChange);
-      } catch (e) {
-        // Ignore cleanup errors
-      }
+      // Removed clipboard monitoring cleanup as it is no longer used
       clearInterval(checkActivity);
       clearInterval(syncInterval);
       // Clean up session when component unmounts
@@ -1355,7 +1348,7 @@ const InterviewScreen = (props) => {
               </div>
             </div>
             {hasQuestion ? (
-              <>
+              <div key={currentQuestion.id || currentQuestion.questionNumber || questionIndex}>
                 {/* Follow-up Question Indicator */}
                 {isFollowUpQuestion && (
                   <div style={{
@@ -1589,7 +1582,7 @@ const InterviewScreen = (props) => {
                     onQuestionTypeChange={handleQuestionTypeChange}
                   />
                 )}
-              </>
+              </div>
             ) : (
               <div className="question-error">
                 <h2>No questions available.</h2>

@@ -29,12 +29,18 @@ const processAnswer = async (req, res) => {
       activeInterviews.set(interviewCode, interview);
     }
     
-    // Use answers.length as the current question index
-    const currentIndex = interview.answers.length;
-    const currentQuestion = question || `Question ${currentIndex}`;
+    // Use answers.length to track all answers, but we need to track main questions answered.
+    // A main question is one that does not have isFollowUp true.
+    const mainQuestionsAnswered = interview.answers.filter(a => !a.isFollowUp).length;
+    const isCurrentFollowUp = question && question.isFollowUp;
+    
+    // The current main index is either the count of main questions answered (if this was a main question)
+    // or the same (if this was a follow-up answer). But wait, we just received an answer.
+    // We can infer if this answer is for a follow-up by looking at `question.isFollowUp`.
+    
+    const currentQuestionText = question ? question.question : `Question ${mainQuestionsAnswered + 1}`;
     const transcript = answer || '';
     const code = interviewCode;
-    const isFinalQuestion = currentIndex >= interview.totalQuestions;
     
     // Analyze face if video data provided
     let facialAnalysis = null;
@@ -65,43 +71,54 @@ const processAnswer = async (req, res) => {
           completeness: 0,
           clarity: 0
         } :
-        await geminiService.analyzeAnswer(transcript, currentQuestion, code);
+        await geminiService.analyzeAnswer(transcript, currentQuestionText, code);
       console.log('Gemini evaluation result:', analysis);
     } catch (analysisError) {
       console.error('Error analyzing answer:', analysisError);
-      analysis = getDefaultAnalysis();
+      analysis = { evaluationFailed: true, score: null };
     }
 
     // Store answer and analysis with confidence score
     const storedAnswer = {
-      question: currentQuestion,
+      question: currentQuestionText,
       answer: transcript,
       code: code,
       analysis: analysis,
       confidenceScore: confidenceScore,
       facialAnalysis: facialAnalysis,
+      isFollowUp: !!isCurrentFollowUp,
       questionId: question?.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     };
     interview.answers.push(storedAnswer);
     console.log('Answer stored in interview.answers:', storedAnswer);
 
-    // Calculate running average including confidence score
-    const totalScore = interview.answers.reduce((sum, ans) => {
-      const technicalScore = ans.analysis?.score || 0;
-      const confidenceScore = ans.confidenceScore || 0;
-      return sum + (technicalScore * 0.7 + confidenceScore * 0.3); // 70% technical, 30% confidence
-    }, 0);
-    interview.currentScore = totalScore / interview.answers.length;
+    // Calculate running average (excluding null scores)
+    let totalScore = 0;
+    let validScores = 0;
+    for (const ans of interview.answers) {
+      if (ans.analysis && ans.analysis.score !== null && ans.analysis.score !== undefined) {
+        const technicalScore = ans.analysis.score;
+        const confScore = ans.confidenceScore || 0;
+        totalScore += (technicalScore * 0.7 + confScore * 0.3);
+        validScores++;
+      }
+    }
+    interview.currentScore = validScores > 0 ? totalScore / validScores : 0;
+
+    const newMainQuestionsAnswered = interview.answers.filter(a => !a.isFollowUp).length;
 
     // Check if we should generate a follow-up question based on answer quality
     let isFollowUp = false;
     let nextQuestion = null;
     
-    // Only generate follow-up if answer quality is poor (score < 8) and we haven't reached total questions
-    if (analysis.score < 8 && interview.answers.length < interview.totalQuestions) {
+    // Only generate follow-up if answer quality is poor (score < 8), we haven't reached total questions,
+    // this wasn't a skipped question, evaluation didn't fail, and the current question is not already a follow-up.
+    const canFollowUp = !isCurrentFollowUp && !skipped && !analysis.evaluationFailed && analysis.score < 8 && newMainQuestionsAnswered < interview.totalQuestions;
+
+    if (canFollowUp) {
       try {
         const followUpQuestion = await geminiService.generateFollowUpQuestion(
-          question || { question: currentQuestion, topic: interview.skills[currentIndex] },
+          question || { question: currentQuestionText, topic: interview.skills[newMainQuestionsAnswered - 1], id: storedAnswer.questionId },
           transcript,
           analysis
         );
@@ -111,9 +128,10 @@ const processAnswer = async (req, res) => {
             ...followUpQuestion,
             id: Math.random().toString(36).substr(2, 9),
             skill: followUpQuestion.topic,
-            questionNumber: currentIndex + 1,
+            questionNumber: newMainQuestionsAnswered, // Same main question number
             isFollowUp: true
           };
+          interview.questions.push(nextQuestion);
           isFollowUp = true;
           console.log('Generated follow-up question:', nextQuestion);
         }
@@ -122,51 +140,57 @@ const processAnswer = async (req, res) => {
       }
     }
     
-    // If no follow-up was generated, check if we've reached total questions
+    // If no follow-up was generated, check if we've reached total main questions
     if (!isFollowUp) {
-    if (interview.answers.length >= interview.totalQuestions) {
-      interview.status = 'completed';
-      const finalEvaluation = await geminiService.generateFinalEvaluation(interview.answers);
-      
-      // Store mock interview results in database for company viewing
-      if (interviewCode.startsWith('mock-')) {
-        await storeMockInterviewResults(interviewCode, interview, finalEvaluation);
-      }
-      
-      return res.json({
-        success: true,
-        evaluation: finalEvaluation,
-        lastAnswerEvaluation: {
-          ...analysis,
-          confidenceScore: confidenceScore,
-          facialAnalysis: facialAnalysis
-        },
-        isComplete: true,
-        finalScore: interview.currentScore
-      });
+      if (newMainQuestionsAnswered >= interview.totalQuestions) {
+        interview.status = 'completed';
+        const finalEvaluation = await geminiService.generateFinalEvaluation(interview.answers);
+        
+        // Store mock interview results in database for company viewing
+        if (interviewCode.startsWith('mock-')) {
+          await storeMockInterviewResults(interviewCode, interview, finalEvaluation);
+        }
+        
+        return res.json({
+          success: true,
+          evaluation: finalEvaluation,
+          lastAnswerEvaluation: {
+            ...analysis,
+            confidenceScore: confidenceScore,
+            facialAnalysis: facialAnalysis
+          },
+          isComplete: true,
+          finalScore: interview.currentScore
+        });
       }
     }
 
-    // Generate next question if no follow-up was generated
+    // Generate next main question if no follow-up was generated
     if (!nextQuestion) {
-    const nextSkillIndex = Math.min(interview.answers.length, interview.skills.length - 1);
-    const nextSkill = interview.skills[nextSkillIndex];
-    const previousQuestions = interview.questions?.map(q => q.question) || [];
-    try {
-      nextQuestion = await geminiService.generateQuestion(nextSkill, previousQuestions);
-      nextQuestion = {
-        ...nextQuestion,
-        id: Math.random().toString(36).substr(2, 9),
-        skill: nextSkill,
-        questionNumber: interview.answers.length + 1
-      };
-      interview.questions.push(nextQuestion);
-    } catch (error) {
-      console.error('Error generating next question:', error);
-      nextQuestion = getFallbackQuestion(nextSkill);
-      nextQuestion.id = Math.random().toString(36).substr(2, 9);
-      nextQuestion.questionNumber = interview.answers.length + 1;
-      interview.questions.push(nextQuestion);
+      const nextSkillIndex = Math.min(newMainQuestionsAnswered, interview.skills.length - 1);
+      const nextSkill = interview.skills[nextSkillIndex];
+      const previousQuestions = interview.questions || [];
+      
+      const focuses = ['fundamentals', 'practical application', 'coding', 'debugging', 'trade-offs'];
+      const focusArea = focuses[newMainQuestionsAnswered % focuses.length];
+
+      try {
+        nextQuestion = await geminiService.generateQuestion(nextSkill, previousQuestions, newMainQuestionsAnswered, focusArea);
+        nextQuestion = {
+          ...nextQuestion,
+          id: Math.random().toString(36).substr(2, 9),
+          skill: nextSkill,
+          questionNumber: newMainQuestionsAnswered + 1,
+          isFollowUp: false
+        };
+        interview.questions.push(nextQuestion);
+      } catch (error) {
+        console.error('Error generating next question:', error);
+        nextQuestion = geminiService.getFallbackQuestion(nextSkill, previousQuestions, focusArea);
+        nextQuestion.id = Math.random().toString(36).substr(2, 9);
+        nextQuestion.questionNumber = newMainQuestionsAnswered + 1;
+        nextQuestion.isFollowUp = false;
+        interview.questions.push(nextQuestion);
       }
     }
 
@@ -180,7 +204,7 @@ const processAnswer = async (req, res) => {
       nextQuestion,
       isFollowUp,
       progress: {
-        current: currentIndex + 1,
+        current: newMainQuestionsAnswered + (isFollowUp ? 0 : 1),
         total: interview.totalQuestions
       }
     });
