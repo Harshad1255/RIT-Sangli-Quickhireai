@@ -82,8 +82,21 @@ const startInterview = async (req, res) => {
       interviewSession.questions.push(fbQ);
     }
 
-    await interviewSession.save();
-    console.log('Interview session created in DB for code:', interviewCode);
+    try {
+      await interviewSession.save();
+      console.log('Interview session created in DB for code:', interviewCode);
+    } catch (saveError) {
+      if (saveError.code === 11000) {
+        console.log('Duplicate session found due to race condition. Using existing session.');
+        const existingSession = await InterviewSession.findOne({ interviewCode });
+        return res.json({
+          success: true,
+          interview: existingSession,
+          message: 'Interview started successfully (reused session)'
+        });
+      }
+      throw saveError;
+    }
 
     res.json({
       success: true,
