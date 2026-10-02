@@ -34,6 +34,14 @@ const progressSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  totalAttempted: {
+    type: Number,
+    default: 0,
+  },
+  totalCorrect: {
+    type: Number,
+    default: 0,
+  },
   topicProficiency: [{
     topic: String,
     category: { type: String, enum: ['aptitude', 'coding'] },

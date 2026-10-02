@@ -11,14 +11,15 @@ const {
  * Utility to update User XP, Coins, Level, Daily Streak, and check Badges/Achievements
  */
 class XPCalculator {
-  async updateAfterSolution({ userId, userName, university, questionType, difficulty, isCorrect, timeTakenSeconds }) {
+  async updateAfterSolution({ userId, userName, university, questionType, difficulty, isCorrect, timeTakenSeconds, isFirstSolve = true }) {
     if (!userId) return null;
 
     // Calculate XP and Coin reward
     let xpGain = 0;
     let coinGain = 0;
 
-    if (isCorrect) {
+    // Only award XP if the answer is correct AND it's the first time they solve it
+    if (isCorrect && isFirstSolve) {
       if (questionType === 'aptitude') {
         xpGain = difficulty === 'Hard' ? 30 : difficulty === 'Medium' ? 20 : 10;
         coinGain = difficulty === 'Hard' ? 15 : difficulty === 'Medium' ? 10 : 5;
@@ -49,24 +50,36 @@ class XPCalculator {
     const todayStr = new Date().toISOString().split('T')[0];
     const diffKey = difficulty ? difficulty.toLowerCase() : 'medium';
 
-    if (isCorrect) {
+    if (isCorrect && isFirstSolve) {
       if (questionType === 'aptitude' && progress.questionsSolved.aptitude[diffKey] !== undefined) {
         progress.questionsSolved.aptitude[diffKey] += 1;
         progress.questionsSolved.aptitude.total += 1;
+        progress.markModified('questionsSolved.aptitude');
       } else if (questionType === 'coding' && progress.questionsSolved.coding[diffKey] !== undefined) {
         progress.questionsSolved.coding[diffKey] += 1;
         progress.questionsSolved.coding.total += 1;
+        progress.markModified('questionsSolved.coding');
       }
     }
 
-    // Check streak
+    // Check streak using calendar days
     const now = new Date();
     const lastActive = new Date(progress.lastActiveDate || now);
-    const diffDays = Math.floor((now - lastActive) / (1000 * 60 * 60 * 24));
-    if (diffDays === 1) {
-      progress.dailyStreak += 1;
-    } else if (diffDays > 1) {
-      progress.dailyStreak = 1;
+    
+    // Truncate to local date strings to compare actual calendar days
+    const todayStrStreak = now.toISOString().split('T')[0];
+    const lastActiveStr = lastActive.toISOString().split('T')[0];
+    
+    if (todayStrStreak !== lastActiveStr) {
+      const todayDateOnly = new Date(todayStrStreak);
+      const lastActiveDateOnly = new Date(lastActiveStr);
+      const diffDays = Math.round((todayDateOnly - lastActiveDateOnly) / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 1) {
+        progress.dailyStreak += 1;
+      } else if (diffDays > 1) {
+        progress.dailyStreak = 1;
+      }
     } else if (progress.dailyStreak === 0) {
       progress.dailyStreak = 1;
     }
@@ -79,7 +92,14 @@ class XPCalculator {
     });
 
     const totalSolved = (progress.questionsSolved.aptitude.total || 0) + (progress.questionsSolved.coding.total || 0);
-    progress.overallAccuracy = isCorrect ? Math.min(100, (progress.overallAccuracy * 0.9 + 10)) : Math.max(0, progress.overallAccuracy * 0.9);
+    
+    // Update accuracy based on actual attempts
+    progress.totalAttempted = (progress.totalAttempted || 0) + 1;
+    if (isCorrect) {
+      progress.totalCorrect = (progress.totalCorrect || 0) + 1;
+    }
+    progress.overallAccuracy = Math.round((progress.totalCorrect / progress.totalAttempted) * 100);
+    
     progress.updatedAt = now;
     await progress.save();
 
@@ -129,6 +149,7 @@ class XPCalculator {
       heatmapEntry.codingCount = (heatmapEntry.codingCount || 0) + coding;
       heatmapEntry.total = heatmapEntry.aptitudeCount + heatmapEntry.codingCount;
       heatmapEntry.count = heatmapEntry.total; // Legacy fallback
+      progress.markModified('heatmap');
     } else {
       progress.heatmap.push({
         date: todayStr,
@@ -146,6 +167,7 @@ class XPCalculator {
       dailyEntry.aptitude = (dailyEntry.aptitude || 0) + aptitude;
       dailyEntry.coding = (dailyEntry.coding || 0) + coding;
       todayTotal = dailyEntry.aptitude + dailyEntry.coding;
+      progress.markModified('dailySolved');
     } else {
       progress.dailySolved.push({
         date: todayStr,

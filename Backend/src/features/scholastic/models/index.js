@@ -18,6 +18,7 @@ const Badge = require('./Badge');
 const Notification = require('./Notification');
 const ScholasticPracticeSet = require('./ScholasticPracticeSet');
 const ScholasticPracticeAttempt = require('./ScholasticPracticeAttempt');
+const AptitudeSubmission = require('./AptitudeSubmission');
 
 module.exports = {
   Company,
@@ -40,4 +41,5 @@ module.exports = {
   Notification,
   ScholasticPracticeSet,
   ScholasticPracticeAttempt,
+  AptitudeSubmission,
 };

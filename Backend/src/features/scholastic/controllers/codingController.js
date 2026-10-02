@@ -170,6 +170,9 @@ const codingController = {
       let xpResult = null;
 
       if (userId) {
+        const priorSolve = await CodingSubmission.findOne({ userId, questionId, status: 'Accepted' });
+        const isFirstSolve = !priorSolve;
+
         submissionRecord = await CodingSubmission.create({
           userId,
           questionId,
@@ -189,7 +192,8 @@ const codingController = {
           questionType: 'coding',
           difficulty: question.difficulty,
           isCorrect: isAccepted,
-          timeTakenSeconds: Math.round((executionResult.runtime || 0) / 1000) || 60
+          timeTakenSeconds: Math.round((executionResult.runtime || 0) / 1000) || 60,
+          isFirstSolve
         });
       }
 

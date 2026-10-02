@@ -127,13 +127,30 @@ const aptitudeController = {
       // Calculate XP and progress if user is logged in
       let xpResult = null;
       if (userId) {
+        const AptitudeSubmission = require('../models/AptitudeSubmission');
+        
+        // Idempotency check: has the user solved this question before?
+        const priorSolve = await AptitudeSubmission.findOne({ userId, questionId, isCorrect: true });
+        const isFirstSolve = !priorSolve;
+
+        // Record this attempt
+        await AptitudeSubmission.create({
+          userId,
+          questionId,
+          selectedOptionId: parseInt(selectedOptionId, 10),
+          isCorrect,
+          timeTakenSeconds: Number(timeTakenSeconds) || 0
+        });
+
+        // Only award XP and progress if this is a new correct solve, or if we want to record daily activity
         xpResult = await xpCalculator.updateAfterSolution({
           userId,
           userName,
           questionType: 'aptitude',
           difficulty: question.difficulty,
           isCorrect,
-          timeTakenSeconds
+          timeTakenSeconds,
+          isFirstSolve
         });
       }
 
