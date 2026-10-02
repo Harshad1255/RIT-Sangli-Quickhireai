@@ -170,8 +170,8 @@ const processAnswer = async (req, res) => {
                   answers: interview.answers.map(ans => ({
                     question: ans.question,
                     answer: ans.answer,
-                    score: ans.analysis?.score || 0,
-                    feedback: ans.analysis?.feedback || ''
+                    score: ans.analysis?.score ?? (ans.analysis?.evaluationFailed ? null : 0),
+                    feedback: ans.analysis?.feedback || 'Evaluation missing'
                   }))
                 };
                 await dbInterview.save();
@@ -299,8 +299,8 @@ const storeMockInterviewResults = async (mockCode, interview, finalEvaluation) =
           answers: interview.answers.map(ans => ({
             question: ans.question,
             answer: ans.answer,
-            score: ans.analysis?.score || 0,
-            feedback: ans.analysis?.feedback || ''
+            score: ans.analysis?.score ?? (ans.analysis?.evaluationFailed ? null : 0),
+            feedback: ans.analysis?.feedback || 'Evaluation missing'
           }))
         },
         startedAt: interview.startTime,
@@ -713,6 +713,26 @@ const generatePdfReport = async (req, res) => {
         doc.fontSize(16).text('Areas for Improvement', { underline: true });
         candidate.results.weaknesses.forEach(w => doc.fontSize(12).text(`• ${w}`));
         doc.moveDown();
+      }
+
+      if (candidate.results.answers && candidate.results.answers.length > 0) {
+        doc.addPage();
+        doc.fontSize(18).text('Question-by-Question Analysis', { align: 'center' });
+        doc.moveDown();
+
+        candidate.results.answers.forEach((ans, index) => {
+          doc.fontSize(14).text(`Question ${index + 1}: ${ans.question}`, { underline: true });
+          doc.fontSize(12).text(`Answer: ${ans.answer || 'No answer provided'}`);
+          
+          if (ans.score === null) {
+            doc.text(`Score: Evaluation Failed`);
+          } else {
+            doc.text(`Score: ${ans.score}/10`);
+          }
+          
+          doc.text(`Feedback: ${ans.feedback || 'None'}`);
+          doc.moveDown();
+        });
       }
     } else {
       doc.fontSize(12).text('No detailed results available for this candidate.');

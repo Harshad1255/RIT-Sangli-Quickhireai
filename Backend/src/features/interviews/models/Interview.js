@@ -49,6 +49,12 @@ const CandidateSchema = new mongoose.Schema({
       feedback: String
     }]
   },
+  activityReports: [{
+    riskLevel: String,
+    suspiciousActivities: [mongoose.Schema.Types.Mixed],
+    tabSwitchCount: Number,
+    timestamp: Date
+  }],
   startedAt: Date,
   completedAt: Date
 });

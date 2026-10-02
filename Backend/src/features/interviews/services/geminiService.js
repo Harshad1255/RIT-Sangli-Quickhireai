@@ -163,15 +163,22 @@ Provide a detailed evaluation in this JSON format:
 
     // Retry evaluation once internally
     const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 1 });
-    if (response.ok && response.data && response.data.score !== undefined) {
-      return response.data;
+    if (response.ok && response.data) {
+      const data = response.data;
+      return {
+        score: data.score ?? data.overall_score ?? data.overallScore ?? 0,
+        feedback: data.feedback ?? data.overallFeedback ?? '',
+        technicalAccuracy: data.technicalAccuracy ?? data.technical_accuracy ?? data.technicalKnowledge ?? 0,
+        communication: data.communication ?? data.communication_skills ?? data.communicationSkills ?? 0,
+        improvements: data.improvements ?? data.areas_for_improvement ?? data.weaknesses ?? []
+      };
     }
     
     console.error('Failed to analyze answer with AI. Returning evaluation failure.');
-    return { evaluationFailed: true, score: null };
+    return { evaluationFailed: true, score: null, feedback: "Evaluation failed" };
   } catch (error) {
     console.error('Error evaluating answer:', error);
-    return { evaluationFailed: true, score: null };
+    return { evaluationFailed: true, score: null, feedback: "Evaluation failed" };
   }
 };
 
@@ -221,28 +228,23 @@ Return only the JSON object:
 };
 
 const generateFinalEvaluation = async (answers) => {
+  const computedScores = calculateSkillScores(answers);
+  const isZero = computedScores.overallScore === 0;
+
   try {
-    if (!answers || answers.length === 0) {
-      return createDefaultFinalEvaluation(answers);
+    if (!answers || answers.length === 0 || isZero) {
+      return createDefaultFinalEvaluation(answers, computedScores);
     }
 
     const answersText = answers.map((ans, index) => 
       `Question ${index + 1}: ${ans.question}\nAnswer: ${ans.answer}\nScore: ${ans.analysis?.score || 'N/A'}`
     ).join('\n\n');
 
-    const prompt = `Based on these interview answers, provide a comprehensive final evaluation. If some scores are N/A, estimate based on the answer text.
-
+    const prompt = `Based on these interview answers, provide a comprehensive final evaluation feedback.
 ${answersText}
 
 Provide a detailed evaluation in this JSON format:
 {
-  "overallScore": number between 0-10 (give 0 if candidate answered nothing or skipped all),
-  "skillAssessment": {
-    "technicalKnowledge": number between 0-10,
-    "codingAbility": number between 0-10,
-    "communicationSkills": number between 0-10,
-    "problemSolving": number between 0-10
-  },
   "strengths": ["list of candidate's strengths"],
   "weaknesses": ["areas for improvement"],
   "recommendations": ["specific recommendations for growth"],
@@ -251,28 +253,41 @@ Provide a detailed evaluation in this JSON format:
 }`;
 
     const response = await generateContentWithRetry(prompt, { isJson: true });
-    if (response.ok && response.data && response.data.overallScore !== undefined) {
-      return response.data;
+    if (response.ok && response.data) {
+      const data = response.data;
+      return {
+        overallScore: computedScores.overallScore,
+        skillAssessment: {
+          technicalKnowledge: computedScores.technicalKnowledge,
+          codingAbility: computedScores.codingAbility,
+          communicationSkills: computedScores.communicationSkills,
+          problemSolving: computedScores.problemSolving
+        },
+        strengths: data.strengths ?? [],
+        weaknesses: data.weaknesses ?? data.areas_for_improvement ?? data.improvements ?? [],
+        recommendations: data.recommendations ?? [],
+        overallFeedback: data.overallFeedback ?? data.overall_feedback ?? data.feedback ?? '',
+        hiringRecommendation: data.hiringRecommendation ?? data.hiring_recommendation ?? 'consider'
+      };
     }
     
-    return createDefaultFinalEvaluation(answers);
+    return createDefaultFinalEvaluation(answers, computedScores);
   } catch (error) {
     console.error('Error generating final evaluation:', error);
-    return createDefaultFinalEvaluation(answers);
+    return createDefaultFinalEvaluation(answers, computedScores);
   }
 };
 
-const createDefaultFinalEvaluation = (answers) => {
-  const avgScore = calculateAverageScore(answers);
-  const isZero = avgScore === 0;
+const createDefaultFinalEvaluation = (answers, computedScores) => {
+  const isZero = computedScores.overallScore === 0;
   
   return {
-    overallScore: avgScore,
+    overallScore: computedScores.overallScore,
     skillAssessment: {
-      technicalKnowledge: avgScore,
-      codingAbility: avgScore,
-      communicationSkills: avgScore,
-      problemSolving: avgScore
+      technicalKnowledge: computedScores.technicalKnowledge,
+      codingAbility: computedScores.codingAbility,
+      communicationSkills: computedScores.communicationSkills,
+      problemSolving: computedScores.problemSolving
     },
     strengths: isZero ? ['None observed'] : ['Demonstrated willingness to participate', 'Provided answers to questions'],
     weaknesses: isZero ? ['Did not answer questions', 'Skipped interview portions'] : ['Could improve technical depth', 'More specific examples needed'],
@@ -282,20 +297,37 @@ const createDefaultFinalEvaluation = (answers) => {
   };
 };
 
-const calculateAverageScore = (answers) => {
-  if (!answers || answers.length === 0) return 0;
+const calculateSkillScores = (answers) => {
+  if (!answers || answers.length === 0) {
+    return { overallScore: 0, technicalKnowledge: 0, codingAbility: 0, communicationSkills: 0, problemSolving: 0 };
+  }
   
-  let totalScore = 0;
-  let count = 0;
+  let totals = { score: 0, tech: 0, comm: 0 };
+  let counts = { score: 0, tech: 0, comm: 0 };
   
   for (const ans of answers) {
-    if (ans.analysis && ans.analysis.score !== null && ans.analysis.score !== undefined) {
-      totalScore += ans.analysis.score;
-      count++;
+    const analysis = ans.analysis;
+    if (analysis && !analysis.evaluationFailed) {
+      if (typeof analysis.score === 'number') { totals.score += analysis.score; counts.score++; }
+      if (typeof analysis.technicalAccuracy === 'number') { totals.tech += analysis.technicalAccuracy; counts.tech++; }
+      if (typeof analysis.communication === 'number') { totals.comm += analysis.communication; counts.comm++; }
     }
   }
   
-  return count > 0 ? Math.round(totalScore / count) : 0;
+  const avgScore = counts.score > 0 ? totals.score / counts.score : 0;
+  const avgTech = counts.tech > 0 ? totals.tech / counts.tech : avgScore;
+  const avgComm = counts.comm > 0 ? totals.comm / counts.comm : avgScore;
+  
+  // Format to 1 decimal place
+  const formatScore = (val) => Math.round(val * 10) / 10;
+  
+  return {
+    overallScore: formatScore(avgScore),
+    technicalKnowledge: formatScore(avgTech),
+    codingAbility: formatScore(avgTech), // derived from tech if not separate
+    communicationSkills: formatScore(avgComm),
+    problemSolving: formatScore(avgScore) // derived from overall if not separate
+  };
 };
 
 module.exports = {

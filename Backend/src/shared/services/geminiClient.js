@@ -57,14 +57,21 @@ const generateContentWithRetry = async (prompt, options = {}) => {
       const text = response.text();
 
       if (isJson) {
-        // Safe parse and repair
-        const cleanJson = text.replace(/```json\n|\n```|```/g, '').trim();
+        // Safe parse and repair: extract only the JSON block
+        let cleanJson = text;
+        const match = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (match) {
+          cleanJson = match[1].trim();
+        } else {
+          cleanJson = text.trim();
+        }
+        
         try {
           const parsed = JSON.parse(cleanJson);
           return { ok: true, data: parsed, errorCode: null };
         } catch (parseErr) {
           console.error(`[GeminiClient] JSON Parse Failed. Response was: ${text}`);
-          return { ok: false, data: null, errorCode: 'JSON_PARSE_FAILED' };
+          throw new Error('JSON_PARSE_FAILED');
         }
       }
 
@@ -74,7 +81,7 @@ const generateContentWithRetry = async (prompt, options = {}) => {
       attempt++;
       
       const status = error.status || error.response?.status;
-      const isRetryable = status === 429 || status === 500 || status === 503;
+      const isRetryable = status === 429 || status === 500 || status === 503 || error.message === 'JSON_PARSE_FAILED';
       const isTimeout = error.message === 'REQUEST_TIMEOUT' || error.name === 'AbortError';
       
       if ((isRetryable || isTimeout) && attempt <= maxRetries) {
