@@ -97,5 +97,6 @@ const generateContentWithRetry = async (prompt, options = {}) => {
 };
 
 module.exports = {
-  generateContentWithRetry
+  generateContentWithRetry,
+  generateContent: generateContentWithRetry
 };

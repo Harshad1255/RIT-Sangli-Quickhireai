@@ -1,5 +1,5 @@
-const { generateContentWithRetry } = require("../../shared/services/geminiClient");
-const { questionsBank, genericBank } = require("../../shared/data/interviewBank");
+const { generateContentWithRetry } = require("../../../shared/services/geminiClient");
+const { questionsBank, genericBank } = require("../../../shared/data/interviewBank");
 
 const calculateSimilarity = (str1, str2) => {
   if (!str1 || !str2) return 0;
