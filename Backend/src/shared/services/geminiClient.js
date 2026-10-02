@@ -92,12 +92,19 @@ const generateContentWithRetry = async (prompt, options = {}) => {
       }
 
       // Log error safely without prompt or key
-      console.error(`[GeminiClient] Error: ${error.name} - ${error.message?.split('key=')[0]}`);
+      const cleanMessage = error.message?.replace(/key=([^&]+)/g, 'key=[REDACTED]');
+      console.error(`[GeminiClient] Error Details:
+  - Error Name: ${error.name}
+  - Message: ${cleanMessage}
+  - Status: ${status || 'N/A'}
+  - Retryable: ${isRetryable}
+  - Timeout: ${isTimeout}`);
       
       return { 
         ok: false, 
         data: null, 
-        errorCode: isTimeout ? 'TIMEOUT' : (status ? `HTTP_${status}` : 'UNKNOWN_ERROR')
+        errorCode: isTimeout ? 'TIMEOUT' : (status ? `HTTP_${status}` : (error.message === 'JSON_PARSE_FAILED' ? 'JSON_PARSE_FAILED' : 'UNKNOWN_ERROR')),
+        errorMessage: cleanMessage
       };
     }
   }

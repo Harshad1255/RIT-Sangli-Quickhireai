@@ -148,8 +148,10 @@ const analyzeAnswer = async (answer, question) => {
       };
     }
 
+    const questionText = typeof question === 'object' ? (question.question || question.text || JSON.stringify(question)) : question;
+
     const prompt = `Evaluate this interview answer:
-Question: ${question}
+Question: ${questionText}
 Answer: ${answer}
 
 Provide a detailed evaluation in this JSON format:
@@ -161,24 +163,48 @@ Provide a detailed evaluation in this JSON format:
   "improvements": ["specific areas for improvement"]
 }`;
 
+    console.log(`
+================================================
+INTERVIEW EVALUATION DEBUG
+================================================
+AI request started for question: "${question.substring(0, 50)}..."
+Candidate Answer Length: ${answer.length}
+Candidate Answer: "${answer.substring(0, 100)}..."
+================================================
+`);
+
     // Retry evaluation once internally
-    const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 1 });
+    const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 2 });
     if (response.ok && response.data) {
       const data = response.data;
-      return {
+      const evaluation = {
         score: data.score ?? data.overall_score ?? data.overallScore ?? 0,
         feedback: data.feedback ?? data.overallFeedback ?? '',
         technicalAccuracy: data.technicalAccuracy ?? data.technical_accuracy ?? data.technicalKnowledge ?? 0,
         communication: data.communication ?? data.communication_skills ?? data.communicationSkills ?? 0,
         improvements: data.improvements ?? data.areas_for_improvement ?? data.weaknesses ?? []
       };
+      console.log(`[GeminiService] Evaluation Success: Score ${evaluation.score}/10`);
+      return evaluation;
     }
     
-    console.error('Failed to analyze answer with AI. Returning evaluation failure.');
-    return { evaluationFailed: true, score: null, feedback: "Evaluation failed" };
+    console.error(`[GeminiService] Failed to analyze answer with AI. Code: ${response.errorCode} Msg: ${response.errorMessage}`);
+    return { 
+      evaluationFailed: true, 
+      score: null, 
+      feedback: "Evaluation failed",
+      errorCode: response.errorCode || 'EVALUATION_ERROR',
+      errorMessage: response.errorMessage || 'Unknown AI Error'
+    };
   } catch (error) {
-    console.error('Error evaluating answer:', error);
-    return { evaluationFailed: true, score: null, feedback: "Evaluation failed" };
+    console.error(`[GeminiService] Exception in analyzeAnswer:`, error);
+    return { 
+      evaluationFailed: true, 
+      score: null, 
+      feedback: "Evaluation failed",
+      errorCode: 'INTERNAL_EXCEPTION',
+      errorMessage: error.message
+    };
   }
 };
 
