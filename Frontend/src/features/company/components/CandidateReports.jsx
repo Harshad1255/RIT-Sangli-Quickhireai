@@ -47,14 +47,16 @@ const CandidateReports = () => {
         console.log(`[CandidateReports] Response Body:`, response.data);
         if (response.data.success) {
           allResults = response.data.interviews.flatMap(interview => 
-            (interview.candidates || []).filter(c => c.status !== 'pending').map(c => ({
-               ...c,
-               id: c._id || c.id,
-               name: c.candidate?.name || c.name || c.candidateName || 'Unknown Candidate',
-               email: c.candidate?.email || c.email || c.candidateEmail || 'No email',
-               interviewName: interview.title || interview.interviewName || 'Untitled Interview',
-               interviewId: interview._id,
-               interviewCode: interview.interviewCode
+            (interview.candidates || [])
+              .filter(c => ['completed', 'shortlisted', 'rejected'].includes(c.status))
+              .map(c => ({
+                 ...c,
+                 id: c._id || c.id,
+                 name: c.candidate?.name || c.name || c.candidateName || 'Unknown Candidate',
+                 email: c.candidate?.email || c.email || c.candidateEmail || 'No email',
+                 interviewName: interview.title || interview.interviewName || 'Untitled Interview',
+                 interviewId: interview._id,
+                 interviewCode: interview.interviewCode
             }))
           );
         }

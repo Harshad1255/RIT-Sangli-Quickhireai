@@ -142,11 +142,44 @@
 }
 
 .score-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1rem;
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
 }
+
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.score-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: white;
+  padding: 0.8rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.score-item .label {
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.score-item .value {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.value.excellent { color: #10b981; }
+.value.good { color: #3b82f6; }
+.value.average { color: #f59e0b; }
+.value.poor { color: #ef4444; }
 
 .score-circle {
   width: 60px;
@@ -190,6 +223,7 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 .actions button {
