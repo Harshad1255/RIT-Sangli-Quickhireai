@@ -197,7 +197,12 @@ Return ONLY valid JSON:
 
 Scores must be integers or decimals from 0 to 10. Use partial credit.
 The feedback must explain what the candidate did correctly and what could be improved.
-Do not return "Evaluation failed" as candidate feedback.`;
+Do not return "Evaluation failed" as candidate feedback.
+
+CRITICAL INSTRUCTIONS:
+- You MUST return ONLY a valid JSON object.
+- Do NOT wrap the JSON in markdown code blocks (e.g. \`\`\`json).
+- Do NOT output any conversational text before or after the JSON.`;
 
     console.log(`
 ================================================

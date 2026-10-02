@@ -294,7 +294,7 @@ const storeMockInterviewResults = async (mockCode, interview, finalEvaluation) =
       skills: interview.skills,
       duration: 30, // Default duration
       status: 'completed',
-      interviewCode: mockCode,
+      interviewCode: `${mockCode}-${Date.now()}`,
       candidates: [{
         candidate: null, // No specific candidate for mock interviews
         code: mockCode,
