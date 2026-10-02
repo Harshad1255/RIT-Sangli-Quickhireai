@@ -280,7 +280,26 @@ Provide a detailed evaluation in this JSON format:
 
 const createDefaultFinalEvaluation = (answers, computedScores) => {
   const isZero = computedScores.overallScore === 0;
+  const answeredCount = answers.filter(a => a.answer && a.answer.trim().length > 0 && !a.answer.toLowerCase().includes('skipped')).length;
+  const hasAnswers = answeredCount > 0;
   
+  let strengths = ['None observed'];
+  let weaknesses = ['Did not answer questions', 'Skipped interview portions'];
+  let recommendations = ['Please attempt to answer the questions in the future'];
+  let overallFeedback = 'Candidate skipped or did not provide answers to the questions.';
+  
+  if (hasAnswers && isZero) {
+    strengths = ['Attempted questions', 'Participated in the interview'];
+    weaknesses = ['Evaluation service failed to score responses'];
+    recommendations = ['Manual review of answers required'];
+    overallFeedback = 'Candidate provided answers, but the AI evaluation service failed to process them. Please review the transcribed answers manually.';
+  } else if (!isZero) {
+    strengths = ['Demonstrated willingness to participate', 'Provided answers to questions'];
+    weaknesses = ['Could improve technical depth', 'More specific examples needed'];
+    recommendations = ['Continue learning and practicing', 'Work on providing detailed explanations'];
+    overallFeedback = 'Candidate participated in the interview and provided answers to questions.';
+  }
+
   return {
     overallScore: computedScores.overallScore,
     skillAssessment: {
@@ -289,11 +308,11 @@ const createDefaultFinalEvaluation = (answers, computedScores) => {
       communicationSkills: computedScores.communicationSkills,
       problemSolving: computedScores.problemSolving
     },
-    strengths: isZero ? ['None observed'] : ['Demonstrated willingness to participate', 'Provided answers to questions'],
-    weaknesses: isZero ? ['Did not answer questions', 'Skipped interview portions'] : ['Could improve technical depth', 'More specific examples needed'],
-    recommendations: isZero ? ['Please attempt to answer the questions in the future'] : ['Continue learning and practicing', 'Work on providing detailed explanations'],
-    overallFeedback: isZero ? 'Candidate skipped or did not provide answers to the questions.' : 'Candidate participated in the interview and provided answers to questions.',
-    hiringRecommendation: isZero ? 'not recommend' : 'consider'
+    strengths,
+    weaknesses,
+    recommendations,
+    overallFeedback,
+    hiringRecommendation: isZero && !hasAnswers ? 'not recommend' : 'consider'
   };
 };
 

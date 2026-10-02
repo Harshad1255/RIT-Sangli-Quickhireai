@@ -67,18 +67,26 @@ const FinalEvaluation = ({ evaluation, answers }) => {
                 </div>
               )}
               <div className="question-scores">
-                <div className={`score-item ${getScoreColor(answer.evaluation.technicalAccuracy)}`}>
-                  <span>Technical Accuracy:</span>
-                  <span>{answer.evaluation.technicalAccuracy}/10</span>
-                </div>
-                <div className={`score-item ${getScoreColor(answer.evaluation.communication)}`}>
-                  <span>Communication:</span>
-                  <span>{answer.evaluation.communication}/10</span>
-                </div>
+                {answer.evaluation && answer.evaluation.evaluationFailed ? (
+                  <div className="score-item" style={{ color: '#dc2626', fontWeight: 600 }}>
+                    <span>Evaluation failed for this answer</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className={`score-item ${getScoreColor(answer.evaluation?.technicalAccuracy || 0)}`}>
+                      <span>Technical Accuracy:</span>
+                      <span>{answer.evaluation?.technicalAccuracy || 0}/10</span>
+                    </div>
+                    <div className={`score-item ${getScoreColor(answer.evaluation?.communication || 0)}`}>
+                      <span>Communication:</span>
+                      <span>{answer.evaluation?.communication || 0}/10</span>
+                    </div>
+                  </>
+                )}
               </div>
               <div className="question-feedback">
-                <p><strong>Feedback:</strong> {answer.evaluation.feedback}</p>
-                {answer.evaluation.improvements && (
+                <p><strong>Feedback:</strong> {answer.evaluation?.feedback || 'No feedback available'}</p>
+                {answer.evaluation?.improvements && answer.evaluation.improvements.length > 0 && (
                   <div className="improvements">
                     <p><strong>Areas for Improvement:</strong></p>
                     <ul>

@@ -259,16 +259,13 @@ const InterviewScreen = (props) => {
       
       if (!finalTranscript || !finalTranscript.trim()) {
         console.log('No transcript detected');
-        setRecordingError('No speech detected. Please try again.');
+        setRecordingError('No speech detected. You can type your answer or try again.');
         return;
       }
 
-      // Set the transcript in state and submit
+      // Set the transcript in state (user must click Submit)
       setTranscript(finalTranscript.trim());
-      // Log transcript for debugging
-      console.log('Transcript to submit:', finalTranscript.trim());
-      // Auto-submit code and transcript
-      await submitAnswer({ code, transcript: finalTranscript.trim() });
+      console.log('Transcript saved to state:', finalTranscript.trim());
 
     } catch (error) {
       console.error('Error in stopRecording:', error);
@@ -420,19 +417,12 @@ const InterviewScreen = (props) => {
       setSkipError(null);
       setSkippedQuestions(prev => [...prev, questionIndex]);
       
-      // Stop recording if active before skipping or auto-submitting
+      // Stop recording if active before skipping
       if (isRecording) {
         speechRecognitionService.cancel();
         setIsRecording(false);
       }
       
-      // Auto-submit code/transcript if present before skipping
-      const codeTrimmed = code ? code.trim() : '';
-      const transcriptTrimmed = transcript ? transcript.trim() : '';
-      if (codeTrimmed || transcriptTrimmed) {
-        await submitAnswer({ code: codeTrimmed, transcript: transcriptTrimmed });
-        return; // Prevent double-advance: if we submitted, do not run skip logic
-      }
       const payload = {
         answer: '',
         question: validQuestion, // always send valid object
@@ -831,6 +821,7 @@ const InterviewScreen = (props) => {
     const syncInterval = setInterval(() => {
       const storedSuspicious = sessionStorage.getItem('pauseSuspiciousActivityCount');
       const storedAppSwitch = sessionStorage.getItem('pauseAppSwitchCount');
+      const storedLogs = sessionStorage.getItem('suspiciousActivityLogs');
       
       if (storedSuspicious) {
         const currentValue = parseInt(storedSuspicious);
@@ -846,6 +837,15 @@ const InterviewScreen = (props) => {
           console.log('Syncing app switch count:', sharedAppSwitchCount, '->', currentValue);
           setSharedAppSwitchCount(currentValue);
         }
+      }
+
+      if (storedLogs) {
+        try {
+          const parsedLogs = JSON.parse(storedLogs);
+          if (parsedLogs.length !== suspiciousActivityLogs.length) {
+            setSuspiciousActivityLogs(parsedLogs);
+          }
+        } catch (e) {}
       }
     }, 500); // Sync more frequently to prevent resets
 
@@ -1065,6 +1065,7 @@ const InterviewScreen = (props) => {
     // Ensure counters are preserved by re-syncing with sessionStorage
     const storedSuspicious = sessionStorage.getItem('pauseSuspiciousActivityCount');
     const storedAppSwitch = sessionStorage.getItem('pauseAppSwitchCount');
+    const storedLogs = sessionStorage.getItem('suspiciousActivityLogs');
     
     if (storedSuspicious) {
       const currentValue = parseInt(storedSuspicious);
@@ -1080,6 +1081,13 @@ const InterviewScreen = (props) => {
         console.log('Resume: Syncing app switch count:', sharedAppSwitchCount, '->', currentValue);
         setSharedAppSwitchCount(currentValue);
       }
+    }
+
+    if (storedLogs) {
+      try {
+        const parsedLogs = JSON.parse(storedLogs);
+        setSuspiciousActivityLogs(parsedLogs);
+      } catch (e) {}
     }
     
     console.log('Interview resumed after fullscreen re-entry - states updated');
@@ -1630,9 +1638,27 @@ const InterviewScreen = (props) => {
             )}
             <WebcamFeed onFaceStatusChange={setFaceStatus} />
             {/* Transcript Area as chat bubble */}
-            <div style={{ width: '100%', marginTop: 18, background: 'linear-gradient(135deg,#f8fafc 80%,#e0e7ef 100%)', borderRadius: 14, minHeight: 70, maxHeight: 140, overflowY: 'auto', padding: '0.8rem', color: '#334155', fontSize: '1.08rem', boxShadow: '0 2px 8px rgba(30,41,59,0.08)', border: '1.2px solid #c7d2fe', transition: 'box-shadow 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-              <span style={{ fontWeight: 700, fontSize: '1rem', color: '#2563eb', marginBottom: 4 }}>Transcript:</span>
-              <span style={{ marginTop: 6, background: '#fff', borderRadius: 8, padding: '0.5rem 0.8rem', boxShadow: '0 1px 4px #c7d2fe22', color: '#334155', fontSize: '1.01rem', minWidth: 60 }}>{transcript || <span style={{ color: '#b6b6b6' }}>Your spoken answer will appear here.</span>}</span>
+            <div style={{ width: '100%', marginTop: 18, background: 'linear-gradient(135deg,#f8fafc 80%,#e0e7ef 100%)', borderRadius: 14, minHeight: 70, padding: '0.8rem', color: '#334155', fontSize: '1.08rem', boxShadow: '0 2px 8px rgba(30,41,59,0.08)', border: '1.2px solid #c7d2fe', transition: 'box-shadow 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+              <span style={{ fontWeight: 700, fontSize: '1rem', color: '#2563eb', marginBottom: 4 }}>Transcript / Answer:</span>
+              <textarea 
+                style={{ 
+                  marginTop: 6, 
+                  background: '#fff', 
+                  borderRadius: 8, 
+                  padding: '0.5rem 0.8rem', 
+                  boxShadow: '0 1px 4px #c7d2fe22', 
+                  color: '#334155', 
+                  fontSize: '1.01rem', 
+                  width: '100%', 
+                  minHeight: '80px',
+                  border: '1px solid #e2e8f0',
+                  outline: 'none',
+                  resize: 'vertical'
+                }} 
+                placeholder="Your spoken answer will appear here, or you can type it."
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+              />
             </div>
             {/* Control Buttons moved below transcript */}
             <div className="control-buttons" style={{
@@ -1753,9 +1779,56 @@ const InterviewScreen = (props) => {
                     }}
                   />
                 </div>
-                {/* Submit button removed */}
               </div>
             )}
+            <div className="control-buttons" style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 10,
+              marginTop: 16,
+              width: '100%',
+              padding: 0,
+              background: 'none',
+              boxShadow: 'none',
+              border: 'none',
+            }}>
+              <button 
+                className="submit-button" 
+                style={{
+                  width: '100%',
+                  maxWidth: 260,
+                  minHeight: 54,
+                  padding: '0.9rem 0',
+                  fontSize: '1.18rem',
+                  borderRadius: 22,
+                  marginBottom: 14,
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  color: 'white',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                  letterSpacing: '0.5px',
+                  border: 'none'
+                }}
+                onClick={(e) => {
+                  if (!isCurrentlyFullscreen) {
+                    e.preventDefault();
+                    handleDisabledButtonClick('submit');
+                  } else {
+                    submitAnswer({ code: code.trim(), transcript: transcript.trim() });
+                  }
+                }} 
+                disabled={isProcessing || !hasQuestion || (!transcript.trim() && !code.trim())}
+                aria-label="Submit Answer"
+                title={!isCurrentlyFullscreen ? 'Fullscreen required to submit' : ''}
+              >
+                Submit Answer
+                {!isCurrentlyFullscreen && <span style={{ marginLeft: '4px', fontSize: '1.1rem' }}>🔒</span>}
+              </button>
+            </div>
             {/* Error messages for recording/skip below buttons */}
             {recordingError && <div className="recording-error">{recordingError}</div>}
             {skipError && <div className="recording-error" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', marginTop: 8 }}>{skipError}</div>}

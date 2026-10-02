@@ -18,7 +18,7 @@ const generateContentWithRetry = async (prompt, options = {}) => {
   const {
     isJson = true,
     maxRetries = 2,
-    timeoutMs = 15000,
+    timeoutMs = 60000,
   } = options;
 
   const instance = getGenAI();

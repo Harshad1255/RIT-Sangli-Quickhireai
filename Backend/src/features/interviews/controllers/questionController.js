@@ -1,7 +1,8 @@
 const geminiService = require('../services/geminiService');
 const Interview = require('../models/Interview');
+const InterviewSession = require('../models/InterviewSession');
 
-// In-memory storage for interview sessions (in production, use Redis or database)
+// Export an empty map for backward compatibility during migration, though we shouldn't need it
 const activeInterviews = new Map();
 
 // Start new interview
@@ -9,11 +10,9 @@ const startInterview = async (req, res) => {
   try {
     const { interviewCode, skills } = req.body;
     console.log('Starting interview:', { interviewCode, skills });
-    // Debug log for mock interview detection
     const isMock = interviewCode && interviewCode.startsWith('mock-');
     console.log('MOCK CODE CHECK:', interviewCode, isMock);
 
-    // Allow mock interviews with codes like 'mock-xxxx'
     if (!isMock && (!interviewCode || interviewCode === 'undefined' || interviewCode === '')) {
       return res.status(400).json({
         success: false,
@@ -22,9 +21,7 @@ const startInterview = async (req, res) => {
       });
     }
 
-    // If not a mock interview, enforce company skills
     if (!isMock) {
-      // Find the interview by code
       const interview = await Interview.findOne({ interviewCode });
       if (!interview) {
         return res.status(404).json({
@@ -32,7 +29,6 @@ const startInterview = async (req, res) => {
           error: 'Interview not found for the provided code.'
         });
       }
-      // Only allow the company's skills
       if (!Array.isArray(skills) || skills.length === 0 || !skills.every(s => interview.skills.includes(s))) {
         return res.status(400).json({
           success: false,
@@ -41,8 +37,8 @@ const startInterview = async (req, res) => {
       }
     }
 
-    // Clear any existing session
-    activeInterviews.delete(interviewCode);
+    // Delete any existing session in DB
+    await InterviewSession.deleteOne({ interviewCode });
 
     if (!skills || !Array.isArray(skills)) {
       return res.status(400).json({
@@ -57,9 +53,8 @@ const startInterview = async (req, res) => {
       ? skills.slice(0, totalQuestions)
       : [...skills, ...Array(totalQuestions - skills.length).fill(skills[0])];
 
-    // Initialize interview session
-    const interviewSession = {
-      id: interviewCode,
+    const interviewSession = new InterviewSession({
+      interviewCode,
       skills: skillsArray,
       status: 'active',
       startTime: new Date(),
@@ -67,9 +62,8 @@ const startInterview = async (req, res) => {
       totalQuestions,
       questions: [],
       answers: []
-    };
+    });
 
-    // Generate first question
     try {
       const firstQuestion = await geminiService.generateQuestion(skillsArray[0], [], 0, 'fundamentals');
       const formattedQ = {
@@ -88,10 +82,8 @@ const startInterview = async (req, res) => {
       interviewSession.questions.push(fbQ);
     }
 
-    // Store the session
-    activeInterviews.set(interviewCode, interviewSession);
-    console.log('Interview session created:', interviewSession);
-    console.log('Active sessions:', Array.from(activeInterviews.keys()));
+    await interviewSession.save();
+    console.log('Interview session created in DB for code:', interviewCode);
 
     res.json({
       success: true,
@@ -109,11 +101,10 @@ const startInterview = async (req, res) => {
 };
 
 // Get interview session
-const getInterviewSession = (interviewCode) => {
-  const session = activeInterviews.get(interviewCode);
+const getInterviewSession = async (interviewCode) => {
   console.log('Getting session for code:', interviewCode);
-  console.log('Session found:', session ? 'yes' : 'no');
-  console.log('Active sessions:', Array.from(activeInterviews.keys()));
+  const session = await InterviewSession.findOne({ interviewCode });
+  console.log('Session found in DB:', session ? 'yes' : 'no');
   return session;
 };
 

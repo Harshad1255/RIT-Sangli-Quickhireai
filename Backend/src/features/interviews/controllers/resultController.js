@@ -1,9 +1,9 @@
 const Interview = require('../models/Interview');
 const Candidate = require('../../candidates/models/Candidate');
+const InterviewSession = require('../models/InterviewSession');
 const geminiService = require('../services/geminiService');
 const faceAnalysisService = require('../services/faceAnalysisService');
 const questionController = require('./questionController');
-const activeInterviews = require('./questionController').activeInterviews;
 
 // Process answer and analyze
 const processAnswer = async (req, res) => {
@@ -14,29 +14,25 @@ const processAnswer = async (req, res) => {
     console.log('interviewCode:', interviewCode);
     if (videoData) console.log('videoData present');
     
-    // Get interview session from activeInterviews
-    let interview = activeInterviews.get(interviewCode);
+    // Get interview session from DB
+    let interview = await InterviewSession.findOne({ interviewCode });
     if (!interview) {
       // Fallback: create a new session if not found (should not happen in normal flow)
-      interview = {
+      interview = new InterviewSession({
+        interviewCode,
         answers: [],
         skills: ['JavaScript', 'Python', 'React'],
         totalQuestions: 5,
         currentScore: 0,
         questions: [],
         status: 'active',
-      };
-      activeInterviews.set(interviewCode, interview);
+      });
     }
     
     // Use answers.length to track all answers, but we need to track main questions answered.
     // A main question is one that does not have isFollowUp true.
     const mainQuestionsAnswered = interview.answers.filter(a => !a.isFollowUp).length;
     const isCurrentFollowUp = question && question.isFollowUp;
-    
-    // The current main index is either the count of main questions answered (if this was a main question)
-    // or the same (if this was a follow-up answer). But wait, we just received an answer.
-    // We can infer if this answer is for a follow-up by looking at `question.isFollowUp`.
     
     const currentQuestionText = question ? question.question : `Question ${mainQuestionsAnswered + 1}`;
     const transcript = answer || '';
@@ -185,6 +181,8 @@ const processAnswer = async (req, res) => {
           }
         }
         
+        await interview.save();
+        
         return res.json({
           success: true,
           evaluation: finalEvaluation,
@@ -227,6 +225,8 @@ const processAnswer = async (req, res) => {
         interview.questions.push(nextQuestion);
       }
     }
+
+    await interview.save();
 
     res.json({
       success: true,
@@ -571,7 +571,7 @@ const reportActivity = async (req, res) => {
     console.log('Report Data:', reportData);
     
     // Get interview session
-    const interview = activeInterviews.get(interviewCode);
+    const interview = await InterviewSession.findOne({ interviewCode });
     if (!interview) {
       return res.status(404).json({
         success: false,
@@ -603,6 +603,7 @@ const reportActivity = async (req, res) => {
     // Update interview with risk assessment
     interview.activityRiskLevel = riskLevel;
     interview.lastActivityReport = Date.now();
+    await interview.save();
     
     console.log('Activity risk level:', riskLevel);
     console.log('Total suspicious activities:', activityCount);

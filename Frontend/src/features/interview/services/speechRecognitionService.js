@@ -70,13 +70,13 @@ class SpeechRecognitionService {
 
   stopRecording() {
     return new Promise((resolve) => {
-      const currentTranscript = this.finalTranscript.trim();
-      console.log('Stopping recording with transcript:', currentTranscript);
+      console.log('Stopping recording...');
       
       this.recognition.onend = () => {
         this.isRecording = false;
-        console.log('Recognition ended, resolving with transcript:', currentTranscript);
-        resolve(currentTranscript);
+        const finalStr = this.finalTranscript.trim();
+        console.log('Recognition ended, resolving with transcript:', finalStr);
+        resolve(finalStr);
       };
 
       try {
@@ -84,7 +84,7 @@ class SpeechRecognitionService {
       } catch (error) {
         console.error('Error stopping recognition:', error);
         this.isRecording = false;
-        resolve(currentTranscript);
+        resolve(this.finalTranscript.trim());
       }
     });
   }
