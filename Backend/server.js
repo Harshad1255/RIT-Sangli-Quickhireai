@@ -73,7 +73,7 @@ let allowedOrigins = [];
 
 if (process.env.ALLOWED_ORIGINS) {
   allowedOrigins = process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
-} else if (!isProd) {
+} else {
   allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',

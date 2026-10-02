@@ -14,7 +14,6 @@ const CandidateReports = () => {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!interviewId) return;
     fetchCandidates();
   }, [interviewId]);
 
@@ -26,17 +25,53 @@ const CandidateReports = () => {
       
       // Fetch regular interview results if interviewId is provided
       if (interviewId) {
+        console.log(`[CandidateReports] Fetching URL: /interviews/${interviewId}/results`);
+        console.log(`[CandidateReports] Headers:`, api.defaults.headers);
         const response = await api.get(`/interviews/${interviewId}/results`);
+        console.log(`[CandidateReports] Response Status:`, response.status);
+        console.log(`[CandidateReports] Response Body:`, response.data);
         if (response.data.success) {
-          allResults = [...response.data.results];
+          allResults = response.data.results.map(c => ({
+             ...c,
+             id: c._id || c.id,
+             name: c.candidate?.name || c.name || c.candidateName || 'Unknown Candidate',
+             email: c.candidate?.email || c.email || c.candidateEmail || 'No email',
+             interviewName: 'Interview'
+          }));
+        }
+      } else {
+        console.log(`[CandidateReports] Fetching URL: /interviews/company`);
+        console.log(`[CandidateReports] Headers:`, api.defaults.headers);
+        const response = await api.get('/interviews/company');
+        console.log(`[CandidateReports] Response Status:`, response.status);
+        console.log(`[CandidateReports] Response Body:`, response.data);
+        if (response.data.success) {
+          allResults = response.data.interviews.flatMap(interview => 
+            (interview.candidates || []).filter(c => c.status !== 'pending').map(c => ({
+               ...c,
+               id: c._id || c.id,
+               name: c.candidate?.name || c.name || c.candidateName || 'Unknown Candidate',
+               email: c.candidate?.email || c.email || c.candidateEmail || 'No email',
+               interviewName: interview.title || interview.interviewName || 'Untitled Interview',
+               interviewId: interview._id,
+               interviewCode: interview.interviewCode
+            }))
+          );
         }
       }
       
       // Fetch mock interview results
       try {
+        console.log(`[CandidateReports] Fetching URL: /interviews/mock-results`);
         const mockResponse = await api.get('/interviews/mock-results');
+        console.log(`[CandidateReports] Mock Response Status:`, mockResponse.status);
+        console.log(`[CandidateReports] Mock Response Body:`, mockResponse.data);
         if (mockResponse.data.success) {
-          allResults = [...allResults, ...mockResponse.data.results];
+          const mockResults = mockResponse.data.results.map(c => ({
+             ...c,
+             interviewName: 'Mock Interview'
+          }));
+          allResults = [...allResults, ...mockResults];
         }
       } catch (mockError) {
         console.log('No mock results available or error fetching:', mockError.message);
@@ -52,7 +87,9 @@ const CandidateReports = () => {
 
   const updateStatus = async (candidateId, status) => {
     try {
-      const response = await api.post(`/interviews/${interviewId}/candidate/${candidateId}/status`, { status });
+      const targetInterviewId = interviewId || candidates.find(c => c.id === candidateId)?.interviewId;
+      if (!targetInterviewId) throw new Error("Missing interview ID");
+      const response = await api.post(`/interviews/${targetInterviewId}/candidate/${candidateId}/status`, { status });
       if (!response.data.success) {
         throw new Error(response.data.error || "Failed to update status");
       }
@@ -85,6 +122,26 @@ const CandidateReports = () => {
 
   const handleReject = (candidateId) => {
     updateStatus(candidateId, "rejected");
+  };
+
+  const handleDownloadPDF = async (candidate) => {
+    try {
+       const interviewIdToUse = candidate.interviewCode || candidate.interviewId || interviewId;
+       const candidateIdToUse = candidate.id || candidate._id;
+       const response = await api.get(`/interviews/report/${interviewIdToUse}/${candidateIdToUse}`, {
+         responseType: 'blob'
+       });
+       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+       const link = document.createElement('a');
+       link.href = url;
+       link.setAttribute('download', `Report-${(candidate.name || 'Candidate').replace(/\\s+/g, '-')}.pdf`);
+       document.body.appendChild(link);
+       link.click();
+       link.remove();
+    } catch (err) {
+       console.error("Failed to download PDF", err);
+       alert("Failed to download PDF. Ensure the backend endpoint exists.");
+    }
   };
 
   const getScoreColor = (score) => {
@@ -158,14 +215,21 @@ const CandidateReports = () => {
         </div>
       </div>
 
+      {filteredCandidates.length === 0 ? (
+        <div className="empty-state" style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
+          <h3>No candidate reports yet</h3>
+          <p>Candidates who complete the interview will appear here.</p>
+        </div>
+      ) : (
       <div className="candidates-list">
         {filteredCandidates.map(candidate => (
           <div key={candidate.id} className="candidate-card">
             <div className="candidate-info">
-              <div className="avatar">{candidate.name?.charAt(0)}</div>
+              <div className="avatar">{candidate.name?.charAt(0) || 'C'}</div>
               <div className="details">
                 <h3>{candidate.name}</h3>
                 <p>{candidate.email}</p>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>{candidate.interviewName}</p>
                 {candidate.interviewCode && candidate.interviewCode.startsWith('mock-') && (
                   <span className="mock-badge" style={{
                     background: '#fef3c7',
@@ -180,7 +244,7 @@ const CandidateReports = () => {
                 )}
                 <span className="date">
                   <i className="far fa-calendar"></i>
-                  {new Date(candidate.completedAt).toLocaleDateString()}
+                  {new Date(candidate.completedAt || candidate.startedAt || Date.now()).toLocaleDateString()}
                 </span>
               </div>
             </div>
@@ -222,6 +286,13 @@ const CandidateReports = () => {
                 <i className="fas fa-eye"></i>
                 View Details
               </button>
+              <button
+                className="download-button"
+                onClick={() => handleDownloadPDF(candidate)}
+                style={{ marginLeft: '10px', background: '#2563eb', color: 'white', padding: '0.4rem 0.8rem', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
+              >
+                <i className="fas fa-download"></i> Download PDF
+              </button>
               {candidate.status === "completed" && (
                 <>
                   <button
@@ -244,6 +315,7 @@ const CandidateReports = () => {
           </div>
         ))}
       </div>
+      )}
 
       {selectedCandidate && (
         <ViewReport candidate={selectedCandidate} onClose={handleCloseReport} />

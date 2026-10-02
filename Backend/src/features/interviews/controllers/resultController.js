@@ -149,6 +149,40 @@ const processAnswer = async (req, res) => {
         // Store mock interview results in database for company viewing
         if (interviewCode.startsWith('mock-')) {
           await storeMockInterviewResults(interviewCode, interview, finalEvaluation);
+        } else {
+          try {
+            // Find the interview containing this candidate code
+            const dbInterview = await Interview.findOne({ 'candidates.code': interviewCode });
+            if (dbInterview) {
+              const candidate = dbInterview.candidates.find(c => c.code === interviewCode);
+              if (candidate) {
+                candidate.status = 'completed';
+                candidate.completedAt = new Date();
+                candidate.results = {
+                  technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || finalEvaluation.technicalScore || 0,
+                  communicationScore: finalEvaluation.skillAssessment?.communicationSkills || finalEvaluation.communicationScore || 0,
+                  problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving || finalEvaluation.problemSolvingScore || 0,
+                  confidenceScore: interview.currentScore || 0,
+                  overallScore: finalEvaluation.overallScore || 0,
+                  strengths: finalEvaluation.strengths || [],
+                  weaknesses: finalEvaluation.weaknesses || [],
+                  feedback: finalEvaluation.overallFeedback || finalEvaluation.feedback || '',
+                  answers: interview.answers.map(ans => ({
+                    question: ans.question,
+                    answer: ans.answer,
+                    score: ans.analysis?.score || 0,
+                    feedback: ans.analysis?.feedback || ''
+                  }))
+                };
+                await dbInterview.save();
+                console.log('Regular interview results stored in database for candidate code:', interviewCode);
+              }
+            } else {
+              console.log('No interview found for candidate code:', interviewCode);
+            }
+          } catch (err) {
+            console.error('Error storing regular interview results:', err);
+          }
         }
         
         return res.json({
@@ -613,6 +647,86 @@ const reportActivity = async (req, res) => {
   }
 };
 
+const PDFDocument = require('pdfkit');
+
+const generatePdfReport = async (req, res) => {
+  try {
+    const { interviewId, candidateId } = req.params;
+    let interview, candidate, candidateName, candidateEmail;
+
+    if (interviewId.startsWith('mock-')) {
+       interview = await Interview.findOne({ interviewCode: interviewId });
+       if (interview) {
+         candidate = interview.candidates.find(c => c.code === interviewId);
+         candidateName = `Mock Candidate - ${interviewId}`;
+         candidateEmail = `mock-${interviewId}@example.com`;
+       }
+    } else {
+       // Search by candidate code/id within interview
+       interview = await Interview.findById(interviewId).populate('candidates.candidate', 'name email');
+       if (interview) {
+         candidate = interview.candidates.find(c => c._id.toString() === candidateId || c.code === candidateId || (c.candidate && c.candidate._id.toString() === candidateId));
+         candidateName = candidate?.candidate?.name || candidate?.name || candidate?.candidateName || 'Unknown';
+         candidateEmail = candidate?.candidate?.email || candidate?.email || candidate?.candidateEmail || 'Unknown';
+       }
+    }
+
+    if (!interview || !candidate) {
+      return res.status(404).json({ success: false, error: 'Report not found' });
+    }
+
+    const doc = new PDFDocument({ margin: 50 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Report-${candidateName.replace(/\\s+/g, '-')}.pdf`);
+    doc.pipe(res);
+
+    doc.fontSize(20).text('Candidate Interview Report', { align: 'center' });
+    doc.moveDown();
+
+    doc.fontSize(14).text(`Candidate Name: ${candidateName}`);
+    doc.text(`Email: ${candidateEmail}`);
+    doc.text(`Interview: ${interview.title || interview.interviewName || 'Untitled'}`);
+    doc.text(`Date: ${new Date(candidate.completedAt || candidate.startedAt || Date.now()).toLocaleDateString()}`);
+    doc.moveDown();
+
+    if (candidate.results) {
+      doc.fontSize(16).text('Scores', { underline: true });
+      doc.fontSize(12).text(`Technical: ${Math.round((candidate.results.technicalScore || 0)*10)/10}/10`);
+      doc.text(`Communication: ${Math.round((candidate.results.communicationScore || 0)*10)/10}/10`);
+      doc.text(`Problem Solving: ${Math.round((candidate.results.problemSolvingScore || 0)*10)/10}/10`);
+      doc.text(`Overall: ${Math.round((candidate.results.overallScore || 0)*10)/10}/10`);
+      doc.moveDown();
+
+      if (candidate.results.feedback) {
+        doc.fontSize(16).text('Feedback', { underline: true });
+        doc.fontSize(12).text(candidate.results.feedback);
+        doc.moveDown();
+      }
+
+      if (candidate.results.strengths && candidate.results.strengths.length > 0) {
+        doc.fontSize(16).text('Strengths', { underline: true });
+        candidate.results.strengths.forEach(s => doc.fontSize(12).text(`• ${s}`));
+        doc.moveDown();
+      }
+
+      if (candidate.results.weaknesses && candidate.results.weaknesses.length > 0) {
+        doc.fontSize(16).text('Areas for Improvement', { underline: true });
+        candidate.results.weaknesses.forEach(w => doc.fontSize(12).text(`• ${w}`));
+        doc.moveDown();
+      }
+    } else {
+      doc.fontSize(12).text('No detailed results available for this candidate.');
+    }
+
+    doc.end();
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: 'Failed to generate PDF' });
+    }
+  }
+};
+
 module.exports = {
   processAnswer,
   endInterview,
@@ -621,5 +735,6 @@ module.exports = {
   submitInterviewResults,
   submitAllAnswers,
   analyzeFace,
-  reportActivity
+  reportActivity,
+  generatePdfReport
 }; 

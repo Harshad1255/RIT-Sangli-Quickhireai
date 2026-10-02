@@ -31,6 +31,7 @@ module.exports = {
   submitAllAnswers: resultController.submitAllAnswers,
   analyzeFace: resultController.analyzeFace,
   reportActivity: resultController.reportActivity,
+  generatePdfReport: resultController.generatePdfReport,
   
   // Test endpoint for authentication
   testAuth: (req, res) => {

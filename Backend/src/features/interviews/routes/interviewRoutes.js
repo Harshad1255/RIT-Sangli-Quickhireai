@@ -149,6 +149,7 @@ router.get('/:id/results', authenticateToken, interviewController.getInterviewRe
 router.get('/mock-results', authenticateToken, interviewController.getMockInterviewResults);
 router.post('/submit-results', authenticateToken, interviewController.submitInterviewResults);
 router.post('/submit-all-answers', interviewController.submitAllAnswers);
+router.get('/report/:interviewId/:candidateId', authenticateToken, interviewController.generatePdfReport);
 router.post('/analyze-face', interviewController.analyzeFace);
 router.post('/report-activity', interviewController.reportActivity);
 
