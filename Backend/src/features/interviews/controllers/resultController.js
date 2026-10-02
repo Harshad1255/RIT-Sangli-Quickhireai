@@ -70,7 +70,14 @@ const processAnswer = async (req, res) => {
         await geminiService.analyzeAnswer(transcript, currentQuestionText, code);
       console.log('Gemini evaluation result:', analysis);
     } catch (analysisError) {
-      console.error('Error analyzing answer:', analysisError);
+      console.error("[INTERVIEW AI EVALUATION ERROR]", {
+         interviewId: interview._id,
+         questionId: question?.id,
+         errorName: analysisError?.name,
+         errorMessage: analysisError?.message,
+         status: analysisError?.response?.status,
+         response: analysisError?.response?.data
+      });
       analysis = { evaluationFailed: true, score: null };
     }
 

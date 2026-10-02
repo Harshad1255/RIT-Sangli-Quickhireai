@@ -150,18 +150,31 @@ const analyzeAnswer = async (answer, question) => {
 
     const questionText = typeof question === 'object' ? (question.question || question.text || JSON.stringify(question)) : question;
 
-    const prompt = `Evaluate this interview answer:
+    const prompt = `You are an expert technical interview evaluator.
+Evaluate the candidate's answer against the question.
+
 Question: ${questionText}
 Answer: ${answer}
 
-Provide a detailed evaluation in this JSON format:
+Return ONLY valid JSON.
+Required schema:
 {
-  "score": number between 0-10,
-  "feedback": "detailed feedback on the answer",
-  "technicalAccuracy": number between 0-10,
-  "communication": number between 0-10,
-  "improvements": ["specific areas for improvement"]
-}`;
+  "technicalAccuracy": number,
+  "communication": number,
+  "feedback": string,
+  "score": number,
+  "improvements": ["array of strings"]
+}
+
+Rules:
+- technicalAccuracy, communication, and score must be between 0 and 10.
+- feedback must be a meaningful explanation.
+- Do not return markdown.
+- Do not return \`\`\`json.
+- Do not return additional text.
+- Never return null or undefined.
+- Never return an empty feedback string.
+`;
 
     console.log(`
 ================================================
@@ -197,7 +210,14 @@ Candidate Answer: "${answer.substring(0, 100)}..."
       errorMessage: response.errorMessage || 'Unknown AI Error'
     };
   } catch (error) {
-    console.error(`[GeminiService] Exception in analyzeAnswer:`, error);
+    console.error("[INTERVIEW AI EVALUATION ERROR]", {
+       questionId: typeof question === 'object' ? question.id : undefined,
+       questionText: typeof question === 'object' ? question.question : question,
+       errorName: error?.name,
+       errorMessage: error?.message,
+       status: error?.response?.status,
+       response: error?.response?.data
+    });
     return { 
       evaluationFailed: true, 
       score: null, 

@@ -1,16 +1,7 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+// We bypass the outdated @google/generative-ai SDK and use native Node fetch
+// This guarantees we hit the v1beta endpoint and can use gemini-1.5-flash!
 
-// Get model name from env or default to a known stable flash model
-const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-1.5-flash";
-
-let genAI = null;
-
-const getGenAI = () => {
-  if (!genAI && process.env.GEMINI_API_KEY) {
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  }
-  return genAI;
-};
+const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -21,20 +12,24 @@ const generateContentWithRetry = async (prompt, options = {}) => {
     timeoutMs = 60000,
   } = options;
 
-  const instance = getGenAI();
-  if (!instance) {
+  if (!process.env.GEMINI_API_KEY) {
     return { ok: false, data: null, errorCode: 'MISSING_API_KEY' };
   }
 
-  const modelOpts = { model: MODEL_NAME };
-  
-  // If we need JSON output, and the SDK version supports it, we can pass it here.
-  // We'll wrap the call to handle older SDK versions gracefully if they don't support systemInstructions/generationConfig.
-  if (isJson) {
-    modelOpts.generationConfig = { responseMimeType: "application/json" };
-  }
+  // Use the newer v1beta endpoint directly
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
-  const model = instance.getGenerativeModel(modelOpts);
+  const payload = {
+    contents: [
+      {
+        parts: [{ text: prompt }]
+      }
+    ]
+  };
+
+  if (isJson) {
+    payload.generationConfig = { responseMimeType: "application/json" };
+  }
 
   let attempt = 0;
   while (attempt <= maxRetries) {
@@ -42,22 +37,31 @@ const generateContentWithRetry = async (prompt, options = {}) => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      // We pass the abort signal if the SDK supports it.
-      // Older SDKs might ignore it, but we can race with a timeout promise.
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('REQUEST_TIMEOUT')), timeoutMs)
-      );
-
-      const generatePromise = model.generateContent(prompt);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
       
-      const result = await Promise.race([generatePromise, timeoutPromise]);
       clearTimeout(timeoutId);
 
-      const response = await result.response;
-      const text = response.text();
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP_${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.candidates || !data.candidates[0].content || !data.candidates[0].content.parts) {
+        throw new Error('INVALID_RESPONSE_FORMAT');
+      }
+
+      const text = data.candidates[0].content.parts[0].text;
 
       if (isJson) {
-        // Safe parse and repair: extract only the JSON block
         let cleanJson = text;
         const match = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
         if (match) {
@@ -80,30 +84,30 @@ const generateContentWithRetry = async (prompt, options = {}) => {
     } catch (error) {
       attempt++;
       
-      const status = error.status || error.response?.status;
-      const isRetryable = status === 429 || status === 500 || status === 503 || error.message === 'JSON_PARSE_FAILED';
-      const isTimeout = error.message === 'REQUEST_TIMEOUT' || error.name === 'AbortError';
+      const isRetryable = error.message.includes('HTTP_429') || 
+                          error.message.includes('HTTP_500') || 
+                          error.message.includes('HTTP_503') || 
+                          error.message === 'JSON_PARSE_FAILED';
+      const isTimeout = error.name === 'AbortError' || error.message === 'REQUEST_TIMEOUT';
       
       if ((isRetryable || isTimeout) && attempt <= maxRetries) {
         const backoffMs = attempt * 2000;
-        console.warn(`[GeminiClient] Request failed (${status || error.message}). Retrying in ${backoffMs}ms... (Attempt ${attempt}/${maxRetries})`);
+        console.warn(`[GeminiClient] Request failed (${error.message}). Retrying in ${backoffMs}ms... (Attempt ${attempt}/${maxRetries})`);
         await delay(backoffMs);
         continue;
       }
 
-      // Log error safely without prompt or key
       const cleanMessage = error.message?.replace(/key=([^&]+)/g, 'key=[REDACTED]');
       console.error(`[GeminiClient] Error Details:
   - Error Name: ${error.name}
   - Message: ${cleanMessage}
-  - Status: ${status || 'N/A'}
   - Retryable: ${isRetryable}
   - Timeout: ${isTimeout}`);
       
       return { 
         ok: false, 
         data: null, 
-        errorCode: isTimeout ? 'TIMEOUT' : (status ? `HTTP_${status}` : (error.message === 'JSON_PARSE_FAILED' ? 'JSON_PARSE_FAILED' : 'UNKNOWN_ERROR')),
+        errorCode: isTimeout ? 'TIMEOUT' : (error.message === 'JSON_PARSE_FAILED' ? 'JSON_PARSE_FAILED' : 'UNKNOWN_ERROR'),
         errorMessage: cleanMessage
       };
     }
