@@ -174,8 +174,10 @@ const processAnswer = async (req, res) => {
                     question: ans.question,
                     answer: ans.answer,
                     score: ans.analysis?.score ?? (ans.analysis?.evaluationFailed ? null : 0),
-                    technicalAccuracy: ans.analysis?.technicalAccuracy ?? 0,
-                    communication: ans.analysis?.communication ?? 0,
+                    technicalKnowledge: ans.analysis?.technicalKnowledge ?? ans.analysis?.technicalAccuracy ?? 0,
+                    codingAbility: ans.analysis?.codingAbility ?? 0,
+                    communicationSkills: ans.analysis?.communicationSkills ?? ans.analysis?.communication ?? 0,
+                    problemSolving: ans.analysis?.problemSolving ?? 0,
                     improvements: ans.analysis?.improvements ?? [],
                     feedback: ans.analysis?.feedback || 'Evaluation missing'
                   }))
@@ -310,8 +312,10 @@ const storeMockInterviewResults = async (mockCode, interview, finalEvaluation) =
             question: ans.question,
             answer: ans.answer,
             score: ans.analysis?.score ?? (ans.analysis?.evaluationFailed ? null : 0),
-            technicalAccuracy: ans.analysis?.technicalAccuracy ?? 0,
-            communication: ans.analysis?.communication ?? 0,
+            technicalKnowledge: ans.analysis?.technicalKnowledge ?? ans.analysis?.technicalAccuracy ?? 0,
+            codingAbility: ans.analysis?.codingAbility ?? 0,
+            communicationSkills: ans.analysis?.communicationSkills ?? ans.analysis?.communication ?? 0,
+            problemSolving: ans.analysis?.problemSolving ?? 0,
             improvements: ans.analysis?.improvements ?? [],
             feedback: ans.analysis?.feedback || 'Evaluation missing'
           }))
@@ -745,16 +749,22 @@ const generatePdfReport = async (req, res) => {
           doc.fontSize(12).text(`Answer: ${ans.answer || 'No answer provided'}`);
           
           if (ans.score === null || ans.feedback === 'Evaluation failed') {
-            doc.text(`Technical Accuracy: Evaluation Failed`);
-            doc.text(`Communication: Evaluation Failed`);
+            doc.text(`Technical Knowledge: Evaluation Failed`);
+            doc.text(`Coding Ability: Evaluation Failed`);
+            doc.text(`Communication Skills: Evaluation Failed`);
+            doc.text(`Problem Solving: Evaluation Failed`);
             doc.text(`Feedback: Evaluation failed`);
           } else if (ans.feedback === 'Question skipped') {
-            doc.text(`Technical Accuracy: N/A`);
-            doc.text(`Communication: N/A`);
+            doc.text(`Technical Knowledge: N/A`);
+            doc.text(`Coding Ability: N/A`);
+            doc.text(`Communication Skills: N/A`);
+            doc.text(`Problem Solving: N/A`);
             doc.text(`Feedback: Question skipped`);
           } else {
-            doc.text(`Technical Accuracy: ${ans.technicalAccuracy !== undefined ? ans.technicalAccuracy : (ans.score || 0)}/10`);
-            doc.text(`Communication: ${ans.communication !== undefined ? ans.communication : (ans.score || 0)}/10`);
+            doc.text(`Technical Knowledge: ${ans.technicalKnowledge !== undefined ? ans.technicalKnowledge : (ans.technicalAccuracy ?? ans.score ?? 0)}/10`);
+            doc.text(`Coding Ability: ${ans.codingAbility !== undefined ? ans.codingAbility : 0}/10`);
+            doc.text(`Communication Skills: ${ans.communicationSkills !== undefined ? ans.communicationSkills : (ans.communication ?? ans.score ?? 0)}/10`);
+            doc.text(`Problem Solving: ${ans.problemSolving !== undefined ? ans.problemSolving : 0}/10`);
             doc.text(`Feedback: ${ans.feedback || 'None'}`);
             if (ans.improvements && ans.improvements.length > 0) {
               doc.text(`Areas for Improvement: ${ans.improvements.join(', ')}`);

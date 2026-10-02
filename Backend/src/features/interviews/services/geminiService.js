@@ -149,32 +149,55 @@ const analyzeAnswer = async (answer, question) => {
     }
 
     const questionText = typeof question === 'object' ? (question.question || question.text || JSON.stringify(question)) : question;
+    const prompt = `You are a lenient but technically responsible technical interview evaluator.
+Your goal is to assess what the candidate actually demonstrated, not whether their answer is perfectly worded.
 
-    const prompt = `You are an expert technical interview evaluator.
-Evaluate the candidate's answer against the question.
+Evaluate the candidate on:
+1. Technical Knowledge
+2. Coding Ability
+3. Communication Skills
+4. Problem Solving
 
-Question: ${questionText}
-Answer: ${answer}
+IMPORTANT EVALUATION RULES:
+- Award partial credit.
+- Do not require a perfect answer.
+- Minor factual mistakes should reduce marks, not automatically result in zero.
+- Incomplete answers should receive partial marks if they contain relevant knowledge.
+- Grammar mistakes should not heavily reduce the score.
+- Speech-to-text mistakes should not be interpreted as lack of knowledge when the intended technical meaning is reasonably clear.
+- Do not penalize accent.
+- Do not require perfect English.
+- Recognize relevant technical terminology even if speech transcription contains minor errors.
+- Give communication marks when the candidate successfully communicates a technical idea.
+- Give problem-solving marks when the candidate demonstrates a reasonable approach.
+- Give coding marks for correct logic, algorithmic approach, pseudocode, or implementation understanding when applicable.
+- Do not give zero merely because the candidate did not mention every expected point.
+- A completely irrelevant answer may receive very low marks.
+- Never fabricate information that the candidate did not provide.
 
-Return ONLY valid JSON.
-Required schema:
+The question is:
+${questionText}
+
+The candidate's original speech transcript is:
+${answer}
+
+Evaluate the candidate's demonstrated knowledge.
+
+Return ONLY valid JSON:
 {
-  "technicalAccuracy": number,
-  "communication": number,
-  "feedback": string,
-  "score": number,
-  "improvements": ["array of strings"]
+  "technicalKnowledge": 0,
+  "codingAbility": 0,
+  "communicationSkills": 0,
+  "problemSolving": 0,
+  "overallScore": 0,
+  "feedback": "",
+  "strengths": [],
+  "improvements": []
 }
 
-Rules:
-- technicalAccuracy, communication, and score must be between 0 and 10.
-- feedback must be a meaningful explanation.
-- Do not return markdown.
-- Do not return \`\`\`json.
-- Do not return additional text.
-- Never return null or undefined.
-- Never return an empty feedback string.
-`;
+Scores must be integers or decimals from 0 to 10. Use partial credit.
+The feedback must explain what the candidate did correctly and what could be improved.
+Do not return "Evaluation failed" as candidate feedback.`;
 
     console.log(`
 ================================================
@@ -191,11 +214,14 @@ Candidate Answer: "${answer.substring(0, 100)}..."
     if (response.ok && response.data) {
       const data = response.data;
       const evaluation = {
-        score: data.score ?? data.overall_score ?? data.overallScore ?? 0,
-        feedback: data.feedback ?? data.overallFeedback ?? '',
-        technicalAccuracy: data.technicalAccuracy ?? data.technical_accuracy ?? data.technicalKnowledge ?? 0,
-        communication: data.communication ?? data.communication_skills ?? data.communicationSkills ?? 0,
-        improvements: data.improvements ?? data.areas_for_improvement ?? data.weaknesses ?? []
+        score: data.overallScore ?? data.score ?? 0,
+        feedback: data.feedback ?? '',
+        technicalKnowledge: data.technicalKnowledge ?? data.technicalAccuracy ?? 0,
+        codingAbility: data.codingAbility ?? 0,
+        communicationSkills: data.communicationSkills ?? data.communication ?? 0,
+        problemSolving: data.problemSolving ?? 0,
+        improvements: data.improvements ?? [],
+        strengths: data.strengths ?? []
       };
       console.log(`[GeminiService] Evaluation Success: Score ${evaluation.score}/10`);
       return evaluation;
