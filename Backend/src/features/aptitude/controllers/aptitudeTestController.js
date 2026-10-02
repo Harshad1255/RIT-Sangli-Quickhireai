@@ -1514,7 +1514,7 @@ const aptitudeTestController = {
           totalXP: r.score,
           testsTaken: 1,
           rank: r.rank,
-          accuracy: 0,
+          accuracy: r.accuracy || 0,
           timeTaken: r.timeTaken,
           submittedAt: r.submittedAt,
           violationsCount: r.violationsCount
@@ -1568,6 +1568,11 @@ const aptitudeTestController = {
         // Use persisted attempt totals instead of section metadata that isn't stored on the attempt.
         correct = attempt.correctCount || 0;
         totalQ = attempt.totalQuestions || 0;
+        
+        if (totalQ === 0 && attempt.answers && attempt.answers.length > 0) {
+            totalQ = attempt.answers.length;
+            correct = attempt.answers.filter(a => a.isCorrect).length;
+        }
 
         studentMap[studentIdStr].totalXP += xp;
         studentMap[studentIdStr].testsTaken += 1;

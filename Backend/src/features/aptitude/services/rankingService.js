@@ -56,6 +56,13 @@ async function rankAttemptsForTest(testId) {
 
     const candidate = userMap[attempt.studentId?.toString()];
 
+    let calculatedAccuracy = attempt.accuracy || 0;
+    if (!calculatedAccuracy && attempt.answers && attempt.answers.length > 0) {
+      const correctAns = attempt.answers.filter(a => a.isCorrect).length;
+      const totalQ = attempt.answers.length;
+      calculatedAccuracy = Math.round((correctAns / totalQ) * 100);
+    }
+
     return {
       attemptId: attempt._id,
       candidateId: attempt.studentId,
@@ -65,6 +72,7 @@ async function rankAttemptsForTest(testId) {
       timeTaken,
       submittedAt: attempt.completedAt || attempt.updatedAt,
       answers: attempt.answers || [],
+      accuracy: calculatedAccuracy,
       violationsCount: attempt.securitySummary?.totalViolations || 0,
       suspicionScore: attempt.suspicionScore || 0,
       suspicious: !!attempt.suspicious
