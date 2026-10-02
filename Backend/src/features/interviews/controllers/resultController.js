@@ -663,7 +663,13 @@ const generatePdfReport = async (req, res) => {
        }
     } else {
        // Search by candidate code/id within interview
-       interview = await Interview.findById(interviewId).populate('candidates.candidate', 'name email');
+       const mongoose = require('mongoose');
+       if (mongoose.Types.ObjectId.isValid(interviewId)) {
+         interview = await Interview.findById(interviewId).populate('candidates.candidate', 'name email');
+       } else {
+         interview = await Interview.findOne({ interviewCode: interviewId }).populate('candidates.candidate', 'name email');
+       }
+       
        if (interview) {
          candidate = interview.candidates.find(c => c._id.toString() === candidateId || c.code === candidateId || (c.candidate && c.candidate._id.toString() === candidateId));
          candidateName = candidate?.candidate?.name || candidate?.name || candidate?.candidateName || 'Unknown';
