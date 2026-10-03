@@ -54,7 +54,7 @@ const Sidebar = ({ setActiveSection, activeSection, navigate }) => {
                 className="menu-item"
               >
                 <i className="fas fa-file-signature"></i>
-                <span>Assigned Tests</span>
+                <span>Aptitude Tests</span>
               </button>
             </li>
             <li className={activeSection === 'coding-platform' ? 'active' : ''}>

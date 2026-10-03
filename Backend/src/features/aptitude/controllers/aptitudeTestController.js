@@ -520,27 +520,8 @@ const aptitudeTestController = {
 
       const tests = await AptitudeTest.find({
         isActive: { $ne: false },
-        isPublished: { $ne: false },
-        _id: { $nin: hiddenIds },
-        $or: [
-          { _id: { $in: attemptedTestIds } },
-          {
-            assignedCandidates: {
-              $elemMatch: {
-                email: { $regex: new RegExp('^' + userEmail + '$', 'i') },
-                accessGranted: true
-              }
-            }
-          },
-          {
-            assignedCandidates: {
-              $elemMatch: {
-                candidateId: userId,
-                accessGranted: true
-              }
-            }
-          }
-        ]
+        isPublished: true,
+        _id: { $nin: hiddenIds }
       }).sort({ createdAt: -1 });
 
       let sanitizedTests = tests.reduce((acc, test) => {
@@ -568,7 +549,7 @@ const aptitudeTestController = {
           testObj.attemptId = actualAttempt._id;
         }
 
-        testObj.accessGranted = !!studentAssignment?.accessGranted || !!actualAttempt;
+        testObj.accessGranted = true;
         testObj.studentStatus = status;
         testObj.dueDate = dueDate;
         testObj.questionsCount = testObj.questions ? testObj.questions.length : 0;
@@ -727,7 +708,7 @@ const aptitudeTestController = {
           }
         }
 
-        if (!hasAnyAttempt && !isAssigned) {
+        if (!hasAnyAttempt && !isAssigned && !test.isPublished) {
           return res.status(403).json({ success: false, error: 'Unauthorized to start this test. Please join using the entrance code first.' });
         }
 

@@ -97,8 +97,8 @@ const StudentAptitudeTestList = ({ onSelectTest }) => {
     <div className="student-aptitude-list">
       <div className="student-aptitude-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2>Assigned Aptitude Screening Tests</h2>
-          <p>Complete your scheduled timed aptitude tests assigned by hiring companies.</p>
+          <h2>Available Aptitude Tests</h2>
+          <p>Complete your timed aptitude tests assigned or published by companies.</p>
         </div>
         <button 
           className="btn-primary" 
@@ -180,11 +180,11 @@ const StudentAptitudeTestList = ({ onSelectTest }) => {
       {error && <div style={{ color: 'red', marginBottom: 16 }}>{error}</div>}
 
       {loading ? (
-        <div>Loading your assigned tests...</div>
+        <div>Loading available tests...</div>
       ) : tests.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 50, background: 'white', borderRadius: 12, border: '1px solid #e5e7eb' }}>
           <i className="fas fa-lock" style={{ fontSize: '3rem', color: '#9ca3af', marginBottom: 16 }}></i>
-          <h3 style={{ color: '#111827', marginBottom: 8 }}>No Assigned Tests</h3>
+          <h3 style={{ color: '#111827', marginBottom: 8 }}>No Available Tests</h3>
           <p style={{ color: '#4b5563', fontSize: '1.1rem', marginBottom: 20 }}>
             Have a test code from a company?
           </p>
