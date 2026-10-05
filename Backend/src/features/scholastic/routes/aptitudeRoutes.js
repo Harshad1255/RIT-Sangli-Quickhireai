@@ -20,7 +20,7 @@ const optionalAuth = (req, res, next) => {
 };
 
 router.get('/categories', aptitudeController.getCategories);
-router.get('/questions', aptitudeController.getQuestions);
+router.get('/questions', optionalAuth, aptitudeController.getQuestions);
 router.get('/questions/random', aptitudeController.getRandomQuestion);
 router.get('/questions/:id', aptitudeController.getQuestionById);
 router.post('/submit', auth, aptitudeController.submitAnswer);

@@ -89,6 +89,13 @@ const AptitudePractice = () => {
       if (res.data && res.data.success) {
         setSubmitted(true);
         setSubmitResult(res.data);
+        
+        // Update local state immediately if correct
+        if (res.data.isCorrect || res.data.correctOptionId === selectedOption) {
+          setQuestions(prev => prev.map(q => 
+            q._id === activeQuestion._id ? { ...q, isSolved: true } : q
+          ));
+        }
       }
     } catch (err) {
       console.error('Error submitting answer:', err);
@@ -200,7 +207,14 @@ const AptitudePractice = () => {
                 <div>
                   <div className="card-top">
                     <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#3b82f6' }}>{q.category}</span>
-                    <span className={`diff-badge ${q.difficulty}`}>{q.difficulty}</span>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      {q.isSolved && (
+                        <span style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 600 }}>
+                          <i className="fas fa-check-circle"></i> Solved
+                        </span>
+                      )}
+                      <span className={`diff-badge ${q.difficulty}`}>{q.difficulty}</span>
+                    </div>
                   </div>
                   <h4>{q.title}</h4>
                   <p style={{ fontSize: '0.9rem', color: '#475569', margin: '0.5rem 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>

@@ -103,6 +103,14 @@ const StudentDashboard = () => {
     }
   };
 
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Close mobile menu when section changes
+  const handleSectionChange = (section) => {
+    setActiveSection(section);
+    setIsMobileMenuOpen(false);
+  };
+
   const isAssessmentActive = Boolean(selectedAptitudeTest || selectedCodingProblem);
 
   if (isAssessmentActive) {
@@ -132,14 +140,90 @@ const StudentDashboard = () => {
 
   return (
     <div className="dashboard-container">
-      <Sidebar 
-        setActiveSection={setActiveSection} 
-        activeSection={activeSection}
-        navigate={navigate}
-      />
+      {/* Mobile Header with Hamburger Menu */}
+      <div className="mobile-header" style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '1rem 1.5rem',
+        background: '#fff',
+        borderBottom: '1px solid #e2e8f0',
+        position: 'sticky',
+        top: 0,
+        zIndex: 90,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img src="/rit-logo.png" alt="RIT Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
+          <h2 style={{ fontSize: '1.1rem', color: '#3b82f6', margin: 0 }}>QuickHire AI</h2>
+        </div>
+        <button 
+          className="hamburger-btn"
+          onClick={() => setIsMobileMenuOpen(true)}
+          style={{ background: 'none', border: 'none', fontSize: '1.5rem', color: '#1e293b', cursor: 'pointer' }}
+        >
+          <i className="fas fa-bars"></i>
+        </button>
+      </div>
+
+      {/* Sidebar overlay for mobile */}
+      {isMobileMenuOpen && (
+        <div 
+          className="sidebar-overlay"
+          onClick={() => setIsMobileMenuOpen(false)}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(15, 23, 42, 0.5)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 999,
+          }}
+        />
+      )}
+
+      <div className={`sidebar-wrapper ${isMobileMenuOpen ? 'open' : ''}`}>
+        <Sidebar 
+          setActiveSection={handleSectionChange} 
+          activeSection={activeSection}
+          navigate={navigate}
+        />
+        {/* Close button inside sidebar for mobile */}
+        <button 
+          className="close-sidebar-btn"
+          onClick={() => setIsMobileMenuOpen(false)}
+          style={{
+            position: 'absolute',
+            top: '1.2rem',
+            right: '1rem',
+            background: 'none',
+            border: 'none',
+            fontSize: '1.5rem',
+            color: '#64748b',
+            cursor: 'pointer',
+            zIndex: 101,
+            display: 'none'
+          }}
+        >
+          <i className="fas fa-times"></i>
+        </button>
+      </div>
+
       <main className="main-content">
         {renderContent()}
       </main>
+
+      <style>{`
+        @media (min-width: 1025px) {
+          .mobile-header { display: none !important; }
+          .sidebar-overlay { display: none !important; }
+          .sidebar-wrapper { display: contents; }
+        }
+        @media (max-width: 1024px) {
+          .sidebar-wrapper .sidebar { transform: translateX(-100%); }
+          .sidebar-wrapper.open .sidebar { transform: translateX(0); }
+          .sidebar-wrapper.open .close-sidebar-btn { display: block !important; }
+          .main-content { margin-left: 0 !important; width: 100% !important; }
+        }
+      `}</style>
     </div>
   );
 };

@@ -73,13 +73,21 @@ const FinalEvaluation = ({ evaluation, answers }) => {
                   </div>
                 ) : (
                   <>
-                    <div className={`score-item ${getScoreColor(answer.evaluation?.technicalAccuracy || 0)}`}>
-                      <span>Technical Accuracy:</span>
-                      <span>{answer.evaluation?.technicalAccuracy || 0}/10</span>
+                    <div className={`score-item ${getScoreColor(answer.evaluation?.technicalKnowledge || answer.evaluation?.technicalAccuracy || 0)}`}>
+                      <span>Technical Knowledge:</span>
+                      <span>{answer.evaluation?.technicalKnowledge ?? answer.evaluation?.technicalAccuracy ?? 0}/10</span>
                     </div>
-                    <div className={`score-item ${getScoreColor(answer.evaluation?.communication || 0)}`}>
-                      <span>Communication:</span>
-                      <span>{answer.evaluation?.communication || 0}/10</span>
+                    <div className={`score-item ${getScoreColor(answer.evaluation?.codingAbility || 0)}`}>
+                      <span>Coding Ability:</span>
+                      <span>{answer.evaluation?.codingAbility || 0}/10</span>
+                    </div>
+                    <div className={`score-item ${getScoreColor(answer.evaluation?.communicationSkills || answer.evaluation?.communication || 0)}`}>
+                      <span>Communication Skills:</span>
+                      <span>{answer.evaluation?.communicationSkills ?? answer.evaluation?.communication ?? 0}/10</span>
+                    </div>
+                    <div className={`score-item ${getScoreColor(answer.evaluation?.problemSolving || 0)}`}>
+                      <span>Problem Solving:</span>
+                      <span>{answer.evaluation?.problemSolving || 0}/10</span>
                     </div>
                   </>
                 )}

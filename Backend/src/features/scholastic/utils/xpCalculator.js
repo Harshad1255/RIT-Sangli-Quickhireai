@@ -47,6 +47,17 @@ class XPCalculator {
       progress = new Progress({ userId });
     }
 
+    // Initialize nested objects if they are missing from older documents
+    if (!progress.questionsSolved) {
+      progress.questionsSolved = {};
+    }
+    if (!progress.questionsSolved.aptitude) {
+      progress.questionsSolved.aptitude = { easy: 0, medium: 0, hard: 0, total: 0 };
+    }
+    if (!progress.questionsSolved.coding) {
+      progress.questionsSolved.coding = { easy: 0, medium: 0, hard: 0, total: 0 };
+    }
+
     const todayStr = new Date().toISOString().split('T')[0];
     const diffKey = difficulty ? difficulty.toLowerCase() : 'medium';
 
@@ -87,8 +98,8 @@ class XPCalculator {
 
     // Call the shared daily activity recorder
     await this.recordDailyActivity(userId, { 
-      aptitude: questionType === 'aptitude' ? 1 : 0, 
-      coding: questionType === 'coding' ? 1 : 0 
+      aptitude: (isCorrect && isFirstSolve && questionType === 'aptitude') ? 1 : 0, 
+      coding: (isCorrect && isFirstSolve && questionType === 'coding') ? 1 : 0 
     });
 
     const totalSolved = (progress.questionsSolved.aptitude.total || 0) + (progress.questionsSolved.coding.total || 0);

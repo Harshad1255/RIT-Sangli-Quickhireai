@@ -257,7 +257,7 @@ const ExamSecurityWrapper = ({
     const handleFullscreenChange = () => {
       const full = !!getFullscreenElement();
       setIsFullscreen(full);
-      setFullscreenBlocked(requireFullscreen && active && !full);
+      setFullscreenBlocked(false);
 
       if (requireFullscreen && active && !full) {
         logViolation('fullscreen_exit', 'You have exited full-screen mode. Please return to the assessment.');
@@ -621,6 +621,15 @@ const ExamSecurityWrapper = ({
             <button className="exam-security-button" onClick={handleStart} disabled={disabled} style={disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}}>
               {startButtonLabel}
             </button>
+            {disabled && onExit && (
+              <button 
+                className="exam-security-button" 
+                onClick={onExit} 
+                style={{ marginTop: '10px', background: '#64748b' }}
+              >
+                Go Back
+              </button>
+            )}
           </div>
         </div>
       );

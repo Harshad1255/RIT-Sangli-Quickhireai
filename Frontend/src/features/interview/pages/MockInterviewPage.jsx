@@ -64,34 +64,18 @@ const MockInterviewPage = () => {
       <SkillsSelection
         interviewCode={mockCode}
         branch={selectedBranch}
-        onContinue={async (skills) => {
+        onContinue={(skills) => {
           setSelectedSkills(skills);
           console.log('Starting mock interview with skills:', skills, 'and code:', mockCode);
           
-          // Start the interview session on the backend
-          try {
-            const response = await import('../../../shared/services/api').then(m => m.api.post('/interviews/start', {
-              interviewCode: mockCode,
-              skills
-            }));
-            
-            console.log('Backend response:', response.data);
-            
-            if (response.data.success) {
-              // Navigate to the mock interview session route
-              navigate(`/interview/mock/session/${mockCode}`, { 
-                state: { 
-                  selectedSkills: skills,
-                  mockCode: mockCode 
-                } 
-              });
-            } else {
-              alert(response.data.error || 'Failed to start interview');
-            }
-          } catch (error) {
-            console.error('Error starting mock interview:', error);
-            alert(error.response?.data?.details || error.message || 'Failed to start interview. Please try again later.');
-          }
+          // Navigate to the mock interview session route. 
+          // InterviewScreen.jsx will handle the /interviews/start API call.
+          navigate(`/interview/mock/session/${mockCode}`, { 
+            state: { 
+              selectedSkills: skills,
+              mockCode: mockCode 
+            } 
+          });
         }}
         isMock={true}
       />

@@ -937,6 +937,7 @@ const AptitudeTestAttempt = ({ test, onExit, mode = 'take' }) => {
       }}
       startButtonLabel={customButtonLabel}
       disabled={!allowStart}
+      onExit={onExit}
     >
       <InnerAptitudeTestAttempt
         test={test}

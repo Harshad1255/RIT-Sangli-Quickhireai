@@ -61,12 +61,30 @@ const aptitudeController = {
         AptitudeQuestion.countDocuments(query)
       ]);
 
+      let finalQuestions = questions.map(q => q.toObject());
+
+      const userId = req.user?.id || req.user?._id;
+      if (userId) {
+        const AptitudeSubmission = require('../models/AptitudeSubmission');
+        const solvedSubmissions = await AptitudeSubmission.find({
+          userId,
+          questionId: { $in: questions.map(q => q._id) },
+          isCorrect: true
+        });
+        
+        const solvedQuestionIds = new Set(solvedSubmissions.map(s => s.questionId.toString()));
+        finalQuestions = finalQuestions.map(q => ({
+          ...q,
+          isSolved: solvedQuestionIds.has(q._id.toString())
+        }));
+      }
+
       res.status(200).json({
         success: true,
         total,
         page: parseInt(page, 10),
         pages: Math.ceil(total / parseInt(limit, 10)),
-        questions
+        questions: finalQuestions
       });
     } catch (error) {
       console.error('Error fetching aptitude questions:', error);

@@ -13,21 +13,21 @@ class SpeechRecognitionService {
 
   setupRecognition() {
     this.recognition.continuous = true;
-    this.interimResults = true;
-    this.recognition.lang = 'en-US';
+    this.recognition.interimResults = true;
+    this.recognition.lang = 'en-IN';
 
     this.recognition.onresult = (event) => {
       let interimTranscript = '';
       
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
+        const transcriptSegment = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          this.finalTranscript += transcript + ' ';
+          this.finalTranscript += transcriptSegment + ' ';
           if (this.onFinalResult) {
             this.onFinalResult(this.finalTranscript.trim());
           }
         } else {
-          interimTranscript += transcript;
+          interimTranscript += transcriptSegment;
           if (this.onInterimResult) {
             this.onInterimResult(interimTranscript);
           }
@@ -52,8 +52,8 @@ class SpeechRecognitionService {
     };
   }
 
-  startRecording(onInterimResult, onFinalResult, onError) {
-    this.finalTranscript = '';
+  startRecording(initialTranscript, onInterimResult, onFinalResult, onError) {
+    this.finalTranscript = (initialTranscript || '') + ((initialTranscript && !initialTranscript.endsWith(' ')) ? ' ' : '');
     this.onInterimResult = onInterimResult;
     this.onFinalResult = onFinalResult;
     this.onError = onError;

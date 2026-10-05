@@ -208,8 +208,8 @@ const StudentAptitudeTestList = ({ onSelectTest }) => {
               <div>
                 <div className="aptitude-test-item-header">
                   <h3>{test.title}</h3>
-                  <span className={`status-badge ${getBadgeClass(test.studentStatus)}`}>
-                    {test.studentStatus || 'Not Started'}
+                  <span className={`status-badge ${test.studentStatus === 'Completed' ? 'status-completed' : test.studentStatus === 'In Progress' ? 'status-in-progress' : test.dueDate && new Date(test.dueDate) < new Date() ? 'status-not-started' : 'status-not-started'}`}>
+                    {test.studentStatus || (test.dueDate && new Date(test.dueDate) < new Date() ? 'Expired' : 'Not Started')}
                   </span>
                 </div>
 
@@ -241,6 +241,14 @@ const StudentAptitudeTestList = ({ onSelectTest }) => {
                       <i className="fas fa-redo"></i> Reattempt Test
                     </button>
                   </>
+                ) : test.dueDate && new Date(test.dueDate) < new Date() ? (
+                  <button
+                    className="btn-secondary"
+                    style={{ flex: 1, background: '#f3f4f6', color: '#6b7280', border: '1px solid #d1d5db' }}
+                    disabled
+                  >
+                    <i className="fas fa-clock"></i> Slot Closed
+                  </button>
                 ) : (
                   <button
                     className="btn-primary"

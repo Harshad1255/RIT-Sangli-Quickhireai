@@ -235,6 +235,7 @@ const InterviewScreen = (props) => {
       setRecordingError(null);
       
       speechRecognitionService.startRecording(
+        transcript,
         (interim) => setInterimTranscript(interim),
         (final) => setTranscript(final),
         (error) => {
@@ -941,49 +942,13 @@ const InterviewScreen = (props) => {
       if (!fullscreenElement && isFullscreenEntered) {
         // Fullscreen was exited during interview
         console.log('Fullscreen exited during interview');
-        setIsFullscreenPaused(true);
+        setIsFullscreenPaused(false); // Disabled blocking per user request
         
         // Stop recording if active
         if (isRecording) {
           speechRecognitionService.stopRecording();
           setIsRecording(false);
         }
-        
-        // Show warning
-        const warningDiv = document.createElement('div');
-        warningDiv.className = 'fullscreen-exit-warning';
-        warningDiv.innerHTML = `
-          <div class="warning-content">
-            <span class="warning-icon">🚫</span>
-            <span class="warning-text"><strong>INTERVIEW BLOCKED!</strong> Fullscreen mode is MANDATORY to continue.</span>
-          </div>
-        `;
-        
-        warningDiv.style.cssText = `
-          position: fixed;
-          top: 20px;
-          right: 20px;
-          background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-          color: white;
-          padding: 16px 20px;
-          border-radius: 12px;
-          box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
-          z-index: 10000;
-          font-family: inherit;
-          font-weight: 700;
-          animation: slideIn 0.3s ease;
-          max-width: 450px;
-          border: 2px solid rgba(255, 255, 255, 0.2);
-        `;
-        
-        document.body.appendChild(warningDiv);
-        
-        // Auto-remove after 8 seconds
-        setTimeout(() => {
-          if (warningDiv.parentElement) {
-            warningDiv.remove();
-          }
-        }, 8000);
       } else if (fullscreenElement && isFullscreenPaused) {
         // Fullscreen was re-entered
         console.log('Fullscreen re-entered, resuming interview');
@@ -1096,44 +1061,6 @@ const InterviewScreen = (props) => {
   // Handle disabled button clicks
   const handleDisabledButtonClick = (buttonType) => {
     if (!isCurrentlyFullscreen) {
-      // Show notification
-      const notification = document.createElement('div');
-      notification.className = 'fullscreen-required-notification';
-      notification.innerHTML = `
-        <div class="notification-content">
-          <span class="notification-icon">🚫</span>
-          <span class="notification-text">Fullscreen first!</span>
-        </div>
-      `;
-      
-      notification.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        color: white;
-        padding: 1rem 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
-        z-index: 10001;
-        font-family: inherit;
-        font-weight: 700;
-        animation: slideInUp 0.3s ease;
-        border: 2px solid rgba(255, 255, 255, 0.2);
-        min-width: 200px;
-        text-align: center;
-      `;
-      
-      document.body.appendChild(notification);
-      
-      // Auto-remove after 3 seconds
-      setTimeout(() => {
-        if (notification.parentElement) {
-          notification.remove();
-        }
-      }, 3000);
-      
       console.log(`Button ${buttonType} clicked while not in fullscreen`);
     }
   };
@@ -1256,7 +1183,6 @@ const InterviewScreen = (props) => {
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'url("data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'><defs><pattern id=\'grain\' width=\'100\' height=\'100\' patternUnits=\'userSpaceOnUse\'><circle cx=\'50\' cy=\'50\' r=\'1\' fill=\'rgba(255,255,255,0.1)\'/></pattern></defs><rect width=\'100\' height=\'100\' fill=\'url(%23grain)\'/></svg>")',
         opacity: 0.3,
         pointerEvents: 'none',
         zIndex: -2
@@ -1267,12 +1193,6 @@ const InterviewScreen = (props) => {
         left: 0,
         right: 0,
         bottom: 0,
-        background: `
-          radial-gradient(circle at 20% 80%, rgba(255,255,255,0.1) 0%, transparent 50%),
-          radial-gradient(circle at 80% 20%, rgba(255,255,255,0.1) 0%, transparent 50%),
-          radial-gradient(circle at 40% 40%, rgba(255,255,255,0.05) 0%, transparent 50%)
-        `,
-        animation: 'float 20s ease-in-out infinite',
         pointerEvents: 'none',
         zIndex: -2
       }}></div>
@@ -1319,8 +1239,6 @@ const InterviewScreen = (props) => {
           overflow: 'hidden',
           position: 'relative',
           transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-          opacity: !isCurrentlyFullscreen ? 0.7 : 1,
-          filter: !isCurrentlyFullscreen ? 'grayscale(0.3)' : 'none',
         }}
       >
         {/* Left Panel: Question/Answer */}
@@ -1396,8 +1314,7 @@ const InterviewScreen = (props) => {
                   style={{
                     marginBottom: '1.5rem',
                     padding: '1.3rem 1.2rem 1.1rem 1.2rem',
-                    background: 'rgba(255,255,255,0.35)',
-                    backdropFilter: 'blur(10px)',
+                    background: 'rgba(255,255,255,1)',
                     border: '2.5px solid rgba(59,130,246,0.18)',
                     borderRadius: '18px',
                     boxShadow: '0 8px 32px rgba(30,64,175,0.10)',
@@ -1656,7 +1573,7 @@ const InterviewScreen = (props) => {
                   resize: 'vertical'
                 }} 
                 placeholder="Your spoken answer will appear here, or you can type it."
-                value={transcript}
+                value={transcript + (interimTranscript ? (transcript && !transcript.endsWith(' ') ? ' ' : '') + interimTranscript : '')}
                 onChange={(e) => setTranscript(e.target.value)}
               />
             </div>
