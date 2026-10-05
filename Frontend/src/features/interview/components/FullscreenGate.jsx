@@ -96,7 +96,7 @@ const FullscreenGate = ({ onFullscreenEntered }) => {
     return (
       <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(30,41,59,0.10)', padding: '3rem', maxWidth: 600, width: '100%', textAlign: 'center' }}>
-          <div className="fullscreen-icon">⚠️</div>
+          <div className="fullscreen-icon"><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /></div>
           <h2>Fullscreen Not Supported</h2>
           <p style={{ color: '#1e293b', fontSize: '1.1rem', lineHeight: 1.7 }}>Your browser doesn't support fullscreen mode. For the best interview experience, please use a modern browser.</p>
           <button 

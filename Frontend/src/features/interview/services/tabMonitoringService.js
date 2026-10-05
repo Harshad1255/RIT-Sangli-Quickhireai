@@ -216,9 +216,9 @@ class TabMonitoringService {
     warningDiv.className = 'interview-warning';
     warningDiv.innerHTML = `
       <div class="warning-content">
-        <span class="warning-icon">⚠️</span>
+        <span class="warning-icon" aria-hidden="true">!</span>
         <span class="warning-text">${message}</span>
-        <button class="warning-dismiss" onclick="this.parentElement.parentElement.remove()">×</button>
+        <button class="warning-dismiss" type="button" aria-label="Dismiss warning" onclick="this.parentElement.parentElement.remove()">Close</button>
       </div>
     `;
     

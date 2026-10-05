@@ -367,6 +367,7 @@ const CreateInterview = () => {
               {role}
               <button
                 type="button"
+                aria-label={`Remove ${role}`}
                 onClick={() => {
                   setFormData(prev => ({
                     ...prev,
@@ -376,8 +377,9 @@ const CreateInterview = () => {
                     )
                   }));
                 }}
+                style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                ×
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
               </button>
             </span>
           ))}

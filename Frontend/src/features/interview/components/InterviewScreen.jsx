@@ -784,7 +784,7 @@ const InterviewScreen = (props) => {
           notification.className = 'fullscreen-required-notification';
           notification.innerHTML = `
             <div class="notification-content">
-              <span class="notification-icon">🚫</span>
+              <span class="notification-icon"><i class="fa-solid fa-ban" aria-hidden="true"></i></span>
               <span class="notification-text">You can't select text during the interview.</span>
             </div>
           `;
@@ -1215,7 +1215,7 @@ const InterviewScreen = (props) => {
           boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)',
           animation: 'pulse 2s infinite'
         }}>
-          🚫 FULLSCREEN REQUIRED - All interview functions are disabled until you enter fullscreen mode
+          Fullscreen required - all interview functions are disabled until you enter fullscreen mode
         </div>
       )}
       
@@ -1479,9 +1479,12 @@ const InterviewScreen = (props) => {
                           fontSize: 22,
                           fontWeight: 900,
                           cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}
                         aria-label="Close logs modal"
-                      >×</button>
+                      ><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
                       <h3 style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1e293b', marginBottom: 18, letterSpacing: '0.2px' }}>
                         Suspicious Activity Logs
                       </h3>
@@ -1762,7 +1765,7 @@ const InterviewScreen = (props) => {
                 boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
                 animation: 'pulse 2s infinite'
               }}>
-                🚫 All buttons are disabled. Enter fullscreen mode to continue the interview.
+                All buttons are disabled. Enter fullscreen mode to continue the interview.
               </div>
             )}
           </div>

@@ -14,6 +14,7 @@ const CompanyCodingProblems = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedProblem, setSelectedProblem] = useState(null);
   const [problemStats, setProblemStats] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   // Form State for Create/Edit
   const [formData, setFormData] = useState({
@@ -140,13 +141,19 @@ const CompanyCodingProblems = () => {
   };
 
   const handleDeleteProblem = async (problemId) => {
-    if (!window.confirm("Are you sure you want to delete this coding problem? This will also remove it from any existing tests.")) return;
+    setDeleteConfirm(problemId);
+  };
+
+  const confirmDeleteProblem = async () => {
+    if (!deleteConfirm) return;
     try {
-      await api.delete(`/coding/problems/${problemId}`);
+      await api.delete(`/coding/problems/${deleteConfirm}`);
       fetchProblems();
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.error || err.message || 'Error deleting coding problem');
+    } finally {
+      setDeleteConfirm(null);
     }
   };
 
@@ -232,6 +239,24 @@ const CompanyCodingProblems = () => {
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc' }}>
       <CompanySidebar />
       <div className="company-coding-container" style={{ flex: 1 }}>
+        {deleteConfirm && (
+          <div className="modal-overlay" role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) setDeleteConfirm(null); }}>
+            <div className="modal-content" style={{ maxWidth: 420, padding: '1.5rem' }}>
+              <button type="button" className="modal-close-button" aria-label="Close delete confirmation" onClick={() => setDeleteConfirm(null)}>
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+              <h3 style={{ marginBottom: '0.75rem', fontSize: '1.5rem' }}>Delete Problem?</h3>
+              <p style={{ color: '#475569', marginBottom: '1.25rem' }}>
+                Are you sure you want to delete this coding problem? This will also remove it from any existing tests.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button type="button" className="btn-secondary" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+                <button type="button" className="btn-danger" onClick={confirmDeleteProblem}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="coding-header">
           <h2>Company Coding Problem Management</h2>
           <button className="btn-primary" onClick={() => handleOpenCreateModal()}>

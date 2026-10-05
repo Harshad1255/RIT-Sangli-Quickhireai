@@ -27,6 +27,7 @@ const CompanyAptitudeTests = () => {
   const [testResults, setTestResults] = useState(null);
   const [expandedAttemptId, setExpandedAttemptId] = useState(null);
   const [snapshotImages, setSnapshotImages] = useState({});
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   const defaultQuestion = {
     sectionName: 'General',
@@ -325,12 +326,18 @@ const CompanyAptitudeTests = () => {
   };
 
   const handleDeleteTest = async (testId) => {
-    if (!window.confirm("Are you sure you want to delete this test? If this test has already been published and attempted by candidates, it will be archived.")) return;
+    setDeleteConfirm(testId);
+  };
+
+  const confirmDeleteTest = async () => {
+    if (!deleteConfirm) return;
     try {
-      await api.delete(`/aptitude/${testId}`);
+      await api.delete(`/aptitude/${deleteConfirm}`);
       fetchTests();
     } catch (err) {
       alert(err.message || "Failed to delete test");
+    } finally {
+      setDeleteConfirm(null);
     }
   };
 
@@ -338,6 +345,24 @@ const CompanyAptitudeTests = () => {
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc' }}>
       <CompanySidebar />
       <div className="company-aptitude-container" style={{ flex: 1 }}>
+        {deleteConfirm && (
+          <div className="modal-overlay" role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) setDeleteConfirm(null); }}>
+            <div className="modal-content" style={{ maxWidth: 420, padding: '1.5rem' }}>
+              <button type="button" className="modal-close-button" aria-label="Close delete confirmation" onClick={() => setDeleteConfirm(null)}>
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+              <h3 style={{ marginBottom: '0.75rem', fontSize: '1.5rem' }}>Delete Test?</h3>
+              <p style={{ color: '#475569', marginBottom: '1.25rem' }}>
+                Are you sure you want to delete this test? If it has already been published and attempted by candidates, it will be archived.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button type="button" className="btn-secondary" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+                <button type="button" className="btn-danger" onClick={confirmDeleteTest}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="aptitude-header">
           <h2>Company Aptitude Test Management</h2>
           <button className="btn-primary" onClick={() => handleOpenCreateModal()}>

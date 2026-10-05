@@ -25,13 +25,13 @@ const SuspiciousActivityMonitor = ({
   const getActivityIcon = () => {
     switch (activityLevel) {
       case 'low':
-        return '🟢';
+        return '•';
       case 'medium':
-        return '🟡';
+        return '•';
       case 'high':
-        return '🔴';
+        return '•';
       default:
-        return '🟢';
+        return '•';
     }
   };
 
@@ -54,14 +54,14 @@ const SuspiciousActivityMonitor = ({
 
   const getActivityTypeIcon = (type) => {
     const icons = {
-      'tab_switch': '📱',
-      'tab_return': '↩️',
-      'right_click': '🖱️',
-      'keyboard_shortcut': '⌨️',
-      'developer_tools': '🔧',
-      'inactivity': '⏰'
+      'tab_switch': 'T',
+      'tab_return': 'R',
+      'right_click': 'M',
+      'keyboard_shortcut': 'K',
+      'developer_tools': 'D',
+      'inactivity': 'I'
     };
-    return icons[type] || '⚠️';
+    return icons[type] || '!';
   };
 
   const getActivityTypeLabel = (type) => {
@@ -183,7 +183,7 @@ const SuspiciousActivityMonitor = ({
       {/* Warning Banner for High Activity */}
       {activityLevel === 'high' && (
         <div className="warning-banner">
-          <span className="warning-icon">⚠️</span>
+          <span className="warning-icon"><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /></span>
           <span className="warning-text">
             High level of suspicious activity detected. This may affect your interview evaluation.
           </span>

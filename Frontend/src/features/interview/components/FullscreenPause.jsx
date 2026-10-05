@@ -394,7 +394,7 @@ const FullscreenPause = ({ onFullscreenResumed, currentQuestion, questionIndex, 
         <h2 style={{ color: '#1e293b', fontWeight: 900, fontSize: '2rem', marginBottom: 10 }}>Interview Paused</h2>
         <p style={{ color: '#334155', fontSize: '1.1rem', marginBottom: 18 }}><strong>Fullscreen mode is REQUIRED</strong> to continue your interview.</p>
         <div style={{ background: '#fef3c7', color: '#b45309', borderRadius: 10, padding: '0.8rem 1rem', marginBottom: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <span style={{ fontSize: '1.3rem' }}>⚠️</span>
+          <span style={{ fontSize: '1.3rem' }}><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /></span>
           <span>You must enter fullscreen mode to proceed with the interview.</span>
         </div>
         {currentQuestion && (
@@ -408,13 +408,13 @@ const FullscreenPause = ({ onFullscreenResumed, currentQuestion, questionIndex, 
           <div style={{ background: '#f1f5f9', borderRadius: 10, padding: '1.2rem', marginBottom: 18, textAlign: 'left' }}>
             <div style={{ color: '#1e293b', fontWeight: 700, marginBottom: 8 }}>Why Fullscreen is MANDATORY?</div>
             <ul style={{ color: '#334155', fontSize: '1.05rem', lineHeight: 1.7, margin: 0, paddingLeft: 18 }}>
-              <li>🔒 Required for interview security</li>
-              <li>🎯 Mandatory to maintain focus</li>
-              <li>📱 Essential for optimal experience</li>
-              <li>⚡ Necessary to prevent distractions</li>
+              <li>Required for interview security</li>
+              <li>Mandatory to maintain focus</li>
+              <li>Essential for optimal experience</li>
+              <li>Necessary to prevent distractions</li>
             </ul>
             <div style={{ background: '#fee2e2', color: '#b91c1c', borderRadius: 8, padding: '0.6rem 1rem', marginTop: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>⚠️</span>
+              <span><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /></span>
               <span>You cannot continue without entering fullscreen mode.</span>
             </div>
           </div>
