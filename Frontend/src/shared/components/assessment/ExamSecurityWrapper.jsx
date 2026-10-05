@@ -618,7 +618,7 @@ const ExamSecurityWrapper = ({
               </div>
             )}
 
-            <button className="exam-security-button" onClick={handleStart} disabled={disabled} style={disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}}>
+            <button className="exam-security-button" onClick={handleStart} disabled={disabled} style={disabled ? { opacity: 0.6, cursor: 'default' } : {}}>
               {startButtonLabel}
             </button>
             {disabled && onExit && (
