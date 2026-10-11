@@ -1,103 +1,116 @@
-class SpeechRecognitionService {
+export class SpeechRecognitionService {
   constructor() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      throw new Error('Speech recognition not supported');
-    }
-
-    this.recognition = new SpeechRecognition();
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    this.recognition = Recognition ? new Recognition() : null;
     this.isRecording = false;
+    this.running = false;
     this.finalTranscript = '';
-    this.setupRecognition();
+    this.interimTranscript = '';
+    this.confidences = [];
+    if (this.recognition) this.setupRecognition();
   }
-
   setupRecognition() {
-    this.recognition.continuous = true;
-    this.recognition.interimResults = true;
-    this.recognition.lang = 'en-IN';
-
-    this.recognition.onresult = (event) => {
-      let interimTranscript = '';
-      
+    const r = this.recognition;
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = 'en-IN';
+    r.onstart = () => { this.running = true; };
+    r.onresult = event => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcriptSegment = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          this.finalTranscript += transcriptSegment + ' ';
-          if (this.onFinalResult) {
-            this.onFinalResult(this.finalTranscript.trim());
-          }
-        } else {
-          interimTranscript += transcriptSegment;
-          if (this.onInterimResult) {
-            this.onInterimResult(interimTranscript);
-          }
-        }
+        const result = event.results[i];
+        this.segments.set(i, { text: result[0].transcript.trim(), final: result.isFinal, confidence: result[0].confidence });
       }
+      const segments = [...this.segments.values()];
+      this.finalTranscript = [this.baseTranscript, ...segments.filter(s => s.final).map(s => s.text)].filter(Boolean).join(' ');
+      this.interimTranscript = segments.filter(s => !s.final).map(s => s.text).join(' ');
+      this.onFinalResult?.(this.finalTranscript);
+      this.onInterimResult?.(this.interimTranscript);
     };
-
-    this.recognition.onend = () => {
-      // Ensure we have the final result before stopping
-      if (this.isRecording) {
-        if (this.onFinalResult) {
-          this.onFinalResult(this.finalTranscript.trim());
-        }
+    r.onerror = event => {
+      if (event.error === 'language-not-supported' && r.lang === 'en-IN') {
+        r.lang = 'en-US';
+        return;
       }
+      if (event.error === 'no-speech') return;
+      this.isRecording = false;
+      this.onError?.(event.error);
     };
-
-    this.recognition.onerror = (event) => {
-      console.error('Speech recognition error:', event.error);
-      if (this.onError) {
-        this.onError(event.error);
+    r.onend = () => {
+      this.running = false;
+      this.commit();
+      if (this.stopResolve) {
+        clearTimeout(this.stopTimer);
+        const resolve = this.stopResolve;
+        this.stopResolve = null;
+        resolve(this.finalTranscript);
+      } else if (this.isRecording) {
+        this.restartTimer = setTimeout(() => { if (this.isRecording) this.startSession(); }, 250);
       }
     };
   }
-
+  commit() {
+    this.finalTranscript = [this.finalTranscript, this.interimTranscript].filter(Boolean).join(' ').trim();
+    for (const segment of this.segments?.values() || []) {
+      if (segment.final && Number.isFinite(segment.confidence) && segment.confidence > 0 && segment.confidence <= 1) this.confidences.push(segment.confidence);
+    }
+    this.baseTranscript = this.finalTranscript;
+    this.interimTranscript = '';
+    this.segments = new Map();
+    this.onFinalResult?.(this.finalTranscript);
+    this.onInterimResult?.('');
+  }
+  startSession() {
+    if (this.running) return;
+    this.segments = new Map();
+    this.baseTranscript = this.finalTranscript;
+    try { this.recognition.start(); this.running = true; }
+    catch (error) { this.isRecording = false; this.running = false; this.onError?.(error.message); }
+  }
   startRecording(initialTranscript, onInterimResult, onFinalResult, onError) {
-    this.finalTranscript = (initialTranscript || '') + ((initialTranscript && !initialTranscript.endsWith(' ')) ? ' ' : '');
+    if (!this.recognition) throw new Error('Speech recognition not supported. Please type your answer.');
+    if (this.isRecording || this.running || this.stopResolve) return;
+    clearTimeout(this.restartTimer);
+    this.finalTranscript = (initialTranscript || '').trim();
+    this.interimTranscript = '';
     this.onInterimResult = onInterimResult;
     this.onFinalResult = onFinalResult;
     this.onError = onError;
     this.isRecording = true;
-
-    try {
-      this.recognition.start();
-      console.log('Speech recognition started');
-    } catch (error) {
-      console.error('Error starting speech recognition:', error);
-      if (onError) onError(error);
-    }
+    this.startSession();
   }
-
+  get speechConfidence() { return this.confidences.length ? this.confidences.reduce((a,b) => a+b,0) / this.confidences.length : null; }
   stopRecording() {
-    return new Promise((resolve) => {
-      console.log('Stopping recording...');
-      
-      this.recognition.onend = () => {
-        this.isRecording = false;
-        const finalStr = this.finalTranscript.trim();
-        console.log('Recognition ended, resolving with transcript:', finalStr);
-        resolve(finalStr);
-      };
-
-      try {
-        this.recognition.stop();
-      } catch (error) {
-        console.error('Error stopping recognition:', error);
-        this.isRecording = false;
-        resolve(this.finalTranscript.trim());
-      }
+    this.isRecording = false;
+    clearTimeout(this.restartTimer);
+    if (this.stopPromise && this.stopResolve) return this.stopPromise;
+    if (!this.running) { this.commit(); return Promise.resolve(this.finalTranscript); }
+    this.stopPromise = new Promise(resolve => {
+      this.stopResolve = resolve;
+      this.stopTimer = setTimeout(() => {
+        this.commit();
+        this.stopResolve = null;
+        this.recognition.abort();
+        resolve(this.finalTranscript);
+      }, 2000);
+      try { this.recognition.stop(); }
+      catch { clearTimeout(this.stopTimer); this.running = false; this.commit(); this.stopResolve = null; resolve(this.finalTranscript); }
     });
+    return this.stopPromise;
   }
-
   cancel() {
     this.isRecording = false;
+    clearTimeout(this.restartTimer);
+    clearTimeout(this.stopTimer);
+    this.onFinalResult = null;
+    this.onInterimResult = null;
+    this.stopResolve?.(this.finalTranscript);
+    this.stopResolve = null;
     this.finalTranscript = '';
-    try {
-      this.recognition.abort();
-    } catch (error) {
-      console.error('Error canceling recognition:', error);
-    }
+    this.interimTranscript = '';
+    this.baseTranscript = '';
+    this.confidences = [];
+    this.segments = new Map();
+    if (this.running) this.recognition.abort();
   }
 }
-
-export default new SpeechRecognitionService(); 
+export default new SpeechRecognitionService();

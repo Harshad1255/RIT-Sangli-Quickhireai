@@ -1,3 +1,4 @@
+const { serializeAnswer } = require('../services/evaluationUtils');
 // Import separated controllers
 const createInterviewController = require('./createInterviewController');
 const candidateController = require('./candidateController');
@@ -77,35 +78,4 @@ module.exports = {
         console.log('Storing final evaluation results:', finalEvaluation);
         
         // Process answers to extract question text from question objects
-        const processedAnswers = answers ? answers.map(answer => ({
-          question: typeof answer.question === 'object' ? answer.question.question : answer.question,
-          answer: answer.answer || '',
-          score: answer.evaluation?.score || 0,
-          feedback: answer.evaluation?.feedback || ''
-        })) : [];
-        
-        candidate.results = {
-          technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || finalEvaluation.technicalScore || 0,
-          communicationScore: finalEvaluation.skillAssessment?.communicationSkills || finalEvaluation.communicationScore || 0,
-          problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving || finalEvaluation.problemSolvingScore || 0,
-          confidenceScore: finalEvaluation.confidenceScore || 0,
-          overallScore: finalEvaluation.overallScore || 0,
-          strengths: finalEvaluation.strengths || [],
-          weaknesses: finalEvaluation.weaknesses || [],
-          feedback: finalEvaluation.overallFeedback || finalEvaluation.feedback || '',
-          answers: processedAnswers
-        };
-        console.log('Stored candidate results:', candidate.results);
-      }
-      
-      console.log('Saving interview...');
-      await interview.save();
-      console.log('Interview saved successfully');
-      console.log('Final candidate status:', candidate.status);
-      return res.json({ success: true });
-    } catch (err) {
-      console.error('Error ending interview:', err);
-      return res.status(500).json({ success: false, error: 'Server error' });
-    }
-  }
-}; 
+        const processedAnswers = (answers || []).map(serializeAnswer);

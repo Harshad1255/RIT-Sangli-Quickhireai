@@ -14,6 +14,10 @@ const CandidateSchema = new mongoose.Schema({
     default: 'pending'
   },
   results: {
+    technicalKnowledge: Number,
+    codingAbility: Number,
+    communicationSkills: Number,
+    problemSolving: Number,
     technicalScore: {
       type: Number,
       min: 0,
@@ -43,6 +47,19 @@ const CandidateSchema = new mongoose.Schema({
     weaknesses: [String],
     feedback: String,
     answers: [{
+      questionId: String,
+      rawTranscript: String,
+      normalizedTranscript: String,
+      speechConfidence: { type: Number, default: null },
+      status: { type: String, enum: ["evaluated", "skipped", "unavailable"] },
+      technicalKnowledge: Number,
+      codingAbility: Number,
+      communicationSkills: Number,
+      problemSolving: Number,
+      overallScore: Number,
+      strengths: [String],
+      improvements: [String],
+      code: String,
       question: String,
       answer: String,
       score: Number,

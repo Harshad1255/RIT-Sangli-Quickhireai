@@ -1,0 +1,11 @@
+# Interview speech and evaluation changes
+
+Speech uses en-IN with en-US fallback on unsupported language errors. Indexed final/interim results prevent duplicate final events, retain pending speech on end, and preserve answers across automatic restarts. Submission waits for recognition to finish. Unsupported browsers can type answers.
+
+The evaluator sends raw and conservatively normalized transcripts plus verbatim code, uses an explicit partial credit rubric, validates four scores, and computes overall = technical * 0.4 + coding * 0.2 + communication * 0.2 + problem solving * 0.2. Question context determines what evidence each dimension assesses. JSON extraction and trailing-comma repair are interview-specific; malformed evaluation responses retry once. Failures have null scores, skipped answers have status skipped and zero marks. Failed answers are excluded from averages; skipped questions count as zero. Existing aggregate score aliases remain for older consumers; new per-answer fields use canonical names.
+
+MongoDB schemas retain transcripts, confidence (null when absent), statuses, four dimensions, overall, feedback, strengths and improvements. Candidate reports and PDF output include coding and distinguish outages from skips.
+
+Validation: 113 tests across 18 backend suites passed, including 17 new tests for evaluator plumbing and mocked browser recognition. Frontend production build passed. Existing interview flow tests were updated to mock database-backed sessions. The six answer-quality examples use mocked Gemini scores, so these verify routing and score preservation, not live model quality. Mongo persistence is verified by schema casting and mocked flow, not a live database write.
+
+Remaining manual validation: start the app with MongoDB and a working Gemini configuration; speak the six answer-quality examples using an Indian English speaker; check interim text, pause/restart, stop/submit, navigation, skip, and outage behavior. Complete five questions, reload company results, download the PDF and compare all four dimensions and overall. Repeat on mobile and desktop, checking timer, fullscreen, tab-switch and suspicious-activity behavior. Real microphone accuracy, live Gemini grading, live Mongo writes and rendered PDF layout were not tested in this session.

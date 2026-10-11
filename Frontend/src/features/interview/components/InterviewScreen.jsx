@@ -241,6 +241,7 @@ const InterviewScreen = (props) => {
         (error) => {
           setRecordingError(error);
           setRecordingStatus('idle');
+          setIsRecording(false);
         }
       );
       setIsRecording(true);
@@ -286,6 +287,12 @@ const InterviewScreen = (props) => {
   const submitAnswer = async (payload) => {
     try {
       let answerText = typeof payload === 'string' ? payload : payload.transcript;
+      if (speechRecognitionService.isRecording || speechRecognitionService.running) {
+        answerText = await speechRecognitionService.stopRecording();
+        setIsRecording(false);
+        setInterimTranscript('');
+        setTranscript(answerText);
+      }
       let codeText = typeof payload === 'string' ? code : payload.code;
       // If transcript/answerText is empty but codeText is present, use codeText as the answer
       if ((!answerText || !answerText.trim()) && codeText && codeText.trim()) {
@@ -300,6 +307,7 @@ const InterviewScreen = (props) => {
       // Log the request payload
       const requestPayload = {
         answer: answerText.trim(),
+        speechConfidence: speechRecognitionService.speechConfidence,
         question: currentQuestion,
         interviewCode,
         code: codeText || '',

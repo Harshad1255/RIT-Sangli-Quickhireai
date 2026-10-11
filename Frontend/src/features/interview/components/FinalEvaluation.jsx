@@ -13,7 +13,7 @@ const FinalEvaluation = ({ evaluation, answers }) => {
   };
 
   // Calculate the angle for the conic-gradient ring (score out of 10)
-  const score = Number(evaluation.overallScore) || 0;
+  const score = evaluation.overallScore == null ? "N/A" : Number(evaluation.overallScore).toFixed(1);
   const scoreAngle = Math.min(360, (score / 10) * 360);
   const scoreColorClass = getScoreColor(score);
 
@@ -40,9 +40,9 @@ const FinalEvaluation = ({ evaluation, answers }) => {
               <div key={skill} style={{ display: 'flex', alignItems: 'center', gap: '1.2rem' }}>
                 <span style={{ minWidth: 160, textTransform: 'capitalize', color: '#64748b', fontWeight: 600 }}>{skill.replace(/([A-Z])/g, ' $1').trim()}</span>
                 <div style={{ flex: 1, background: '#e5e7eb', borderRadius: 8, height: 16, position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ width: `${score * 10}%`, height: '100%', background: score >= 7 ? '#22c55e' : score >= 4 ? '#f59e42' : '#ef4444', borderRadius: 8, transition: 'width 0.3s' }}></div>
+                  <div style={{ width: `${(score ?? 0) * 10}%`, height: '100%', background: score >= 7 ? '#22c55e' : score >= 4 ? '#f59e42' : '#ef4444', borderRadius: 8, transition: 'width 0.3s' }}></div>
                 </div>
-                <span style={{ minWidth: 40, textAlign: 'right', color: '#64748b', fontWeight: 700 }}>{score}/10</span>
+                <span style={{ minWidth: 40, textAlign: 'right', color: '#64748b', fontWeight: 700 }}>{score ?? 'N/A'}/10</span>
               </div>
             ))
           ) : (
@@ -69,9 +69,9 @@ const FinalEvaluation = ({ evaluation, answers }) => {
               <div className="question-scores">
                 {answer.evaluation && answer.evaluation.evaluationFailed ? (
                   <div className="score-item" style={{ color: '#dc2626', fontWeight: 600 }}>
-                    <span>Evaluation failed for this answer</span>
+                    <span>Evaluation service temporarily unavailable</span>
                   </div>
-                ) : (
+                ) : answer.evaluation?.status === "skipped" ? (<span>Question skipped</span>) : (
                   <>
                     <div className={`score-item ${getScoreColor(answer.evaluation?.technicalKnowledge || answer.evaluation?.technicalAccuracy || 0)}`}>
                       <span>Technical Knowledge:</span>

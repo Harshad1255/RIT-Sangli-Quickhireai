@@ -1,3 +1,13 @@
+jest.mock('../src/features/interviews/models/InterviewSession', () => {
+  const sessions = new Map();
+  return class InterviewSession {
+    constructor(data) { Object.assign(this, data); }
+    async save() { sessions.set(this.interviewCode, this); }
+    static async findOne({interviewCode}) { return sessions.get(interviewCode) || null; }
+    static async deleteOne({interviewCode}) { sessions.delete(interviewCode); }
+  };
+});
+jest.mock('../src/features/interviews/models/Interview', () => ({ findOne: jest.fn(async query => query.interviewCode ? {skills:['JavaScript','React','Node','SQL','Python']} : null) }));
 const resultController = require('../src/features/interviews/controllers/resultController');
 const questionController = require('../src/features/interviews/controllers/questionController');
 const geminiService = require('../src/features/interviews/services/geminiService');
@@ -7,7 +17,9 @@ jest.mock('../src/features/interviews/services/geminiService');
 describe('Interview Flow Rules', () => {
   beforeEach(() => {
     questionController.activeInterviews.clear();
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    require("../src/features/interviews/models/Interview").findOne.mockImplementation(async query => query.interviewCode ? {skills:["JavaScript","React","Node","SQL","Python"]} : null);
+    geminiService.generateFinalEvaluation.mockResolvedValue({overallScore:9,skillAssessment:{technicalKnowledge:9,codingAbility:9,communicationSkills:9,problemSolving:9}});
   });
 
   it('handles successful Gemini with 5 distinct questions and exactly one coding focus at index 2', async () => {
@@ -23,7 +35,7 @@ describe('Interview Flow Rules', () => {
     
     await questionController.startInterview(reqStart, resStart);
     
-    const session = questionController.getInterviewSession('test-code');
+    const session = await questionController.getInterviewSession('test-code');
     expect(session.questions.length).toBe(1);
     expect(session.questions[0].question).toContain('fundamentals'); // first focus
     
@@ -60,7 +72,7 @@ describe('Interview Flow Rules', () => {
     const resStart = { json: jest.fn(), status: jest.fn().mockReturnThis() };
     
     await questionController.startInterview(reqStart, resStart);
-    const session = questionController.getInterviewSession('fail-code');
+    const session = await questionController.getInterviewSession('fail-code');
     expect(session.questions[0].question).toContain('Fallback');
 
     for (let i = 0; i < 5; i++) {
@@ -95,7 +107,7 @@ describe('Interview Flow Rules', () => {
     const resStart = { json: jest.fn(), status: jest.fn().mockReturnThis() };
     await questionController.startInterview(reqStart, resStart);
     
-    const session = questionController.getInterviewSession('weak-code');
+    const session = await questionController.getInterviewSession('weak-code');
     
     // Answer 1 (Main)
     const reqAns1 = { body: { interviewCode: 'weak-code', answer: 'Weak answer', question: session.questions[0] } };
@@ -126,7 +138,7 @@ describe('Interview Flow Rules', () => {
     const resStart = { json: jest.fn(), status: jest.fn().mockReturnThis() };
     await questionController.startInterview(reqStart, resStart);
     
-    const session = questionController.getInterviewSession('eval-fail');
+    const session = await questionController.getInterviewSession('eval-fail');
     const reqAns = { body: { interviewCode: 'eval-fail', answer: 'Ans', question: session.questions[0] } };
     const resAns = { json: jest.fn() };
     await resultController.processAnswer(reqAns, resAns);
@@ -144,7 +156,7 @@ describe('Interview Flow Rules', () => {
     const resStart = { json: jest.fn(), status: jest.fn().mockReturnThis() };
     await questionController.startInterview(reqStart, resStart);
     
-    const session = questionController.getInterviewSession('skip-code');
+    const session = await questionController.getInterviewSession('skip-code');
     const reqAns = { body: { interviewCode: 'skip-code', answer: '', skipped: true, question: session.questions[0] } };
     const resAns = { json: jest.fn() };
     await resultController.processAnswer(reqAns, resAns);

@@ -71,7 +71,7 @@ const generateContentWithRetry = async (prompt, options = {}) => {
         }
         
         try {
-          const parsed = JSON.parse(cleanJson);
+          const parsed = options.parseJson ? options.parseJson(cleanJson) : JSON.parse(cleanJson);
           return { ok: true, data: parsed, errorCode: null };
         } catch (parseErr) {
           console.error(`[GeminiClient] JSON Parse Failed. Response was: ${text}`);

@@ -30,14 +30,16 @@ const ViewReport = ({ candidate, onClose }) => {
               padding: '1rem',
               marginBottom: '1.2rem',
               display: 'flex',
+              flexWrap: 'wrap',
               gap: '2rem',
               justifyContent: 'center',
               fontWeight: 600
             }}>
-              <div>Technical: <span style={{color:'#2563eb'}}>{Math.round((candidate.results.technicalScore || 0) * 10) / 10}/10</span></div>
-              <div>Communication: <span style={{color:'#2563eb'}}>{Math.round((candidate.results.communicationScore || 0) * 10) / 10}/10</span></div>
-              <div>Problem Solving: <span style={{color:'#2563eb'}}>{Math.round((candidate.results.problemSolvingScore || 0) * 10) / 10}/10</span></div>
-              <div>Overall: <span style={{color:'#059669'}}>{Math.round((candidate.results.overallScore || 0) * 10) / 10}/10</span></div>
+              <div>Technical Knowledge: <span style={{color:'#2563eb'}}>{candidate.results?.technicalKnowledge ?? candidate.results?.technicalScore ?? "N/A"}/10</span></div>
+              <div>Communication Skills: <span style={{color:'#2563eb'}}>{candidate.results?.communicationSkills ?? candidate.results?.communicationScore ?? "N/A"}/10</span></div>
+              <div>Problem Solving: <span style={{color:'#2563eb'}}>{candidate.results?.problemSolving ?? candidate.results?.problemSolvingScore ?? "N/A"}/10</span></div>
+              <div>Coding Ability: <span>{candidate.results.codingAbility ?? "N/A"}/10</span></div>
+              <div>Overall: <span style={{color:'#059669'}}>{candidate.results.overallScore == null ? "N/A" : candidate.results.overallScore.toFixed(1)}/10</span></div>
             </div>
           )}
           <div className="candidate-details">

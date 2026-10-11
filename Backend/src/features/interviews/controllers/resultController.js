@@ -1,3 +1,4 @@
+const evaluationUtils = require('../services/evaluationUtils');
 const Interview = require('../models/Interview');
 const Candidate = require('../../candidates/models/Candidate');
 const InterviewSession = require('../models/InterviewSession');
@@ -9,6 +10,8 @@ const questionController = require('./questionController');
 const processAnswer = async (req, res) => {
   try {
     const { interviewCode, answer, question, skipped = false, videoData } = req.body;
+    if ((answer != null && typeof answer !== 'string') || (req.body.code != null && typeof req.body.code !== 'string')) return res.status(400).json({ success: false, error: 'Answer and code must be text' });
+    const speechConfidence = typeof req.body.speechConfidence === 'number' && Number.isFinite(req.body.speechConfidence) && req.body.speechConfidence > 0 && req.body.speechConfidence <= 1 ? req.body.speechConfidence : null;
     
     console.log('--- Incoming answer submission ---');
     console.log('interviewCode:', interviewCode);
@@ -34,9 +37,10 @@ const processAnswer = async (req, res) => {
     const mainQuestionsAnswered = interview.answers.filter(a => !a.isFollowUp).length;
     const isCurrentFollowUp = question && question.isFollowUp;
     
-    const currentQuestionText = question ? question.question : `Question ${mainQuestionsAnswered + 1}`;
+    const currentQuestionText = typeof question === 'string' ? question : question ? question.question : `Question ${mainQuestionsAnswered + 1}`;
     const transcript = answer || '';
-    const code = interviewCode;
+    const code = req.body.code || '';
+    const isSkipped = skipped || !transcript.trim() && !code.trim();
     
     // Analyze face if video data provided
     let facialAnalysis = null;
@@ -59,15 +63,7 @@ const processAnswer = async (req, res) => {
     // Analyze answer using Gemini
     let analysis;
     try {
-      analysis = skipped ? 
-        { 
-          score: 0, 
-          feedback: "Question skipped",
-          technicalAccuracy: 0,
-          completeness: 0,
-          clarity: 0
-        } :
-        await geminiService.analyzeAnswer(transcript, currentQuestionText, code);
+      analysis = isSkipped ? evaluationUtils.skipped() : await geminiService.analyzeAnswer(transcript || code, question || currentQuestionText, { code, speechConfidence });
       console.log('Gemini evaluation result:', analysis);
     } catch (analysisError) {
       console.error("[INTERVIEW AI EVALUATION ERROR]", {
@@ -78,13 +74,17 @@ const processAnswer = async (req, res) => {
          status: analysisError?.response?.status,
          response: analysisError?.response?.data
       });
-      analysis = { evaluationFailed: true, score: null };
+      analysis = evaluationUtils.unavailable();
     }
 
     // Store answer and analysis with confidence score
     const storedAnswer = {
       question: currentQuestionText,
       answer: transcript,
+      rawTranscript: transcript,
+      normalizedTranscript: analysis.normalizedTranscript ?? evaluationUtils.normalizeTranscript(transcript),
+      speechConfidence,
+      status: analysis.status,
       code: code,
       analysis: analysis,
       confidenceScore: confidenceScore,
@@ -101,12 +101,11 @@ const processAnswer = async (req, res) => {
     for (const ans of interview.answers) {
       if (ans.analysis && ans.analysis.score !== null && ans.analysis.score !== undefined) {
         const technicalScore = ans.analysis.score;
-        const confScore = ans.confidenceScore || 0;
-        totalScore += (technicalScore * 0.7 + confScore * 0.3);
+        totalScore += technicalScore;
         validScores++;
       }
     }
-    interview.currentScore = validScores > 0 ? totalScore / validScores : 0;
+    interview.currentScore = validScores > 0 ? totalScore / validScores : null;
 
     const newMainQuestionsAnswered = interview.answers.filter(a => !a.isFollowUp).length;
 
@@ -116,7 +115,7 @@ const processAnswer = async (req, res) => {
     
     // Only generate follow-up if answer quality is poor (score < 8), we haven't reached total questions,
     // this wasn't a skipped question, evaluation didn't fail, and the current question is not already a follow-up.
-    const canFollowUp = !isCurrentFollowUp && !skipped && !analysis.evaluationFailed && analysis.score < 8 && newMainQuestionsAnswered < interview.totalQuestions;
+    const canFollowUp = !isCurrentFollowUp && !isSkipped && !analysis.evaluationFailed && analysis.score < 8 && newMainQuestionsAnswered < interview.totalQuestions;
 
     if (canFollowUp) {
       try {
@@ -162,25 +161,19 @@ const processAnswer = async (req, res) => {
                 candidate.status = 'completed';
                 candidate.completedAt = new Date();
                 candidate.results = {
+                  codingAbility: finalEvaluation.skillAssessment?.codingAbility ?? null,
+                  technicalKnowledge: finalEvaluation.skillAssessment?.technicalKnowledge ?? null,
+                  communicationSkills: finalEvaluation.skillAssessment?.communicationSkills ?? null,
+                  problemSolving: finalEvaluation.skillAssessment?.problemSolving ?? null,
                   technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || finalEvaluation.technicalScore || 0,
                   communicationScore: finalEvaluation.skillAssessment?.communicationSkills || finalEvaluation.communicationScore || 0,
                   problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving || finalEvaluation.problemSolvingScore || 0,
                   confidenceScore: interview.currentScore || 0,
-                  overallScore: finalEvaluation.overallScore || 0,
+                  overallScore: finalEvaluation.overallScore ?? null,
                   strengths: finalEvaluation.strengths || [],
                   weaknesses: finalEvaluation.weaknesses || [],
                   feedback: finalEvaluation.overallFeedback || finalEvaluation.feedback || '',
-                  answers: interview.answers.map(ans => ({
-                    question: ans.question,
-                    answer: ans.answer,
-                    score: ans.analysis?.score ?? (ans.analysis?.evaluationFailed ? null : 0),
-                    technicalKnowledge: ans.analysis?.technicalKnowledge ?? ans.analysis?.technicalAccuracy ?? 0,
-                    codingAbility: ans.analysis?.codingAbility ?? 0,
-                    communicationSkills: ans.analysis?.communicationSkills ?? ans.analysis?.communication ?? 0,
-                    problemSolving: ans.analysis?.problemSolving ?? 0,
-                    improvements: ans.analysis?.improvements ?? [],
-                    feedback: ans.analysis?.feedback || 'Evaluation missing'
-                  }))
+                  answers: interview.answers.map(evaluationUtils.serializeAnswer)
                 };
                 await dbInterview.save();
                 console.log('Regular interview results stored in database for candidate code:', interviewCode);
@@ -266,13 +259,7 @@ const processAnswer = async (req, res) => {
   }
 };
 
-const getDefaultAnalysis = () => ({
-  score: 5,
-  feedback: "Error analyzing answer. Please try again.",
-  technicalAccuracy: 5,
-  completeness: 5,
-  clarity: 5
-});
+const getDefaultAnalysis = evaluationUtils.unavailable;
 
 const getFallbackQuestion = (skill) => ({
   question: `Tell me about your experience with ${skill}`,
@@ -300,25 +287,19 @@ const storeMockInterviewResults = async (mockCode, interview, finalEvaluation) =
         code: mockCode,
         status: 'completed',
         results: {
-          technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || 0,
+          codingAbility: finalEvaluation.skillAssessment?.codingAbility ?? null,
+                  technicalKnowledge: finalEvaluation.skillAssessment?.technicalKnowledge ?? null,
+                  communicationSkills: finalEvaluation.skillAssessment?.communicationSkills ?? null,
+                  problemSolving: finalEvaluation.skillAssessment?.problemSolving ?? null,
+                  technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || 0,
           communicationScore: finalEvaluation.skillAssessment?.communicationSkills || 0,
-          problemSolvingScore: finalEvaluation.skillAssessment?.codingAbility || 0,
+          problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving ?? null,
           confidenceScore: interview.answers.reduce((sum, ans) => sum + (ans.confidenceScore || 0), 0) / interview.answers.length,
           overallScore: finalEvaluation.overallScore || 0,
           strengths: finalEvaluation.strengths || [],
           weaknesses: finalEvaluation.weaknesses || [],
           feedback: finalEvaluation.feedback || '',
-          answers: interview.answers.map(ans => ({
-            question: ans.question,
-            answer: ans.answer,
-            score: ans.analysis?.score ?? (ans.analysis?.evaluationFailed ? null : 0),
-            technicalKnowledge: ans.analysis?.technicalKnowledge ?? ans.analysis?.technicalAccuracy ?? 0,
-            codingAbility: ans.analysis?.codingAbility ?? 0,
-            communicationSkills: ans.analysis?.communicationSkills ?? ans.analysis?.communication ?? 0,
-            problemSolving: ans.analysis?.problemSolving ?? 0,
-            improvements: ans.analysis?.improvements ?? [],
-            feedback: ans.analysis?.feedback || 'Evaluation missing'
-          }))
+          answers: interview.answers.map(evaluationUtils.serializeAnswer)
         },
         startedAt: interview.startTime,
         completedAt: new Date()
@@ -440,10 +421,11 @@ const getMockInterviewResults = async (req, res) => {
         completedAt: candidate.completedAt,
         duration: 30, // Default duration for mock interviews
         results: {
+          ...candidate.results?.toObject?.(),
           technicalScore: candidate.results?.technicalScore || 0,
           communicationScore: candidate.results?.communicationScore || 0,
           problemSolvingScore: candidate.results?.problemSolvingScore || 0,
-          overallScore: candidate.results?.overallScore || 0,
+          overallScore: candidate.results?.overallScore ?? null,
           strengths: candidate.results?.strengths || [],
           weaknesses: candidate.results?.weaknesses || [],
           feedback: candidate.results?.feedback || ''
@@ -518,7 +500,8 @@ const submitAllAnswers = async (req, res) => {
       try {
         const analysis = await geminiService.analyzeAnswer(
           answer.answer, 
-          answer.question
+          answer.question,
+          { code: answer.code || "", speechConfidence: answer.speechConfidence }
         );
         processedAnswers.push({
           ...answer,
@@ -715,10 +698,11 @@ const generatePdfReport = async (req, res) => {
 
     if (candidate.results) {
       doc.fontSize(16).text('Scores', { underline: true });
-      doc.fontSize(12).text(`Technical: ${Math.round((candidate.results.technicalScore || 0)*10)/10}/10`);
-      doc.text(`Communication: ${Math.round((candidate.results.communicationScore || 0)*10)/10}/10`);
-      doc.text(`Problem Solving: ${Math.round((candidate.results.problemSolvingScore || 0)*10)/10}/10`);
-      doc.text(`Overall: ${Math.round((candidate.results.overallScore || 0)*10)/10}/10`);
+      doc.fontSize(12).text(`Technical Knowledge: ${candidate.results.technicalKnowledge ?? candidate.results.technicalScore ?? "N/A"}/10`);
+      doc.text(`Communication Skills: ${candidate.results.communicationSkills ?? candidate.results.communicationScore ?? "N/A"}/10`);
+      doc.text(`Problem Solving: ${candidate.results.problemSolving ?? candidate.results.problemSolvingScore ?? "N/A"}/10`);
+      doc.text(`Coding Ability: ${candidate.results.codingAbility ?? "N/A"}/10`);
+      doc.text(candidate.results.overallScore == null ? "Evaluation service temporarily unavailable" : `Overall: ${candidate.results.overallScore.toFixed(1)}/10`);
       doc.moveDown();
 
       if (candidate.results.feedback) {
@@ -748,13 +732,9 @@ const generatePdfReport = async (req, res) => {
           doc.fontSize(14).text(`Question ${index + 1}: ${ans.question}`, { underline: true });
           doc.fontSize(12).text(`Answer: ${ans.answer || 'No answer provided'}`);
           
-          if (ans.score === null || ans.feedback === 'Evaluation failed') {
-            doc.text(`Technical Knowledge: Evaluation Failed`);
-            doc.text(`Coding Ability: Evaluation Failed`);
-            doc.text(`Communication Skills: Evaluation Failed`);
-            doc.text(`Problem Solving: Evaluation Failed`);
-            doc.text(`Feedback: Evaluation failed`);
-          } else if (ans.feedback === 'Question skipped') {
+          if (ans.status === 'unavailable' || ans.score === null || ans.feedback === 'Evaluation failed') {
+            doc.text(`Evaluation service temporarily unavailable`);
+          } else if (ans.status === 'skipped' || ans.feedback === 'Question skipped') {
             doc.text(`Technical Knowledge: N/A`);
             doc.text(`Coding Ability: N/A`);
             doc.text(`Communication Skills: N/A`);
