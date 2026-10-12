@@ -3,7 +3,7 @@ services:
     name: quickhireai-backend
     env: node
     rootDir: Backend
-    buildCommand: npm ci
+    buildCommand: npm ci && npm run check:syntax
     startCommand: node server.js
     healthCheckPath: /healthcheck
     envVars:
@@ -16,6 +16,12 @@ services:
       - key: CODE_EXECUTION_ENABLED
         value: "true"
       - key: CODE_EXECUTION_PROVIDER
+        value: onecompiler
+      - key: ONECOMPILER_API_URL
+        value: https://api.onecompiler.org/v1/run
+      - key: ONECOMPILER_REQUEST_TIMEOUT_MS
+        value: "60000"
+      - key: CODE_EXECUTION_FALLBACK_PROVIDER
         value: onecompiler
       - key: MONGODB_URI
         sync: false

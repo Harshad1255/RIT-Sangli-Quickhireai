@@ -1,6 +1,6 @@
 // src/services/questionService.js
 
-const { generateQuestion, generateFollowUpQuestion } = require('./geminiService');
+const { generateQuestion } = require('./geminiService');
 
 const INTERVIEW_TOPICS = [
   {

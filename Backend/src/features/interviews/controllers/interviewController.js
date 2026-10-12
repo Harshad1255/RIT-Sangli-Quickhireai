@@ -79,3 +79,27 @@ module.exports = {
         
         // Process answers to extract question text from question objects
         const processedAnswers = (answers || []).map(serializeAnswer);
+        candidate.results = {
+          technicalKnowledge: finalEvaluation.skillAssessment?.technicalKnowledge ?? null,
+          codingAbility: finalEvaluation.skillAssessment?.codingAbility ?? null,
+          communicationSkills: finalEvaluation.skillAssessment?.communicationSkills ?? null,
+          problemSolving: finalEvaluation.skillAssessment?.problemSolving ?? null,
+          technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge ?? finalEvaluation.technicalScore ?? null,
+          communicationScore: finalEvaluation.skillAssessment?.communicationSkills ?? finalEvaluation.communicationScore ?? null,
+          problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving ?? finalEvaluation.problemSolvingScore ?? null,
+          confidenceScore: finalEvaluation.confidenceScore ?? null,
+          overallScore: finalEvaluation.overallScore ?? null,
+          strengths: finalEvaluation.strengths || [],
+          weaknesses: finalEvaluation.weaknesses || [],
+          feedback: finalEvaluation.overallFeedback || finalEvaluation.feedback || '',
+          answers: processedAnswers
+        };
+      }
+      await interview.save();
+      return res.json({success:true});
+    } catch (error) {
+      console.error('Error ending interview:',error);
+      return res.status(500).json({success:false,error:'Server error'});
+    }
+  }
+};
