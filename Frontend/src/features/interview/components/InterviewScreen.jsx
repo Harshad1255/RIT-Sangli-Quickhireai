@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import WebcamFeed from "./WebcamFeed";
 import { api } from "../../../shared/services/api";
 import "../styles/InterviewScreen.css";
@@ -12,6 +12,17 @@ import TabMonitoringService from '../services/tabMonitoringService';
 import FullscreenGate from './FullscreenGate';
 import FullscreenPause from './FullscreenPause';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+
+// Share in-flight starts across Strict Mode remounts; server also deduplicates.
+const interviewStarts = new Map();
+const startSession = body => {
+  const key = body.interviewCode;
+  if (!interviewStarts.has(key)) {
+    const request = api.post('/interviews/start', body, {maxRetries:0,timeout:45000}).finally(()=>interviewStarts.delete(key));
+    interviewStarts.set(key,request);
+  }
+  return interviewStarts.get(key);
+};
 
 // Persistent state keys
 const getStorageKey = (code) => `interviewState_${code}`;
@@ -45,15 +56,15 @@ const InterviewScreen = (props) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { interviewCode: paramInterviewCode } = useParams();
-  const interviewCode = props.interviewCode || paramInterviewCode;
+  const interviewCode = props.isMock ? (props.interviewCode || paramInterviewCode) : (props.candidateCode || sessionStorage.getItem('candidateCode') || props.interviewCode || paramInterviewCode);
 
   // --- State initialization ---
-  const restored = restoreState(interviewCode);
+  const restored = useMemo(() => restoreState(interviewCode), [interviewCode]);
   const [currentQuestion, setCurrentQuestion] = useState(restored?.currentQuestion || null);
   const [questions, setQuestions] = useState(restored?.questions || []);
   const [questionIndex, setQuestionIndex] = useState(restored?.questionIndex || 0);
   const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState("");
+  const [transcript, setTranscript] = useState(restored?.transcript || "");
   const [currentTopic, setCurrentTopic] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -61,7 +72,7 @@ const InterviewScreen = (props) => {
   const [error, setError] = useState(null);
   const [isComplete, setIsComplete] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(restored?.code || "");
   const [allAnswers, setAllAnswers] = useState([]);
   const [finalEvaluation, setFinalEvaluation] = useState(null);
   const [totalQuestions, setTotalQuestions] = useState(5);
@@ -88,6 +99,9 @@ const InterviewScreen = (props) => {
   const [isFullscreenEntered, setIsFullscreenEntered] = useState(false);
   const [isFullscreenPaused, setIsFullscreenPaused] = useState(false);
   const [isCurrentlyFullscreen, setIsCurrentlyFullscreen] = useState(false);
+  const submissionInFlight = useRef(false);
+  const sessionEpoch = useRef(0);
+  const initializationSkills = JSON.stringify(props.interviewData?.skills || props.selectedSkills || []);
   const recentlyIncrementedRef = useRef(false);
   const focusLossIncrementedRef = useRef(false);
   const [faceStatus, setFaceStatus] = useState('');
@@ -116,7 +130,7 @@ const InterviewScreen = (props) => {
   // --- Save state on relevant changes ---
   useEffect(() => {
     if (!interviewCode) return;
-    saveState(interviewCode, {
+    const timer = setTimeout(()=>saveState(interviewCode, {
       currentQuestion,
       questions,
       questionIndex,
@@ -124,8 +138,11 @@ const InterviewScreen = (props) => {
       skippedQuestions,
       isFollowUpQuestion,
       followUpCount,
-    });
-  }, [interviewCode, currentQuestion, questions, questionIndex, answers, skippedQuestions, isFollowUpQuestion, followUpCount]);
+      transcript,
+      code,
+    }), 250);
+    return ()=>clearTimeout(timer);
+  }, [interviewCode, currentQuestion, questions, questionIndex, answers, skippedQuestions, isFollowUpQuestion, followUpCount, transcript, code]);
 
   // --- On interview start, clear previous state ---
   useEffect(() => {
@@ -137,6 +154,9 @@ const InterviewScreen = (props) => {
   }, [interviewCode]);
 
   useEffect(() => {
+    let disposed = false;
+    const epoch = ++sessionEpoch.current;
+    const started = performance.now();
     const initializeInterview = async () => {
       try {
         setIsLoading(true);
@@ -177,21 +197,28 @@ const InterviewScreen = (props) => {
           sessionStorage.setItem('interviewData', JSON.stringify({ interviewCode: codeToUse }));
         }
 
-        const response = await api.post('/interviews/start', {
+        const response = await startSession( {
           interviewCode: codeToUse,
           skills
         });
 
+        if (disposed || epoch !== sessionEpoch.current) return;
         if (response.data.success) {
           const { interview } = response.data;
           setQuestions(interview.questions);
-          setCurrentQuestion(interview.questions[0]);
+          const latestQuestion = interview.questions[interview.questions.length - 1];
+          setCurrentQuestion(latestQuestion);
+          const pending = interview.answers?.find(a=>a.questionId === latestQuestion?.id && a.analysis?.status === "pending");
+          setTranscript(pending?.answer || (restored?.currentQuestion?.id === latestQuestion?.id ? restored.transcript || "" : ""));
+          setCode(pending?.code || (restored?.currentQuestion?.id === latestQuestion?.id ? restored.code || "" : ""));
           setTotalQuestions(interview.totalQuestions);
-          setQuestionIndex(0);
-          setAnswers([]);
+          setQuestionIndex(Math.max(0, (latestQuestion?.questionNumber || 1) - 1));
+          setAnswers((interview.answers || []).filter(a=>a.analysis?.status !== "pending").map(a=>({...a,question:interview.questions.find(q=>q.id === a.questionId) || {question:a.question},evaluation:a.analysis})));
           setSkippedQuestions([]);
-          setIsFollowUpQuestion(false);
-          setFollowUpCount(0);
+          setIsFollowUpQuestion(!!latestQuestion?.isFollowUp);
+          setFollowUpCount(latestQuestion?.isFollowUp ? 1 : 0);
+          if (interview.status === "completed" && interview.finalEvaluation) {setFinalEvaluation(interview.finalEvaluation);setIsComplete(true);}
+          if (response.data.resumed) return;
           clearState(interviewCode); // <-- clear persistent state on new interview
           // Always reset suspicious/app switch counts for a new interview
           sessionStorage.setItem('pauseSuspiciousActivityCount', '0');
@@ -204,22 +231,21 @@ const InterviewScreen = (props) => {
           throw new Error(response.data.error || 'Failed to initialize interview');
         }
       } catch (error) {
+        if (disposed) return;
         console.error('Error initializing interview:', error);
         setError('Failed to initialize interview. Please try again.');
       } finally {
-        setIsLoading(false);
+        if (!disposed) { setIsLoading(false);
+          requestAnimationFrame(()=>console.info("[interview timing]",{stage:"initialization_visible",durationMs:Math.round(performance.now()-started)}));
+        }
       }
     };
 
     initializeInterview();
 
     // Cleanup function
-    return () => {
-      if (isRecording) {
-        speechRecognitionService.stopRecording();
-      }
-    };
-  }, [interviewCode, location.state, navigate, props.interviewData, props.selectedSkills, props.isMock]);
+    return () => { disposed = true; sessionEpoch.current++; speechRecognitionService.cancel(); };
+  }, [interviewCode, initializationSkills, props.isMock]);
 
   // Remove the session checking interval as it's causing the redirect issue
   // Instead, check session validity only when needed
@@ -285,6 +311,11 @@ const InterviewScreen = (props) => {
 
   // For now, use a styled textarea with line numbers (for simplicity and reliability)
   const submitAnswer = async (payload) => {
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    const epoch = sessionEpoch.current;
+    const submittedQuestion = currentQuestion;
+    const started = performance.now();
     try {
       let answerText = typeof payload === 'string' ? payload : payload.transcript;
       if (speechRecognitionService.isRecording || speechRecognitionService.running) {
@@ -308,21 +339,22 @@ const InterviewScreen = (props) => {
       const requestPayload = {
         answer: answerText.trim(),
         speechConfidence: speechRecognitionService.speechConfidence,
-        question: currentQuestion,
+        question: submittedQuestion,
         interviewCode,
         code: codeText || '',
       };
       console.log('Submitting answer with payload:', requestPayload);
 
-      const response = await api.post('/interviews/evaluate-answer', requestPayload);
+      const response = await api.post('/interviews/evaluate-answer', requestPayload, {maxRetries:0,timeout:115000});
 
+      if (epoch !== sessionEpoch.current) return;
       // Log backend response
       console.log('Evaluation response:', response.data);
 
       // If interview is complete, show final evaluation
       if (response.data.isComplete && response.data.evaluation) {
         const newAnswer = {
-          question: currentQuestion,
+          question: submittedQuestion,
           answer: answerText.trim(),
           code: codeText || '',
           evaluation: response.data.lastAnswerEvaluation || response.data.evaluation,
@@ -340,7 +372,7 @@ const InterviewScreen = (props) => {
       
       // Store the answer
       const newAnswer = {
-        question: currentQuestion,
+        question: submittedQuestion,
         answer: answerText.trim(),
         code: codeText || '',
         evaluation,
@@ -373,6 +405,8 @@ const InterviewScreen = (props) => {
         }
         
         setCurrentQuestion(nextQuestion);
+        setQuestions(previous => previous.some(q => q.id === nextQuestion.id) ? previous : [...previous, nextQuestion]);
+        requestAnimationFrame(()=>console.info("[interview timing]",{stage:"submit_to_question_visible",durationMs:Math.round(performance.now()-started)}));
         
         // Ensure recording is stopped for the next question
         if (isRecording) {
@@ -380,6 +414,7 @@ const InterviewScreen = (props) => {
           setIsRecording(false);
         }
         
+        speechRecognitionService.cancel();
         setTranscript('');
         setInterimTranscript('');
         setCode('');
@@ -389,10 +424,12 @@ const InterviewScreen = (props) => {
         setError('Error: Next question missing from server response.');
       }
     } catch (error) {
+      if (epoch !== sessionEpoch.current) return;
       console.error('Error submitting answer:', error);
       setError(error.message || 'Failed to submit answer');
     } finally {
-      setIsProcessing(false);
+      submissionInFlight.current = false;
+      if (epoch === sessionEpoch.current) setIsProcessing(false);
     }
   };
 
@@ -416,15 +453,17 @@ const InterviewScreen = (props) => {
 
   // Fix skip: always send valid question object
   const skipQuestion = async () => {
+    if (submissionInFlight.current) return;
+    const epoch = sessionEpoch.current;
     const validQuestion = getValidQuestion();
     if (!validQuestion) {
       setSkipError('Cannot skip: Invalid question data.');
       return;
     }
+    submissionInFlight.current = true;
     try {
       setIsProcessing(true);
       setSkipError(null);
-      setSkippedQuestions(prev => [...prev, questionIndex]);
       
       // Stop recording if active before skipping
       if (isRecording) {
@@ -440,7 +479,9 @@ const InterviewScreen = (props) => {
         skipped: true
       };
       console.log('Skip payload:', payload); // <-- Debug log
-      const response = await api.post('/interviews/evaluate-answer', payload);
+      const response = await api.post('/interviews/evaluate-answer', payload, {maxRetries:0,timeout:115000});
+      if (epoch !== sessionEpoch.current) return;
+      setSkippedQuestions(prev=>prev.includes(questionIndex) ? prev : [...prev,questionIndex]);
       if (response.data.isComplete && response.data.evaluation) {
         const newAnswer = {
           question: validQuestion,
@@ -454,7 +495,7 @@ const InterviewScreen = (props) => {
         setIsComplete(true);
         return;
       }
-      const { evaluation, nextQuestion } = response.data;
+      const { evaluation, nextQuestion, progress, isFollowUp } = response.data;
       const newAnswer = {
         question: validQuestion,
         answer: '',
@@ -465,18 +506,22 @@ const InterviewScreen = (props) => {
       setAnswers(prev => [...prev, newAnswer]);
       setFeedback(evaluation);
       if (nextQuestion) {
-        setQuestionIndex(prev => prev + 1);
+        setQuestionIndex(progress ? progress.current - 1 : questionIndex + 1);
+        setIsFollowUpQuestion(!!isFollowUp);
         setCurrentQuestion(nextQuestion);
+        setQuestions(previous => previous.some(q => q.id === nextQuestion.id) ? previous : [...previous, nextQuestion]);
         setTranscript('');
         setInterimTranscript('');
         setCode('');
         setFeedback(null);
       }
     } catch (error) {
+      if (epoch !== sessionEpoch.current) return;
       console.error('Error skipping question:', error);
       setSkipError('Failed to skip question. Please try again.');
     } finally {
-      setIsProcessing(false);
+      submissionInFlight.current = false;
+      if (epoch === sessionEpoch.current) setIsProcessing(false);
     }
   };
 
@@ -899,24 +944,8 @@ const InterviewScreen = (props) => {
     }
   }, [isFullscreenPaused, isFullscreenEntered]);
 
-  // Rehydrate state from sessionStorage when resuming from pause
-  useEffect(() => {
-    if (!isFullscreenPaused && isFullscreenEntered) {
-      // We just resumed from pause, rehydrate state from sessionStorage
-      const restored = restoreState(interviewCode);
-      if (restored) {
-        setCurrentQuestion(restored.currentQuestion || null);
-        setQuestions(restored.questions || []);
-        setQuestionIndex(restored.questionIndex || 0);
-        setAnswers(restored.answers || []);
-        setSkippedQuestions(restored.skippedQuestions || []);
-        setIsFollowUpQuestion(restored.isFollowUpQuestion || false);
-        setFollowUpCount(restored.followUpCount || 0);
-      }
-    }
-    // Only run when resuming from pause
-    // eslint-disable-next-line
-  }, [isFullscreenPaused, isFullscreenEntered]);
+  // Fullscreen pauses retain React state. Initialization restores authoritative
+  // database state on remount; an older browser snapshot must not roll it back.
 
   // Rehydrate suspicious/app switch counts from sessionStorage when resuming from pause
   useEffect(() => {
@@ -1073,46 +1102,10 @@ const InterviewScreen = (props) => {
     }
   };
 
-  // Save completion for company-driven interviews
-  useEffect(() => {
-    const saveCompletion = async () => {
-      if (isComplete && finalEvaluation && !props.isMock && !hasSavedCompletion) {
-        // Try to get interviewId and candidateCode from props, state, or storage
-        const interviewId = props.interviewId || location.state?.interviewId || sessionStorage.getItem('interviewId');
-        const candidateCode = props.candidateCode || location.state?.candidateCode || sessionStorage.getItem('candidateCode');
-        
-        console.log('Saving interview completion:', { interviewId, candidateCode, answers, finalEvaluation });
-        
-        if (interviewId && candidateCode) {
-          try {
-            // Call the /end endpoint to mark candidate as completed and save results
-            await api.post(`/interviews/end`, { 
-              interviewId, 
-              candidateCode,
-              finalEvaluation,
-              answers,
-              suspiciousActivityLogs,
-              appSwitchCount: sharedAppSwitchCount
-            });
-            setHasSavedCompletion(true);
-          } catch (err) {
-            console.error('Failed to save interview completion:', err);
-            setHasSavedCompletion(true); // Still allow completion message
-          }
-        } else {
-          console.warn('Missing interviewId or candidateCode for completion:', { interviewId, candidateCode });
-          setHasSavedCompletion(true); // Fallback
-        }
-      }
-    };
-    
-    saveCompletion();
-  }, [isComplete, finalEvaluation, props.isMock, hasSavedCompletion, props.interviewData, location.state, answers, suspiciousActivityLogs, sharedAppSwitchCount]);
-
+  // The answer endpoint persists completion before returning the final report.
   const [showLogsModal, setShowLogsModal] = useState(false);
 
   // Show fullscreen gate if not yet entered
-  console.log('InterviewScreen render - isFullscreenEntered:', isFullscreenEntered, 'isFullscreenPaused:', isFullscreenPaused);
   
   if (!isFullscreenEntered) {
     console.log('Showing FullscreenGate');
@@ -1148,6 +1141,7 @@ const InterviewScreen = (props) => {
       <div className="error-container">
         <h2>Error</h2>
         <p>{error}</p>
+        <button onClick={()=>currentQuestion ? setError(null) : window.location.reload()}>Retry safely</button>
       </div>
     );
   }
@@ -1177,13 +1171,13 @@ const InterviewScreen = (props) => {
   }
 
   // Main interview layout
-  console.log('Showing main interview layout');
   const hasQuestion = currentQuestion && (currentQuestion.question || currentQuestion.text);
   const isCodeQuestion = currentQuestion && (
     /sql|query|code|program|function|algorithm|cpp|java|python|javascript/i.test(currentQuestion.question || currentQuestion.text)
   );
   return (
     <div style={{ background: '#f8fafc', minHeight: '100vh' }}>
+      {isProcessing && <div role="status" aria-live="polite" style={{padding:'1rem',textAlign:'center'}}>Saving your answer and evaluating it. Preparing the next question…</div>}
       {/* Background Effects */}
       <div style={{
         position: 'absolute',
@@ -1864,4 +1858,4 @@ const InterviewScreen = (props) => {
   );
 };
 
-export default InterviewScreen; 
+export default InterviewScreen;

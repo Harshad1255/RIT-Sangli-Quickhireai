@@ -1,13 +1,23 @@
 export class SpeechRecognitionService {
   constructor() {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    this.recognition = Recognition ? new Recognition() : null;
+    this.Recognition = Recognition;
+    this.instance = null;
     this.isRecording = false;
     this.running = false;
     this.finalTranscript = '';
     this.interimTranscript = '';
     this.confidences = [];
-    if (this.recognition) this.setupRecognition();
+
+  }
+  get recognition() {
+    if (!this.instance && this.Recognition) {
+      const started = performance.now();
+      this.instance = new this.Recognition();
+      this.setupRecognition();
+      console.info("[interview timing]",{stage:"speech_initialization",durationMs:performance.now()-started});
+    }
+    return this.instance;
   }
   setupRecognition() {
     const r = this.recognition;
@@ -23,8 +33,10 @@ export class SpeechRecognitionService {
       const segments = [...this.segments.values()];
       this.finalTranscript = [this.baseTranscript, ...segments.filter(s => s.final).map(s => s.text)].filter(Boolean).join(' ');
       this.interimTranscript = segments.filter(s => !s.final).map(s => s.text).join(' ');
-      this.onFinalResult?.(this.finalTranscript);
-      this.onInterimResult?.(this.interimTranscript);
+      if (this.lastFinal !== this.finalTranscript) this.onFinalResult?.(this.finalTranscript);
+      if (this.lastInterim !== this.interimTranscript) this.onInterimResult?.(this.interimTranscript);
+      this.lastFinal = this.finalTranscript;
+      this.lastInterim = this.interimTranscript;
     };
     r.onerror = event => {
       if (event.error === 'language-not-supported' && r.lang === 'en-IN') {
@@ -70,6 +82,8 @@ export class SpeechRecognitionService {
     if (!this.recognition) throw new Error('Speech recognition not supported. Please type your answer.');
     if (this.isRecording || this.running || this.stopResolve) return;
     clearTimeout(this.restartTimer);
+    this.lastFinal = null;
+    this.lastInterim = null;
     this.finalTranscript = (initialTranscript || '').trim();
     this.interimTranscript = '';
     this.onInterimResult = onInterimResult;

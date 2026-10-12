@@ -1,5 +1,13 @@
 const express = require('express');
 const router = express.Router();
+router.use((req,res,next)=>{
+  const requestId = require('crypto').randomUUID();
+  const started = Date.now();
+  req.requestId = requestId;
+  res.setHeader('X-Request-Id',requestId);
+  res.on('finish',()=>console.info('[interview timing]',{requestId,stage:'api_response',method:req.method,path:req.route?.path,status:res.statusCode,durationMs:Date.now()-started}));
+  next();
+});
 const multer = require('multer');
 const interviewController = require('../controllers/interviewController');
 const { authenticateToken, authorizeCompany } = require('../../auth/middleware/auth');
@@ -53,10 +61,10 @@ router.post('/validate-code', interviewController.validateInterviewCode);
 
 // Interview session routes
 router.post('/start', interviewController.startInterview);
-router.get('/:id/questions', (req, res) => {
+router.get('/:id/questions', async (req, res) => {
   try {
     const interviewCode = req.params.id;
-    const session = interviewController.getInterviewSession(interviewCode);
+    const session = await interviewController.getInterviewSession(interviewCode);
     
     if (!session) {
       return res.status(404).json({ error: 'Interview session not found' });
@@ -94,20 +102,10 @@ router.post('/evaluate-answer', async (req, res) => {
     }
 
     // Allow empty answer for skipped questions
-    if (!answer && !skipped) {
+    if (!answer && !req.body.code && !skipped) {
       return res.status(400).json({ 
         success: false,
         error: 'Answer is required unless question is being skipped'
-      });
-    }
-
-    // Get interview session
-    const session = interviewController.getInterviewSession(interviewCode);
-    if (!session) {
-      console.error('Session not found for code:', interviewCode);
-      return res.status(404).json({ 
-        success: false,
-        error: 'Interview session not found'
       });
     }
 
@@ -131,10 +129,10 @@ router.post('/evaluate-answer', async (req, res) => {
 
 router.post('/final-evaluation', async (req, res) => {
   try {
-    const { answers } = req.body;
-    const geminiService = require('../services/geminiService');
-    const finalEvaluation = await geminiService.generateFinalEvaluation(answers);
-    res.json(finalEvaluation);
+    const session = await interviewController.getInterviewSession(req.body.interviewCode);
+    if (!session) return res.status(404).json({error:'Interview session not found'});
+    if (!session.finalEvaluation) return res.status(409).json({status:session.evaluationStatus || 'not_started',error:'Complete the interview before requesting its evaluation.'});
+    res.json(session.finalEvaluation);
   } catch (error) {
     console.error('Error generating final evaluation:', error);
     res.status(500).json({ error: 'Error generating final evaluation' });
@@ -153,4 +151,4 @@ router.get('/report/:interviewId/:candidateId', authenticateToken, interviewCont
 router.post('/analyze-face', interviewController.analyzeFace);
 router.post('/report-activity', interviewController.reportActivity);
 
-module.exports = router; 
+module.exports = router;

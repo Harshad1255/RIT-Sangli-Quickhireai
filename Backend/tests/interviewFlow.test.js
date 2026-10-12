@@ -1,13 +1,5 @@
-jest.mock('../src/features/interviews/models/InterviewSession', () => {
-  const sessions = new Map();
-  return class InterviewSession {
-    constructor(data) { Object.assign(this, data); }
-    async save() { sessions.set(this.interviewCode, this); }
-    static async findOne({interviewCode}) { return sessions.get(interviewCode) || null; }
-    static async deleteOne({interviewCode}) { sessions.delete(interviewCode); }
-  };
-});
-jest.mock('../src/features/interviews/models/Interview', () => ({ findOne: jest.fn(async query => query.interviewCode ? {skills:['JavaScript','React','Node','SQL','Python']} : null) }));
+jest.mock('../src/features/interviews/models/InterviewSession', () => require('./helpers/interviewSessionMock')());
+jest.mock('../src/features/interviews/models/Interview', () => ({ findOne: jest.fn(async query => query['candidates.code'] ? {skills:['JavaScript','React','Node','SQL','Python'],candidates:[{code:query['candidates.code']}],save:async()=>{}} : null), updateOne: jest.fn(async()=>({acknowledged:true})) }));
 const resultController = require('../src/features/interviews/controllers/resultController');
 const questionController = require('../src/features/interviews/controllers/questionController');
 const geminiService = require('../src/features/interviews/services/geminiService');
@@ -18,7 +10,7 @@ describe('Interview Flow Rules', () => {
   beforeEach(() => {
     questionController.activeInterviews.clear();
     jest.resetAllMocks();
-    require("../src/features/interviews/models/Interview").findOne.mockImplementation(async query => query.interviewCode ? {skills:["JavaScript","React","Node","SQL","Python"]} : null);
+    require("../src/features/interviews/models/Interview").findOne.mockImplementation(async query => query['candidates.code'] ? {skills:["JavaScript","React","Node","SQL","Python"],candidates:[{code:query["candidates.code"]}],save:async()=>{}} : null);
     geminiService.generateFinalEvaluation.mockResolvedValue({overallScore:9,skillAssessment:{technicalKnowledge:9,codingAbility:9,communicationSkills:9,problemSolving:9}});
   });
 

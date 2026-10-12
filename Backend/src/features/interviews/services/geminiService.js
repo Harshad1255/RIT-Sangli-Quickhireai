@@ -11,11 +11,16 @@ const calculateSimilarity = (str1, str2) => {
   return commonWords.length / Math.max(words1.length, words2.length);
 };
 
+const isDuplicateQuestion = (question, history = []) => !question || typeof question.question !== 'string' || !question.question.trim() || history.some(previous => {
+  const text = typeof previous === 'string' ? previous : previous.question;
+  return (previous.id && previous.id === question.id) || String(text).trim().toLowerCase() === question.question.trim().toLowerCase() || calculateSimilarity(text, question.question) > .7;
+});
+
 const getFallbackQuestion = (skill, previousQuestions = [], focusArea = null) => {
   const bank = questionsBank[skill] || genericBank;
   
   // Filter out previously used questions
-  const unusedQuestions = bank.filter(bankItem => 
+  const unusedQuestions = bank.filter(bankItem => (focusArea === 'coding' ? bankItem.category === 'coding' : bankItem.category !== 'coding') &&
     !previousQuestions.some(prevQ => {
       const qText = typeof prevQ === 'string' ? prevQ : prevQ.question;
       return calculateSimilarity(qText, bankItem.question) > 0.7;
@@ -29,8 +34,10 @@ const getFallbackQuestion = (skill, previousQuestions = [], focusArea = null) =>
   } else {
     // Ultimate fallback if bank is exhausted
     selectedItem = {
-      question: `Tell me about your experience with ${skill} and any recent projects.`,
-      category: 'experience'
+      question: focusArea === 'coding'
+        ? `Write a ${skill} solution that removes duplicate values from a collection while preserving their order. Explain its complexity.`
+        : `Explain how you would diagnose ${['incorrect output', 'resource leaks', 'slow execution', 'concurrency errors', 'invalid input'][previousQuestions.length % 5]} in ${skill}, including a concrete example and your reasoning.`,
+      category: focusArea || 'fundamentals'
     };
   }
 
@@ -45,6 +52,11 @@ const getFallbackQuestion = (skill, previousQuestions = [], focusArea = null) =>
     skill,
     source: 'fallback'
   };
+  if (isDuplicateQuestion(selectedItem, previousQuestions)) {
+    const topics = focusArea === 'coding' ? ['validate nested input', 'group records by key', 'merge sorted collections', 'count word frequencies', 'find missing values'] : ['validation boundaries', 'error propagation', 'data representation', 'resource ownership', 'testing edge cases', 'dependency isolation', 'execution ordering', 'compatibility guarantees', 'performance measurement'];
+    selectedItem = topics.map(topic => ({question: focusArea === 'coding' ? `Write a ${skill} implementation to ${topic}. Explain the algorithm and test it with an edge case.` : `For ${skill}, explain ${topic} with a concrete example.`,category:focusArea || 'fundamentals'})).find(item => !isDuplicateQuestion(item, previousQuestions));
+    if (!selectedItem) throw new Error('Unique fallback question bank exhausted');
+  }
   
   console.log(`[geminiService] Served fallback question for skill ${skill} (source: fallback)`);
   return result;
@@ -102,8 +114,8 @@ Return only the JSON object:
     }
 
     let attempts = 0;
-    while (attempts < 3) {
-      const response = await generateContentWithRetry(prompt, { isJson: true });
+    while (attempts < 2) {
+      const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 0, timeoutMs: 15000 });
       if (response.ok && response.data) {
         const question = response.data;
         
@@ -135,6 +147,25 @@ Return only the JSON object:
     console.error('Error generating question:', error);
     return getFallbackQuestion(skill, previousQuestions, focusArea);
   }
+};
+
+const generateQuestionBatch = async (skills, previousQuestions, total = 5) => {
+  const focuses = ['fundamentals', 'practical application', 'coding', 'debugging', 'trade-offs'];
+  const existing = previousQuestions.filter(q => !q.isFollowUp);
+  const specs = Array.from({length:total}, (_, index)=>({questionNumber:index+1,skill:skills[Math.min(index,skills.length-1)],category:focuses[index]})).filter(spec=>!existing.some(q=>q.questionNumber === spec.questionNumber));
+  if (!specs.length) return [];
+  const prompt = 'Generate distinct direct technical interview questions for these specifications: ' + JSON.stringify(specs) + '. Only the coding specification requires code/SQL. Avoid duplicates with: ' + JSON.stringify(existing.map(q=>q.question)) + '. Return ONLY JSON {"questions":[{"questionNumber":2,"question":"...","topic":"...","difficulty":"medium","category":"...","expectedKeyPoints":[]}]}.';
+  const response = await generateContentWithRetry(prompt, {isJson:true, maxRetries:1, timeoutMs:15000});
+  if (!response.ok) throw new Error(response.errorCode || 'QUESTION_GENERATION_UNAVAILABLE');
+  const data = response.data?.questions;
+  if (!Array.isArray(data) || data.length !== specs.length) throw new Error('INVALID_QUESTION_BATCH');
+  const seen = existing.map(q=>q.question);
+  return specs.map(spec=>{
+    const question = data.find(q=>q.questionNumber === spec.questionNumber);
+    if (!question || typeof question.question !== 'string' || !question.question.trim() || seen.some(text=>calculateSimilarity(text,question.question) > .7)) throw new Error('INVALID_QUESTION_BATCH');
+    seen.push(question.question);
+    return {...question, id:require('crypto').randomUUID(), skill:spec.skill, topic:spec.skill, category:spec.category, questionNumber:spec.questionNumber, isFollowUp:false, source:'ai'};
+  });
 };
 
 const analyzeAnswer = async (answer, question, metadata = {}) => {
@@ -222,9 +253,12 @@ Candidate Answer: "${answer.substring(0, 100)}..."
 `);
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 0, parseJson: evaluationUtils.parseEvaluation });
+      const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 0, timeoutMs: 20000, parseJson: evaluationUtils.parseEvaluation });
       try {
-        if (!response.ok) throw new Error(response.errorMessage || response.errorCode || 'EVALUATION_ERROR');
+        if (!response.ok) {
+          if (/HTTP_(400|401|403|404)|MISSING_API_KEY/.test(response.errorMessage || response.errorCode || '')) break;
+          throw new Error(response.errorMessage || response.errorCode || 'EVALUATION_ERROR');
+        }
         return { ...evaluationUtils.parseEvaluation(response.data), rawTranscript, normalizedTranscript, speechConfidence: metadata.speechConfidence ?? null };
       } catch (error) {
         console.error('[INTERVIEW AI EVALUATION ERROR]', { questionId: question?.id, attempt, message: error.message });
@@ -244,7 +278,7 @@ Candidate Answer: "${answer.substring(0, 100)}..."
   }
 };
 
-const generateFollowUpQuestion = async (originalQuestion, userAnswer, answerQuality) => {
+const generateFollowUpQuestion = async (originalQuestion, userAnswer, answerQuality, history = []) => {
   try {
     const prompt = `Based on this interview exchange:
     
@@ -257,6 +291,7 @@ Generate a follow-up question that:
 - Probes deeper into the topic
 - Asks for clarification, examples, or practical implementation
 - Is appropriate for the skill: ${originalQuestion.topic}
+- Must be different from every question already asked: ${JSON.stringify(history.map(q => q.question))}
 
 Return only the JSON object:
 {
@@ -267,7 +302,7 @@ Return only the JSON object:
   "originalQuestionId": "${originalQuestion.id}"
 }`;
 
-    const response = await generateContentWithRetry(prompt, { isJson: true });
+    const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 0, timeoutMs: 15000 });
     
     if (response.ok && response.data && response.data.question) {
       const followUp = response.data;
@@ -289,7 +324,7 @@ Return only the JSON object:
   }
 };
 
-const generateFinalEvaluation = async (answers) => {
+const generateFinalEvaluation = async (answers = []) => {
   const computedScores = calculateSkillScores(answers);
   const isZero = computedScores.overallScore === 0;
 
@@ -299,7 +334,7 @@ const generateFinalEvaluation = async (answers) => {
     }
 
     const answersText = answers.map((ans, index) => 
-      `Question ${index + 1}: ${ans.question}\nAnswer: ${ans.answer}\nScore: ${ans.analysis?.score || 'N/A'}`
+      `Question ${index + 1}: ${ans.question}\nAnswer: ${ans.answer}\nCode: ${ans.code || ''}\nScore: ${ans.analysis?.score ?? 'N/A'}`
     ).join('\n\n');
 
     const prompt = `Based on these interview answers, provide a comprehensive final evaluation feedback.
@@ -314,7 +349,7 @@ Provide a detailed evaluation in this JSON format:
   "hiringRecommendation": "strongly recommend/recommend/consider/not recommend"
 }`;
 
-    const response = await generateContentWithRetry(prompt, { isJson: true });
+    const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 0, timeoutMs: 20000 });
     if (response.ok && response.data) {
       const data = response.data;
       return {
@@ -342,7 +377,7 @@ Provide a detailed evaluation in this JSON format:
 
 const createDefaultFinalEvaluation = (answers, computedScores) => {
   const isZero = computedScores.overallScore === 0;
-  const answeredCount = answers.filter(a => a.answer && a.answer.trim().length > 0 && (a.analysis || a.evaluation)?.status !== 'skipped').length;
+  const answeredCount = answers.filter(a => (a.answer?.trim() || a.code?.trim()) && (a.analysis || a.evaluation)?.status !== 'skipped').length;
   const hasAnswers = answeredCount > 0;
   
   let strengths = ['None observed'];
@@ -396,6 +431,8 @@ const calculateSkillScores = (answers = []) => {
 };
 
 module.exports = {
+  isDuplicateQuestion,
+  generateQuestionBatch,
   generateQuestion,
   generateFollowUpQuestion,
   analyzeAnswer,

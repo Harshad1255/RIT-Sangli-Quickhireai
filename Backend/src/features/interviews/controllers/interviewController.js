@@ -5,6 +5,7 @@ const candidateController = require('./candidateController');
 const questionController = require('./questionController');
 const resultController = require('./resultController');
 const Interview = require('../models/Interview');
+const InterviewSession = require('../models/InterviewSession');
 
 // Re-export all functions from separated controllers
 module.exports = {
@@ -46,12 +47,17 @@ module.exports = {
   endInterview: async (req, res) => {
     console.log('=== END INTERVIEW CALLED ===');
     console.log('Request body:', req.body);
-    const { interviewId, candidateCode, finalEvaluation, answers } = req.body;
+    const interviewId = req.params.interviewId || req.body.interviewId;
+    const candidateCode = req.params.candidateCode || req.body.candidateCode;
     if (!interviewId || !candidateCode) {
       console.log('Missing interviewId or candidateCode:', { interviewId, candidateCode });
       return res.status(400).json({ success: false, error: 'Missing interviewId or candidateCode' });
     }
     try {
+      const session = await InterviewSession.findOne({interviewCode:candidateCode});
+      if (!session || session.status !== 'completed' || !session.finalEvaluation) return res.status(409).json({success:false,error:'Interview evaluation is not complete.'});
+      const finalEvaluation = session.finalEvaluation;
+      const answers = session.answers;
       console.log('Looking for interview:', interviewId);
       const interview = await Interview.findById(interviewId);
       if (!interview) {

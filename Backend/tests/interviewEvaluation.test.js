@@ -26,3 +26,24 @@ test('malformed dimensions retry rather than fabricate marks',async()=>{generate
 test('four independent dimension averages exclude outages and include skips',()=>{const a=utils.parseEvaluation({...response(7),technicalKnowledge:8,codingAbility:4,communicationSkills:9,problemSolving:6});const r=service.calculateSkillScores([{analysis:a},{analysis:utils.unavailable()},{analysis:utils.skipped()}]);expect(r).toEqual({overallScore:3.5,technicalKnowledge:4,codingAbility:2,communicationSkills:4.5,problemSolving:3});});
 test('Mongo schema retains audit fields and scores',()=>{const doc=new Interview({title:'Test',skills:['C++'],duration:30,candidates:[{code:'TEST',results:{answers:[utils.serializeAnswer({question:{id:'q1',question:'Q'},answer:'c plus plus',analysis:{...utils.parseEvaluation(response(7)),rawTranscript:'c plus plus',normalizedTranscript:'C++',speechConfidence:null}})]}}]});const a=doc.candidates[0].results.answers[0].toObject();expect(a.rawTranscript).toBe('c plus plus');expect(a.normalizedTranscript).toBe('C++');expect(a.technicalKnowledge).toBe(7);expect(a.status).toBe('evaluated');expect(a.speechConfidence).toBeNull();});
 test('zero performance differs from service failure',async()=>{const r=await service.generateFinalEvaluation([{answer:'irrelevant',analysis:utils.parseEvaluation(response(0))}]);expect(r.overallScore).toBe(0);expect(r.overallFeedback).not.toContain('failed');const f=await service.generateFinalEvaluation([{answer:'Answer',analysis:utils.unavailable()}]);expect(f.overallScore).toBeNull();});
+
+test('duplicate AI questions retry twice before a unique fallback',async()=>{
+ const history=[{id:'asked',question:'Explain closures in JavaScript.'}];
+ generateContentWithRetry.mockResolvedValue({ok:true,data:{question:'Explain closures in JavaScript.',topic:'JS'}});
+ const question=await service.generateQuestion('JavaScript',history,1,'practical application');
+ expect(generateContentWithRetry).toHaveBeenCalledTimes(2);expect(service.isDuplicateQuestion(question,history)).toBe(false);expect(question.source).toBe('fallback');
+});
+
+test('fallback sequence stays distinct and third question requires coding',()=>{
+ const history=[];
+ for(const focus of ['fundamentals','practical application','coding','debugging','trade-offs']) {
+   const question=service.getFallbackQuestion('JavaScript',history,focus);
+   expect(service.isDuplicateQuestion(question,history)).toBe(false);if(focus==='coding') expect(question.category).toBe('coding');history.push(question);
+ }
+});
+
+test('final summary failure returns computed scores within bounded request time',async()=>{
+ generateContentWithRetry.mockResolvedValue({ok:false,errorCode:'TIMEOUT'});
+ const evaluation=await service.generateFinalEvaluation([{answer:'Answer',analysis:utils.parseEvaluation(response(7))}]);
+ expect(evaluation.overallScore).toBe(7);expect(generateContentWithRetry.mock.calls[0][1]).toMatchObject({maxRetries:0,timeoutMs:20000});
+});

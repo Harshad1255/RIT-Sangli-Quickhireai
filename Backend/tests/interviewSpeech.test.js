@@ -2,7 +2,7 @@ const fs = require('fs');
 const vm = require('vm');
 function createService() {
  class Recognition { start=jest.fn(); stop=jest.fn(); abort=jest.fn(); }
- const context={window:{SpeechRecognition:Recognition},setTimeout,clearTimeout, console};vm.createContext(context);
+ const context={window:{SpeechRecognition:Recognition},setTimeout,clearTimeout, console, performance};vm.createContext(context);
  const source=fs.readFileSync(require('path').resolve(__dirname,'../../Frontend/src/features/interview/services/speechRecognitionService.js'),'utf8').replace('export class','class').replace('export default new SpeechRecognitionService();','globalThis.service = new SpeechRecognitionService();');
  vm.runInContext(source,context);return context.service;
 }

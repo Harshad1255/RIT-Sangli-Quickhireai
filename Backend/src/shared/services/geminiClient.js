@@ -1,5 +1,4 @@
-// We bypass the outdated @google/generative-ai SDK and use native Node fetch
-// This guarantees we hit the v1beta endpoint and can use gemini-1.5-flash!
+// Use the REST API so deployments can select the model through GEMINI_MODEL.
 
 const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
@@ -31,11 +30,13 @@ const generateContentWithRetry = async (prompt, options = {}) => {
     payload.generationConfig = { responseMimeType: "application/json" };
   }
 
+  const started = Date.now();
   let attempt = 0;
   while (attempt <= maxRetries) {
+    let timeoutId;
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -45,8 +46,6 @@ const generateContentWithRetry = async (prompt, options = {}) => {
         body: JSON.stringify(payload),
         signal: controller.signal
       });
-      
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -54,12 +53,13 @@ const generateContentWithRetry = async (prompt, options = {}) => {
       }
 
       const data = await response.json();
-      
+
       if (!data.candidates || !data.candidates[0].content || !data.candidates[0].content.parts) {
         throw new Error('INVALID_RESPONSE_FORMAT');
       }
 
-      const text = data.candidates[0].content.parts[0].text;
+      const text = data.candidates[0].content.parts.map(part => part.text || '').join('');
+      clearTimeout(timeoutId);
 
       if (isJson) {
         let cleanJson = text;
@@ -69,9 +69,10 @@ const generateContentWithRetry = async (prompt, options = {}) => {
         } else {
           cleanJson = text.trim();
         }
-        
+
         try {
           const parsed = options.parseJson ? options.parseJson(cleanJson) : JSON.parse(cleanJson);
+          console.info("[interview timing]",{stage:"gemini_json",model:MODEL_NAME,durationMs:Date.now()-started,attempts:attempt+1});
           return { ok: true, data: parsed, errorCode: null };
         } catch (parseErr) {
           console.error(`[GeminiClient] JSON Parse Failed. Response was: ${text}`);
@@ -82,16 +83,17 @@ const generateContentWithRetry = async (prompt, options = {}) => {
       return { ok: true, data: text, errorCode: null };
 
     } catch (error) {
+      clearTimeout(timeoutId);
       attempt++;
-      
-      const isRetryable = error.message.includes('HTTP_429') || 
-                          error.message.includes('HTTP_500') || 
-                          error.message.includes('HTTP_503') || 
+
+      const isRetryable = ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EAI_AGAIN'].includes(error.cause?.code || error.code) || error.message.includes('HTTP_429') ||
+                          error.message.includes('HTTP_500') ||
+                          error.message.includes('HTTP_503') ||
                           error.message === 'JSON_PARSE_FAILED';
       const isTimeout = error.name === 'AbortError' || error.message === 'REQUEST_TIMEOUT';
-      
+
       if ((isRetryable || isTimeout) && attempt <= maxRetries) {
-        const backoffMs = attempt * 2000;
+        const backoffMs = attempt * 500;
         console.warn(`[GeminiClient] Request failed (${error.message}). Retrying in ${backoffMs}ms... (Attempt ${attempt}/${maxRetries})`);
         await delay(backoffMs);
         continue;
@@ -103,10 +105,10 @@ const generateContentWithRetry = async (prompt, options = {}) => {
   - Message: ${cleanMessage}
   - Retryable: ${isRetryable}
   - Timeout: ${isTimeout}`);
-      
-      return { 
-        ok: false, 
-        data: null, 
+
+      return {
+        ok: false,
+        data: null,
         errorCode: isTimeout ? 'TIMEOUT' : (error.message === 'JSON_PARSE_FAILED' ? 'JSON_PARSE_FAILED' : 'UNKNOWN_ERROR'),
         errorMessage: cleanMessage
       };
