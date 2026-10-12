@@ -74,7 +74,7 @@ test('report persistence retry reuses final evaluation and upserts a stable repo
  const body={interviewCode:session.interviewCode,question:q,answer:'Answer'};
  const failed=res();await results.processAnswer({body},failed);expect(failed.status).toHaveBeenCalledWith(500);expect(session.finalEvaluation.overallScore).toBe(9);expect(session.status).toBe('active');
  const recovered=res();await results.processAnswer({body},recovered);expect(recovered.json.mock.calls[0][0].isComplete).toBe(true);expect(gemini.generateFinalEvaluation).toHaveBeenCalledTimes(1);expect(session.answers).toHaveLength(1);
- expect(report.mock.calls[1][0]).toEqual({interviewCode:session.interviewCode});expect(report.mock.calls[1][2].upsert).toBe(true);
+ expect(report.mock.calls[1][0]).toEqual({'candidates.code':session.interviewCode});expect(report.mock.calls[1][2].upsert).toBe(true);
 });
 
 test('unavailable answer evaluation remains failed until persisted answers recover',async()=>{
@@ -83,4 +83,18 @@ test('unavailable answer evaluation remains failed until persisted answers recov
  const body={interviewCode:session.interviewCode,question:q,answer:'Saved answer'};
  const failed=res();await results.processAnswer({body},failed);expect(failed.status).toHaveBeenCalledWith(503);expect(session.evaluationStatus).toBe('failed');expect(session.status).toBe('active');expect(session.finalEvaluation).toBeUndefined();expect(gemini.generateFinalEvaluation).not.toHaveBeenCalled();
  const recovered=res();await results.processAnswer({body},recovered);expect(recovered.json.mock.calls[0][0].isComplete).toBe(true);expect(session.answers).toHaveLength(1);expect(session.answers[0].analysis.status).toBe('evaluated');expect(gemini.generateFinalEvaluation).toHaveBeenCalledTimes(1);
+});
+
+test('provider quota failure is returned with its cause and never becomes a zero report',async()=>{
+ const q={id:'quota-q',question:'Q',questionNumber:1};const session=new sessions({interviewCode:'mock-quota',status:'active',skills:['JS'],totalQuestions:1,questions:[q],answers:[]});await session.save();
+ gemini.analyzeAnswer.mockResolvedValue({status:'unavailable',evaluationFailed:true,score:null,errorCode:'HTTP_429',errorMessage:'Gemini quota or rate limit was exceeded.'});
+ const response=res();await results.processAnswer({body:{interviewCode:session.interviewCode,question:q,answer:'Saved answer'}},response);
+ expect(response.status).toHaveBeenCalledWith(503);expect(response.json.mock.calls[0][0].errorCode).toBe('HTTP_429');expect(session.answers[0].answer).toBe('Saved answer');expect(session.finalEvaluation).toBeUndefined();expect(session.status).toBe('active');
+});
+
+test('report write validation failure returns a persistence code and keeps final scores for retry',async()=>{
+ const q={id:'db-q',question:'Q',questionNumber:1};const session=new sessions({interviewCode:'mock-db-code',status:'active',skills:['JS'],totalQuestions:1,questions:[q],answers:[]});await session.save();
+ require('../src/features/interviews/models/Interview').updateOne.mockRejectedValueOnce(Object.assign(new Error('validation'),{name:'ValidationError'}));
+ const response=res();await results.processAnswer({body:{interviewCode:session.interviewCode,question:q,answer:'Saved answer'}},response);
+ expect(response.status).toHaveBeenCalledWith(500);expect(response.json.mock.calls[0][0].errorCode).toBe('REPORT_VALIDATION_FAILED');expect(session.status).toBe('active');expect(session.finalEvaluation.overallScore).toBe(9);
 });

@@ -1,4 +1,5 @@
 const evaluationUtils = require('./evaluationUtils');
+const diagnostics = require('../../../shared/services/evaluationDiagnostics');
 const { generateContentWithRetry } = require("../../../shared/services/geminiClient");
 const { questionsBank, genericBank } = require("../../../shared/data/interviewBank");
 
@@ -169,6 +170,7 @@ const generateQuestionBatch = async (skills, previousQuestions, total = 5) => {
 };
 
 const analyzeAnswer = async (answer, question, metadata = {}) => {
+  let lastFailure = {};
   const rawTranscript = answer || "";
   const normalizedTranscript = metadata.code && metadata.code === rawTranscript ? rawTranscript : evaluationUtils.normalizeTranscript(rawTranscript);
   try {
@@ -242,37 +244,36 @@ CRITICAL INSTRUCTIONS:
 - Do NOT wrap the JSON in markdown code blocks (e.g. \`\`\`json).
 - Do NOT output any conversational text before or after the JSON.`;
 
-    console.log(`
-================================================
-INTERVIEW EVALUATION DEBUG
-================================================
-AI request started for question: "${String(questionText).substring(0, 50)}..."
-Candidate Answer Length: ${answer.length}
-Candidate Answer: "${answer.substring(0, 100)}..."
-================================================
-`);
 
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 0, timeoutMs: 20000, parseJson: evaluationUtils.parseEvaluation });
+
+    const timeoutMs = Math.min(60000, Math.max(5000, Number(process.env.GEMINI_EVALUATION_TIMEOUT_MS) || 45000));
+    for (let attempt = 0; attempt < (metadata.maxAttempts || 2); attempt++) {
+      const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 0, timeoutMs, parseJson: evaluationUtils.parseEvaluation, context:{sessionId:metadata.sessionId,requestId:metadata.requestId,questionId:question?.id} });
+      lastFailure = response;
       try {
         if (!response.ok) {
-          if (/HTTP_(400|401|403|404)|MISSING_API_KEY/.test(response.errorMessage || response.errorCode || '')) break;
+          if (response.retryable === false || /HTTP_(400|401|403|404)|MISSING_API_KEY/.test(response.errorMessage || response.errorCode || '')) break;
+          if (response.retryable && response.httpStatus && attempt === 0 && (metadata.maxAttempts || 2) > 1) await new Promise(resolve=>setTimeout(resolve,500));
           throw new Error(response.errorMessage || response.errorCode || 'EVALUATION_ERROR');
         }
-        return { ...evaluationUtils.parseEvaluation(response.data), rawTranscript, normalizedTranscript, speechConfidence: metadata.speechConfidence ?? null };
+        const validated = evaluationUtils.parseEvaluation(response.data);
+        diagnostics.log('answer_scores_validated',{questionId:question?.id,valid:true,status:validated.status});
+        return { ...validated, rawTranscript, normalizedTranscript, speechConfidence: metadata.speechConfidence ?? null };
       } catch (error) {
-        console.error('[INTERVIEW AI EVALUATION ERROR]', { questionId: question?.id, attempt, message: error.message });
+        lastFailure = response.ok ? {errorCode:'SCORE_VALIDATION_FAILED',errorMessage:'Gemini returned invalid evaluation scores.'} : response;
+        diagnostics.log('answer_validation_failed',{questionId:question?.id,errorCode:lastFailure.errorCode,valid:false});
       }
     }
-    return { ...evaluationUtils.unavailable(), rawTranscript, normalizedTranscript, speechConfidence: metadata.speechConfidence ?? null };
+    diagnostics.log('answer_scores_validated',{questionId:question?.id,valid:false,errorCode:lastFailure.errorCode || 'SCORE_VALIDATION_FAILED'});
+    return { ...evaluationUtils.unavailable(lastFailure), rawTranscript, normalizedTranscript, speechConfidence: metadata.speechConfidence ?? null };
   } catch (error) {
     console.error("[INTERVIEW AI EVALUATION ERROR]", {
        questionId: typeof question === 'object' ? question.id : undefined,
-       questionText: typeof question === 'object' ? question.question : question,
+
        errorName: error?.name,
        errorMessage: error?.message,
        status: error?.response?.status,
-       response: error?.response?.data
+
     });
     return { ...evaluationUtils.unavailable(), rawTranscript, normalizedTranscript, speechConfidence: metadata.speechConfidence ?? null };
   }
@@ -324,7 +325,7 @@ Return only the JSON object:
   }
 };
 
-const generateFinalEvaluation = async (answers = []) => {
+const generateFinalEvaluation = async (answers = [], context = {}) => {
   const computedScores = calculateSkillScores(answers);
   const isZero = computedScores.overallScore === 0;
 
@@ -349,9 +350,12 @@ Provide a detailed evaluation in this JSON format:
   "hiringRecommendation": "strongly recommend/recommend/consider/not recommend"
 }`;
 
-    const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 0, timeoutMs: 20000 });
+    const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 0, timeoutMs: 20000, context });
     if (response.ok && response.data) {
       const data = response.data;
+      const summaryValid = ['strengths','weaknesses','recommendations'].every(key=>Array.isArray(data[key]) && data[key].every(item=>typeof item === 'string')) && typeof data.overallFeedback === 'string' && data.overallFeedback.trim().length > 0;
+      diagnostics.log('final_summary_validated',{...context,valid:summaryValid,errorCode:summaryValid?undefined:'INVALID_FINAL_SUMMARY'});
+      if (!summaryValid) return {...createDefaultFinalEvaluation(answers,computedScores),summaryStatus:'unavailable',summaryErrorCode:'INVALID_FINAL_SUMMARY'};
       return {
         overallScore: computedScores.overallScore,
         skillAssessment: {
@@ -368,7 +372,7 @@ Provide a detailed evaluation in this JSON format:
       };
     }
     
-    return createDefaultFinalEvaluation(answers, computedScores);
+    return {...createDefaultFinalEvaluation(answers, computedScores),summaryStatus:'unavailable',summaryErrorCode:response.errorCode};
   } catch (error) {
     console.error('Error generating final evaluation:', error);
     return createDefaultFinalEvaluation(answers, computedScores);
@@ -396,10 +400,10 @@ const createDefaultFinalEvaluation = (answers, computedScores) => {
     recommendations = ['Review the topics and practice explaining your reasoning'];
     overallFeedback = 'Answers were evaluated and demonstrated very limited relevant knowledge.';
   } else if (!isZero) {
-    strengths = ['Demonstrated willingness to participate', 'Provided answers to questions'];
-    weaknesses = ['Could improve technical depth', 'More specific examples needed'];
-    recommendations = ['Continue learning and practicing', 'Work on providing detailed explanations'];
-    overallFeedback = 'Candidate participated in the interview and provided answers to questions.';
+    strengths = [...new Set(answers.flatMap(answer=>(answer.analysis || answer.evaluation)?.strengths || []))];
+    weaknesses = [...new Set(answers.flatMap(answer=>(answer.analysis || answer.evaluation)?.improvements || []))];
+    recommendations = ['Review the saved per-question feedback'];
+    overallFeedback = 'These scores were computed from the saved answer evaluations. The AI summary is temporarily unavailable; review the per-question feedback.';
   }
 
   return {

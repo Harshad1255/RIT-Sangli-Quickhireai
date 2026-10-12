@@ -46,12 +46,9 @@ module.exports = {
   },
 
   endInterview: async (req, res) => {
-    console.log('=== END INTERVIEW CALLED ===');
-    console.log('Request body:', req.body);
     const interviewId = req.params.interviewId || req.body.interviewId;
     const candidateCode = req.params.candidateCode || req.body.candidateCode;
     if (!interviewId || !candidateCode) {
-      console.log('Missing interviewId or candidateCode:', { interviewId, candidateCode });
       return res.status(400).json({ success: false, error: 'Missing interviewId or candidateCode' });
     }
     try {
@@ -59,22 +56,14 @@ module.exports = {
       if (!completedSession(session)) return res.status(409).json({success:false,error:'Interview evaluation is not complete.'});
       const finalEvaluation = session.finalEvaluation;
       const answers = session.answers;
-      console.log('Looking for interview:', interviewId);
       const interview = await Interview.findById(interviewId);
       if (!interview) {
-        console.log('Interview not found:', interviewId);
         return res.status(404).json({ success: false, error: 'Interview not found' });
       }
-      console.log('Interview found, looking for candidate:', candidateCode);
       const candidate = interview.candidates.find(c => c.code === candidateCode);
       if (!candidate) {
-        console.log('Candidate not found:', candidateCode);
-        console.log('Available candidates:', interview.candidates.map(c => ({ code: c.code, status: c.status })));
         return res.status(404).json({ success: false, error: 'Candidate not found' });
       }
-      
-      console.log('Candidate found, current status:', candidate.status);
-      console.log('Updating status to completed...');
       
       // Update candidate status and store results
       candidate.status = 'completed';
@@ -82,7 +71,6 @@ module.exports = {
       
       // Store evaluation results if provided
       if (finalEvaluation) {
-        console.log('Storing final evaluation results:', finalEvaluation);
         
         // Process answers to extract question text from question objects
         const processedAnswers = (answers || []).map(serializeAnswer);

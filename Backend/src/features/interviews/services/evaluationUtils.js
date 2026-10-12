@@ -33,7 +33,7 @@ const parseEvaluation = (value) => {
   if (!value || dimensions.some(key => typeof value[key] !== 'number' || !Number.isFinite(value[key]) || value[key] < 0 || value[key] > 10) || typeof value.feedback !== 'string' || /evaluation failed/i.test(value.feedback) || !Array.isArray(value.strengths) || !Array.isArray(value.improvements) || [...value.strengths, ...value.improvements].some(v => typeof v !== 'string')) throw new Error('INVALID_EVALUATION_RESPONSE');
   return { ...Object.fromEntries(dimensions.map(key => [key, value[key]])), feedback: value.feedback, strengths: value.strengths, improvements: value.improvements, overallScore: weightedScore(value), score: weightedScore(value), status: 'evaluated' };
 };
-const unavailable = () => ({ status: 'unavailable', evaluationFailed: true, overallScore: null, score: null, feedback: 'Evaluation service temporarily unavailable', ...Object.fromEntries(dimensions.map(key => [key, null])), strengths: [], improvements: [] });
+const unavailable = (failure = {}) => ({ status: 'unavailable', evaluationFailed: true, errorCode:failure.errorCode || 'EVALUATION_UNAVAILABLE', errorMessage:failure.errorMessage || 'Evaluation service temporarily unavailable', overallScore: null, score: null, feedback: 'Evaluation service temporarily unavailable', ...Object.fromEntries(dimensions.map(key => [key, null])), strengths: [], improvements: [] });
 const skipped = () => ({ status: 'skipped', overallScore: 0, score: 0, feedback: 'Question skipped', ...Object.fromEntries(dimensions.map(key => [key, 0])), strengths: [], improvements: [] });
 const serializeAnswer = (ans) => {
   const analysis = ans.analysis || ans.evaluation || {};

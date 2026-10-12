@@ -1,5 +1,16 @@
 const preparation = require('../services/questionPreparation');
 const completion = require('../services/sessionCompletion');
+const diagnostics = require('../../../shared/services/evaluationDiagnostics');
+const persistSession = async (session, stage) => {
+  try {
+    await session.save();
+    diagnostics.log(stage,{sessionId:String(session._id),savedAnswers:session.answers.length,status:session.status,evaluationStatus:session.evaluationStatus});
+  } catch(error) {
+    error.errorCode = diagnostics.databaseCode(error);
+    diagnostics.log(stage,{sessionId:String(session._id),errorCode:error.errorCode,valid:false});
+    throw error;
+  }
+};
 const evaluationUtils = require('../services/evaluationUtils');
 const Interview = require('../models/Interview');
 const Candidate = require('../../candidates/models/Candidate');
@@ -11,19 +22,18 @@ const questionController = require('./questionController');
 // Process answer and analyze
 const processAnswerCore = async (req, res) => {
   const requestStarted = Date.now();
+  let interview;
   try {
     const { interviewCode, answer, skipped = false, videoData } = req.body;
     let question = req.body.question;
     if ((answer != null && typeof answer !== 'string') || (req.body.code != null && typeof req.body.code !== 'string')) return res.status(400).json({ success: false, error: 'Answer and code must be text' });
     const speechConfidence = typeof req.body.speechConfidence === 'number' && Number.isFinite(req.body.speechConfidence) && req.body.speechConfidence > 0 && req.body.speechConfidence <= 1 ? req.body.speechConfidence : null;
-    
-    console.log('--- Incoming answer submission ---');
-    console.log('interviewCode:', interviewCode);
     if (videoData) console.log('videoData present');
     
     // Get interview session from DB
-    let interview = await InterviewSession.findOne({ interviewCode });
+    interview = await InterviewSession.findOne({ interviewCode });
     if (!interview) return res.status(404).json({success:false,error:'Interview session not found. Start or restore the interview first.'});
+    diagnostics.log('session_loaded',{requestId:req.requestId,sessionId:String(interview._id),savedAnswers:interview.answers.length,status:interview.status,evaluationStatus:interview.evaluationStatus});
     if (!question || typeof question.id !== 'string') return res.status(400).json({success:false,error:'A stable question ID is required.'});
     const authoritativeQuestion = interview.questions.find(q => q.id === question.id);
     if (!authoritativeQuestion) return res.status(409).json({success:false,error:'Unknown interview question.'});
@@ -59,7 +69,6 @@ const processAnswerCore = async (req, res) => {
         confidenceScore = facialAnalysis.confidenceScore;
         
         if (facialAnalysis.warning) {
-          console.log('Facial analysis warning:', facialAnalysis.warning);
         }
       } catch (error) {
         console.error('Error analyzing face:', error);
@@ -70,22 +79,21 @@ const processAnswerCore = async (req, res) => {
     const pendingIndex = existingAnswer ? interview.answers.indexOf(existingAnswer) : interview.answers.length;
     if (!existingAnswer) {
       interview.answers.push({question:currentQuestionText, questionId:question.id, answer:transcript, code, isFollowUp:!!isCurrentFollowUp, analysis:{status:'pending',score:null,feedback:'Evaluation in progress'}});
-      await interview.save();
+      await persistSession(interview, 'session_persisted');
     }
     const evaluationStarted = Date.now();
     // Analyze answer using Gemini
     let analysis;
     try {
-      analysis = existingAnswer?.analysis?.status !== "pending" && existingAnswer?.analysis ? existingAnswer.analysis : isSkipped ? evaluationUtils.skipped() : await geminiService.analyzeAnswer(transcript || code, question || currentQuestionText, { code, speechConfidence });
-      console.log('Gemini evaluation result:', analysis);
+      analysis = existingAnswer?.analysis?.status !== "pending" && existingAnswer?.analysis ? existingAnswer.analysis : isSkipped ? evaluationUtils.skipped() : await geminiService.analyzeAnswer(transcript || code, question || currentQuestionText, { code, speechConfidence,sessionId:String(interview._id),requestId:req.requestId });
     } catch (analysisError) {
       console.error("[INTERVIEW AI EVALUATION ERROR]", {
          interviewId: interview._id,
          questionId: question?.id,
          errorName: analysisError?.name,
-         errorMessage: analysisError?.message,
+
          status: analysisError?.response?.status,
-         response: analysisError?.response?.data
+
       });
       analysis = evaluationUtils.unavailable();
     }
@@ -107,9 +115,8 @@ const processAnswerCore = async (req, res) => {
     };
     interview.answers[pendingIndex] = storedAnswer;
     interview.markModified?.("answers");
-    await interview.save();
+    await persistSession(interview, 'session_persisted');
     console.info("[interview timing]", {stage:"answer_evaluation", questionId:storedAnswer.questionId, durationMs:Date.now()-evaluationStarted});
-    console.log('Answer stored in interview.answers:', storedAnswer);
 
     // Calculate running average (excluding null scores)
     let totalScore = 0;
@@ -152,7 +159,6 @@ const processAnswerCore = async (req, res) => {
           };
           interview.questions.push(nextQuestion);
           isFollowUp = true;
-          console.log('Generated follow-up question:', nextQuestion);
         }
       } catch (error) {
         console.error('Error generating follow-up question:', error);
@@ -163,10 +169,10 @@ const processAnswerCore = async (req, res) => {
     if (!isFollowUp) {
       if (newMainQuestionsAnswered >= interview.totalQuestions) {
         if (interview.evaluationStatus === 'failed') {
-          for (const saved of interview.answers) {
+          for (const saved of interview.answers.filter(saved=>saved.analysis?.status === 'unavailable').slice(0,2)) {
             if (saved.analysis?.status === 'unavailable') {
               const savedQuestion = interview.questions.find(q=>q.id === saved.questionId);
-              saved.analysis = await geminiService.analyzeAnswer(saved.answer || saved.code, savedQuestion, {code:saved.code || ''});
+              saved.analysis = await geminiService.analyzeAnswer(saved.answer || saved.code, savedQuestion, {code:saved.code || '',maxAttempts:1,sessionId:String(interview._id),requestId:req.requestId});
               saved.status = saved.analysis.status;
             }
           }
@@ -174,25 +180,29 @@ const processAnswerCore = async (req, res) => {
           analysis = interview.answers.find(saved=>saved.questionId === question.id)?.analysis || analysis;
           const scores = interview.answers.map(saved=>saved.analysis?.score).filter(score=>typeof score === 'number' && Number.isFinite(score));
           interview.currentScore = scores.length ? scores.reduce((sum,score)=>sum+score,0)/scores.length : null;
-          await interview.save();
+          await persistSession(interview, 'session_persisted');
         }
         if (!completion.answersComplete(interview)) {
           interview.evaluationStatus = 'failed';
-          await interview.save();
-          return res.status(503).json({success:false,status:'failed',evaluationStatus:'failed',error:'Some answers could not be evaluated. Retry to recover the saved interview.'});
+          await persistSession(interview, 'session_persisted');
+          const failed = interview.answers.find(saved=>saved.analysis?.status === 'unavailable')?.analysis;
+          const errorCode = failed?.errorCode || 'INCOMPLETE_ANSWERS';
+          diagnostics.log('completion_validation_failed',{sessionId:String(interview._id),errorCode,savedAnswers:interview.answers.length,valid:false});
+          return res.status(503).json({success:false,status:'failed',evaluationStatus:'failed',errorCode,error:failed?.errorMessage || 'Some answers could not be evaluated. Retry to recover the saved interview.'});
         }
         interview.evaluationStatus = 'running';
         interview.evaluationJobId ||= `${interview._id || interviewCode}:final`;
-        await interview.save();
-        const finalEvaluation = completion.validReport(interview.finalEvaluation) ? interview.finalEvaluation : await geminiService.generateFinalEvaluation(interview.answers);
+        await persistSession(interview, 'session_persisted');
+        const finalEvaluation = completion.validReport(interview.finalEvaluation) ? interview.finalEvaluation : await geminiService.generateFinalEvaluation(interview.answers,{sessionId:String(interview._id),requestId:req.requestId});
+        diagnostics.log('final_scores_validated',{sessionId:String(interview._id),valid:completion.validReport(finalEvaluation)});
         if (!completion.validReport(finalEvaluation)) {
           interview.evaluationStatus = 'failed';
-          await interview.save();
-          return res.status(503).json({success:false,status:'failed',error:'Final evaluation is unavailable. Your answers are saved; please retry.'});
+          await persistSession(interview, 'session_persisted');
+          return res.status(503).json({success:false,status:'failed',errorCode:'FINAL_REPORT_INVALID',error:'Final evaluation is unavailable. Your answers are saved; please retry.'});
         }
         interview.finalEvaluation = finalEvaluation;
         interview.evaluationStatus = 'completed';
-        await interview.save();
+        await persistSession(interview, 'session_persisted');
         
         // Store mock interview results in database for company viewing
         if (interviewCode.startsWith('mock-')) {
@@ -222,13 +232,16 @@ const processAnswerCore = async (req, res) => {
                   answers: interview.answers.map(evaluationUtils.serializeAnswer)
                 };
                 await dbInterview.save();
-                console.log('Regular interview results stored in database for candidate code:', interviewCode);
+                diagnostics.log('company_report_persisted',{sessionId:String(interview._id),valid:true});
+              } else {
+                throw Object.assign(new Error('Report owner not found'),{errorCode:'REPORT_OWNER_NOT_FOUND'});
               }
             } else {
-              console.log('No interview found for candidate code:', interviewCode);
+              throw Object.assign(new Error('Report owner not found'),{errorCode:'REPORT_OWNER_NOT_FOUND'});
             }
           } catch (err) {
-            console.error('Error storing regular interview results:', err);
+            err.errorCode ||= diagnostics.databaseCode(err);
+            diagnostics.log('company_report_failed',{sessionId:String(interview._id),errorCode:err.errorCode,valid:false});
             throw err;
           }
         }
@@ -253,7 +266,7 @@ const processAnswerCore = async (req, res) => {
         interview.lastAnsweredQuestionId = question?.id;
         interview.lastResponse = responseBody;
         interview.status = 'completed';
-        await interview.save();
+        await persistSession(interview, 'session_persisted');
         return res.json(responseBody);
       }
     }
@@ -306,25 +319,31 @@ const processAnswerCore = async (req, res) => {
     interview.lastAnsweredQuestionId = question?.id;
     interview.lastResponse = responseBody;
     interview.currentQuestionIndex = nextQuestion.questionNumber - 1;
-    await interview.save();
+    await persistSession(interview, 'session_persisted');
     res.json(responseBody);
     console.info('[interview timing]',{stage:'answer_request',durationMs:Date.now()-requestStarted});
 
   } catch (error) {
-    console.error('Error processing answer:', error);
+    diagnostics.log('request_failed',{requestId:req.requestId,errorCode:error.errorCode || diagnostics.databaseCode(error)});
+    if (interview) {
+      try {await InterviewSession.updateOne({interviewCode:interview.interviewCode,processingToken:req.processingToken},{$set:{evaluationStatus:'failed'}});}
+      catch {diagnostics.log('failure_status_persistence_failed',{sessionId:String(interview._id),errorCode:'DATABASE_WRITE_FAILED'});}
+    }
     res.status(500).json({ 
       success: false,
-      error: 'Error processing answer',
-      details: error.message 
+      errorCode: error.errorCode || diagnostics.databaseCode(error),
+      evaluationStatus: 'failed',
+      error: 'Interview persistence failed. Your saved answers can be recovered; please retry.'
     });
   }
 };
 
 const answerRequests = new Map();
 const processAnswer = async (req,res) => {
+  diagnostics.log('request_received',{requestId:req.requestId});
   const key = req.body.interviewCode;
   if (typeof key !== 'string' || !key.trim()) return res.status(400).json({success:false,error:'Interview code is required.'});
-  if (answerRequests.has(key)) return res.status(409).json({success:false,error:'An answer is already being evaluated. Please wait.'});
+  if (answerRequests.has(key)) return res.status(409).json({success:false,errorCode:'EVALUATION_IN_PROGRESS',error:'An answer is already being evaluated. Please wait.'});
   answerRequests.set(key,true);
   const token = require('node:crypto').randomUUID();
   try {
@@ -332,15 +351,21 @@ const processAnswer = async (req,res) => {
     if (!claimed) {
       const session = await InterviewSession.findOne({interviewCode:key});
       if (!session) return res.status(404).json({success:false,error:'Interview session not found.'});
-      return res.status(409).json({success:false,status:'processing',evaluationStatus:session.evaluationStatus,error:'An answer is already being evaluated. Please wait.'});
+      return res.status(409).json({success:false,status:'processing',errorCode:'EVALUATION_IN_PROGRESS',evaluationStatus:session.evaluationStatus,error:'An answer is already being evaluated. Please wait.'});
     }
-    return await processAnswerCore(req,res);
+    const response = {statusCode:200,status(value){this.statusCode=value;return this;},json(body){
+      diagnostics.log('response_returned',{requestId:req.requestId,httpStatus:this.statusCode,status:body.status || (body.isComplete?'completed':'active'),evaluationStatus:body.evaluationStatus,errorCode:body.errorCode});
+      return (typeof res.status==='function'?res.status(this.statusCode):res).json(body);
+    }};
+    req.processingToken = token;
+    return await processAnswerCore(req,response);
   } catch (error) {
-    console.error('Interview submission failed:', error.message);
-    return res.status(500).json({success:false,error:'Unable to save the interview. Please retry.'});
+    diagnostics.log('request_failed',{requestId:req.requestId,errorCode:error.errorCode || diagnostics.databaseCode(error)});
+    return res.status(500).json({success:false,errorCode:error.errorCode || diagnostics.databaseCode(error),error:'Unable to save the interview. Please retry.'});
   } finally {
     answerRequests.delete(key);
-    await InterviewSession.updateOne({interviewCode:key,processingToken:token},{$unset:{processingToken:1,processingUntil:1}});
+    try {await InterviewSession.updateOne({interviewCode:key,processingToken:token},{$unset:{processingToken:1,processingUntil:1}});}
+    catch(error) {diagnostics.log('claim_release_failed',{requestId:req.requestId,errorCode:diagnostics.databaseCode(error)});}
   }
 };
 
@@ -391,10 +416,12 @@ const storeMockInterviewResults = async (mockCode, interview, finalEvaluation) =
       }]
     };
 
-    await Interview.updateOne({interviewCode:mockCode},{$setOnInsert:mockInterview},{upsert:true,runValidators:true});
+    await Interview.updateOne({'candidates.code':mockCode},{$set:mockInterview},{upsert:true,runValidators:true});
+    diagnostics.log('mock_report_persisted',{sessionId:String(interview._id),valid:true});
     console.log('Mock interview results stored in database:', mockCode);
   } catch (error) {
-    console.error('Error storing mock interview results:', error);
+    error.errorCode ||= diagnostics.databaseCode(error);
+    diagnostics.log('mock_report_failed',{sessionId:String(interview._id),errorCode:error.errorCode,valid:false});
     throw error;
   }
 };

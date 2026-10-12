@@ -12,8 +12,10 @@ async function setup(page, overrides = {}) {
     let fullscreen = false;
     Object.defineProperty(document,'fullscreenEnabled',{get:()=>true,configurable:true});
     Object.defineProperty(document,'fullscreenElement',{get:()=>fullscreen ? document.documentElement : null,configurable:true});
-    document.documentElement.requestFullscreen = async()=>{fullscreen=true;document.dispatchEvent(new Event('fullscreenchange'));};
+    window.fullscreenRequests=0;window.rejectFullscreen=false;
+    Element.prototype.requestFullscreen = async()=>{window.fullscreenRequests++;if(window.rejectFullscreen) throw new Error('Fullscreen permission denied');fullscreen=true;document.dispatchEvent(new Event('fullscreenchange'));};
     document.exitFullscreen = async()=>{fullscreen=false;document.dispatchEvent(new Event('fullscreenchange'));};
+    window.setTestFullscreen = (value, notify=true)=>{fullscreen=value;if(notify) document.dispatchEvent(new Event('fullscreenchange'));};
   });
   await page.route('**/interviews/**',async route=>{
     const pathname=new URL(route.request().url()).pathname;
@@ -34,7 +36,7 @@ async function setup(page, overrides = {}) {
     return route.fulfill({json:{success:true}});
   });
   await page.goto(`/interview/mock/session/${code}`);
-  await page.getByRole('button',{name:'Enter Fullscreen',exact:true}).click();
+  if (!overrides.noEntry) await page.getByRole('button',{name:'Start Interview in Fullscreen',exact:true}).click();
   return {session,calls};
 }
 
@@ -51,7 +53,7 @@ test('remount restores active session without a report',async({page})=>{
  const {session,calls}=await setup(page);
  await expect(page.getByText('Lifecycle question 1',{exact:true})).toBeVisible();
  session.answers.push({questionId:'q-1',answer:'Saved',analysis:{status:'evaluated'},isFollowUp:false});session.questions.push(question(2));
- await page.reload();await page.getByRole('button',{name:'Enter Fullscreen',exact:true}).click();
+ await page.reload();await page.getByRole('button',{name:'Start Interview in Fullscreen',exact:true}).click();
  await expect(page.getByText('Lifecycle question 2',{exact:true})).toBeVisible();expect(calls.evaluate).toBe(0);
  await expect(page.getByRole('heading',{name:'Interview Evaluation',exact:true})).toHaveCount(0);
 });
@@ -65,6 +67,7 @@ test('report appears only after five explicit submissions and server completion'
    await page.getByRole('button',{name:'Submit Answer',exact:true}).click();
  }
  await expect(page.getByRole('heading',{name:'Interview Evaluation',exact:true})).toBeVisible();expect(calls.evaluate).toBe(5);expect(session.answers).toHaveLength(5);
+ await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(false);
 });
 
 test('evaluation failure displays recoverable error instead of a zero report',async({page})=>{
@@ -79,7 +82,7 @@ test('evaluation failure displays recoverable error instead of a zero report',as
 });
 
 test('stale completed report with no completed answers is never displayed',async({page})=>{
- const {calls}=await setup(page,{status:'completed',evaluationStatus:'completed',finalEvaluation:{...report,overallScore:0},answers:[]});
+ const {calls}=await setup(page,{noEntry:true,status:'completed',evaluationStatus:'completed',finalEvaluation:{...report,overallScore:0},answers:[]});
  await expect(page.getByText('This previous session does not have a valid completed evaluation. Start a new mock interview.',{exact:true})).toBeVisible();
  await expect(page.getByRole('heading',{name:'Interview Evaluation',exact:true})).toHaveCount(0);expect(calls.evaluate).toBe(0);
 });
@@ -91,4 +94,57 @@ test('new mock attempts using the same label have separate session codes',async(
    return [newMockAttempt('same-label'),newMockAttempt('same-label')];
  });
  expect(codes[0]).not.toBe(codes[1]);expect(codes.every(value=>value.startsWith('mock-same-label-'))).toBe(true);
+});
+
+test('entry waits for a user click and actual fullscreen confirmation',async({page})=>{
+ const {calls}=await setup(page,{noEntry:true});
+ await expect(page.getByRole('heading',{name:'Ready for your interview?'})).toBeVisible();
+ expect(await page.evaluate(()=>window.fullscreenRequests)).toBe(0);
+ await expect(page.getByText('Lifecycle question 1',{exact:true})).toHaveCount(0);
+ await page.evaluate(()=>{document.documentElement.requestFullscreen=()=>new Promise(resolve=>{window.confirmTestEntry=()=>{window.setTestFullscreen(true);resolve();};});});
+ await page.getByRole('button',{name:'Start Interview in Fullscreen'}).click();
+ await expect(page.getByText('Lifecycle question 1',{exact:true})).toHaveCount(0);
+ await page.evaluate(()=>window.confirmTestEntry());
+ await expect(page.getByText('Lifecycle question 1',{exact:true})).toBeVisible();expect(calls.evaluate).toBe(0);
+});
+
+test('rejected fullscreen request stays on entry screen and can be retried',async({page})=>{
+ const {calls}=await setup(page,{noEntry:true});await page.evaluate(()=>window.rejectFullscreen=true);
+ await page.getByRole('button',{name:'Start Interview in Fullscreen'}).click();
+ await expect(page.getByRole('alert')).toHaveText('Fullscreen permission denied');
+ await expect(page.getByText('Lifecycle question 1',{exact:true})).toHaveCount(0);
+ await page.evaluate(()=>window.rejectFullscreen=false);await page.getByRole('button',{name:'Start Interview in Fullscreen'}).click();
+ await expect(page.getByText('Lifecycle question 1',{exact:true})).toBeVisible();expect(calls.evaluate).toBe(0);
+});
+
+test('fullscreen exit blocks controls and re-entry preserves question, draft and saved answers',async({page})=>{
+ const {calls,session}=await setup(page);
+ const draft=page.getByPlaceholder('Your spoken answer will appear here, or you can type it.');
+ await draft.fill('First saved answer');await page.getByRole('button',{name:'Submit Answer',exact:true}).click();
+ await expect(page.getByText('Lifecycle question 2',{exact:true})).toBeVisible();await draft.fill('Unsubmitted draft');
+ await page.evaluate(()=>document.exitFullscreen());
+ await expect(page.getByRole('button',{name:'Return to Fullscreen'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Submit Answer',exact:true})).toHaveCount(0);
+ await expect(draft).toHaveCount(0);
+ expect(calls.evaluate).toBe(1);expect(session.answers).toHaveLength(1);
+ await page.evaluate(()=>window.rejectFullscreen=true);await page.getByRole('button',{name:'Return to Fullscreen'}).click();
+ await expect(page.getByRole('alert')).toHaveText('Fullscreen permission denied');expect(calls.evaluate).toBe(1);
+ await page.evaluate(()=>window.rejectFullscreen=false);await page.getByRole('button',{name:'Return to Fullscreen'}).click();
+ await expect(page.getByText('Lifecycle question 2',{exact:true})).toBeVisible();await expect(draft).toHaveValue('Unsubmitted draft');expect(calls.start).toBe(1);expect(calls.evaluate).toBe(1);
+});
+
+test('handlers reject recording, skip and submit when live fullscreen ends before React updates',async({page})=>{
+ const {calls}=await setup(page);
+ await page.getByPlaceholder('Your spoken answer will appear here, or you can type it.').fill('Draft');
+ await page.evaluate(async()=>{
+   const {default: speech}=await import('/src/features/interview/services/speechRecognitionService.js');
+   window.recordRequests=0;speech.startRecording=()=>window.recordRequests++;
+   window.setTestFullscreen(false,false);
+ });
+ await page.getByRole('button',{name:'Start Recording',exact:true}).click();
+ await page.getByRole('button',{name:'Skip this question',exact:true}).click();
+ await page.getByRole('button',{name:'Submit Answer',exact:true}).click();
+ expect(calls.evaluate).toBe(0);expect(await page.evaluate(()=>window.recordRequests)).toBe(0);
+ await page.evaluate(()=>document.dispatchEvent(new Event('fullscreenchange')));
+ await expect(page.getByRole('button',{name:'Return to Fullscreen'})).toBeVisible();
 });

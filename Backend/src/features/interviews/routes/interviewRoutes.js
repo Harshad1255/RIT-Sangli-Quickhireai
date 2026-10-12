@@ -85,14 +85,7 @@ router.post('/evaluate-answer', async (req, res) => {
   try {
     const { answer, question, interviewCode, questionNumber, skipped } = req.body;
     
-    console.log('Received answer evaluation request:', {
-      interviewCode,
-      questionNumber,
-      hasAnswer: !!answer,
-      hasQuestion: !!question,
-      skipped: !!skipped,
-      answer: answer ? answer.substring(0, 50) + '...' : 'empty' // Log first 50 chars of answer
-    });
+    require("../../../shared/services/evaluationDiagnostics").log("evaluation_endpoint_received",{requestId:req.requestId});
 
     // Allow empty answer if question is being skipped
     if (!question) {

@@ -13,6 +13,7 @@ import FullscreenGate from './FullscreenGate';
 import FullscreenPause from './FullscreenPause';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { completedSession, completedResponse, persistedAnswers } from '../services/interviewLifecycle';
+import useInterviewFullscreen, { fullscreenActive } from '../services/useInterviewFullscreen';
 
 // Share in-flight starts across Strict Mode remounts; server also deduplicates.
 const interviewStarts = new Map();
@@ -72,7 +73,7 @@ const InterviewScreen = (props) => {
   const setIsProcessing = value => setLifecycle(previous => value ? 'submitting' : (['completed','failed'].includes(previous) ? previous : 'in_progress'));
   const [feedback, setFeedback] = useState(null);
   const isLoading = lifecycle === 'initializing';
-  const setIsLoading = value => setLifecycle(previous => value ? 'initializing' : (previous === 'initializing' ? 'ready' : previous));
+  const setIsLoading = value => setLifecycle(previous => value ? 'initializing' : (previous === 'initializing' ? 'awaiting_fullscreen' : previous));
   const [error, setError] = useState(null);
   const isComplete = lifecycle === 'completed';
   const [interimTranscript, setInterimTranscript] = useState('');
@@ -101,8 +102,9 @@ const InterviewScreen = (props) => {
   const [sharedSuspiciousActivityCount, setSharedSuspiciousActivityCount] = useState(() => getStoredCount('pauseSuspiciousActivityCount'));
   const [sharedAppSwitchCount, setSharedAppSwitchCount] = useState(() => getStoredCount('pauseAppSwitchCount'));
   const [isFullscreenEntered, setIsFullscreenEntered] = useState(false);
-  const [isFullscreenPaused, setIsFullscreenPaused] = useState(false);
-  const [isCurrentlyFullscreen, setIsCurrentlyFullscreen] = useState(false);
+  const fullscreen = useInterviewFullscreen();
+  const isCurrentlyFullscreen = fullscreen.active;
+  const isFullscreenPaused = isFullscreenEntered && !isCurrentlyFullscreen && !isComplete;
   const submissionInFlight = useRef(false);
   const sessionEpoch = useRef(0);
   const activeSessionId = useRef(null);
@@ -278,6 +280,7 @@ const InterviewScreen = (props) => {
   };
 
   const startRecording = () => {
+    if (!fullscreenActive() || isComplete || isLoading || isProcessing) return;
     try {
       setRecordingStatus('recording');
       setRecordingError(null);
@@ -305,8 +308,6 @@ const InterviewScreen = (props) => {
       const finalTranscript = await speechRecognitionService.stopRecording();
       setIsRecording(false);
       
-      console.log('Recording stopped, final transcript:', finalTranscript);
-      
       if (!finalTranscript || !finalTranscript.trim()) {
         console.log('No transcript detected');
         setRecordingError('No speech detected. You can type your answer or try again.');
@@ -315,7 +316,6 @@ const InterviewScreen = (props) => {
 
       // Set the transcript in state (user must click Submit)
       setTranscript(finalTranscript.trim());
-      console.log('Transcript saved to state:', finalTranscript.trim());
 
     } catch (error) {
       console.error('Error in stopRecording:', error);
@@ -333,6 +333,7 @@ const InterviewScreen = (props) => {
 
   // For now, use a styled textarea with line numbers (for simplicity and reliability)
   const submitAnswer = async (payload) => {
+    if (!fullscreenActive() || isComplete || isLoading) return;
     if (submissionInFlight.current) return;
     submissionInFlight.current = true;
     const epoch = sessionEpoch.current;
@@ -355,6 +356,7 @@ const InterviewScreen = (props) => {
         throw new Error('No answer to submit');
       }
       setIsProcessing(true);
+      if (!fullscreenActive()) return;
       setError(null);
       
       // Log the request payload
@@ -365,14 +367,12 @@ const InterviewScreen = (props) => {
         interviewCode,
         code: codeText || '',
       };
-      console.log('Submitting answer with payload:', requestPayload);
 
       setLifecycle(answers.filter(a=>!a.isFollowUp).length + (submittedQuestion.isFollowUp ? 0 : 1) >= totalQuestions ? 'evaluating' : 'submitting');
       const response = await api.post('/interviews/evaluate-answer', requestPayload, {maxRetries:0,timeout:150000});
 
       if (epoch !== sessionEpoch.current) return;
       // Log backend response
-      console.log('Evaluation response:', response.data);
 
       // If interview is complete, show final evaluation
       if (completedResponse(response.data, interviewCode, activeSessionId.current)) {
@@ -404,8 +404,6 @@ const InterviewScreen = (props) => {
         questionNumber: progress ? progress.current : questionIndex + 1,
         isFollowUp: isFollowUpQuestion
       };
-      
-      console.log('Storing new answer:', newAnswer);
       setAnswers(prev => [...prev.filter(saved => (saved.questionId || saved.question?.id) !== newAnswer.question.id), newAnswer]);
       setFeedback(evaluation);
 
@@ -479,6 +477,7 @@ const InterviewScreen = (props) => {
 
   // Fix skip: always send valid question object
   const skipQuestion = async () => {
+    if (!fullscreenActive() || isComplete || isLoading) return;
     if (submissionInFlight.current) return;
     const epoch = sessionEpoch.current;
     const validQuestion = getValidQuestion();
@@ -995,73 +994,20 @@ const InterviewScreen = (props) => {
     sessionStorage.setItem('pauseAppSwitchCount', sharedAppSwitchCount.toString());
   }, [sharedAppSwitchCount]);
 
-  // Monitor fullscreen exit
+  // Fullscreen exit locks interactions without submitting or changing questions.
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      const fullscreenElement = document.fullscreenElement || 
-                               document.webkitFullscreenElement || 
-                               document.mozFullScreenElement || 
-                               document.msFullscreenElement;
-      
-      // Update current fullscreen status
-      setIsCurrentlyFullscreen(!!fullscreenElement);
-      
-      if (!fullscreenElement && isFullscreenEntered) {
-        // Fullscreen was exited during interview
-        console.log('Fullscreen exited during interview');
-        setIsFullscreenPaused(false); // Disabled blocking per user request
-        
-        // Stop recording if active
-        if (isRecording) {
-          speechRecognitionService.stopRecording();
-          setIsRecording(false);
-        }
-      } else if (fullscreenElement && isFullscreenPaused) {
-        // Fullscreen was re-entered
-        console.log('Fullscreen re-entered, resuming interview');
-        setIsFullscreenPaused(false);
-        setIsCurrentlyFullscreen(true);
-        // Don't reset counters - keep accumulated values
-      } else if (fullscreenElement && !isCurrentlyFullscreen) {
-        // Fullscreen was entered but we weren't tracking it
-        console.log('Fullscreen detected but not paused, updating status');
-        setIsCurrentlyFullscreen(true);
-        // Don't reset counters - keep accumulated values
+    if (!fullscreen.active && isFullscreenEntered && !isComplete) {
+      if (speechRecognitionService.isRecording || speechRecognitionService.running) {
+        const captured = speechRecognitionService.finalTranscript;
+        speechRecognitionService.cancel();
+        if (captured) setTranscript(captured);
       }
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
-
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
-    };
-  }, [isFullscreenEntered]);
-
-  // Fallback: Check fullscreen status periodically when paused
-  useEffect(() => {
-    if (isFullscreenPaused) {
-      const interval = setInterval(() => {
-        const fullscreenElement = document.fullscreenElement || 
-                                 document.webkitFullscreenElement || 
-                                 document.mozFullScreenElement || 
-                                 document.msFullscreenElement;
-        
-        if (fullscreenElement && isFullscreenPaused) {
-          console.log('Fallback: Fullscreen detected while paused, resuming interview');
-          setIsFullscreenPaused(false);
-          setIsCurrentlyFullscreen(true);
-        }
-      }, 1000);
-
-      return () => clearInterval(interval);
+      setIsRecording(false);
+      setRecordingStatus("idle");
+      setInterimTranscript("");
     }
-  }, [isFullscreenPaused]);
+    if (isComplete) fullscreen.exit().catch(error => console.warn("Unable to exit fullscreen:", error.message));
+  }, [fullscreen.active, fullscreen.exit, isFullscreenEntered, isComplete]);
 
   // Handle activity reporting
   const handleActivityReport = async (reportData) => {
@@ -1084,16 +1030,16 @@ const InterviewScreen = (props) => {
   const handleFullscreenEntered = () => {
     console.log('handleFullscreenEntered called');
     setIsFullscreenEntered(true);
-    setIsCurrentlyFullscreen(true);
-    setLifecycle(previous => previous === 'ready' ? 'in_progress' : previous);
+
+    setLifecycle(previous => previous === 'awaiting_fullscreen' ? 'ready' : previous);
     console.log('Fullscreen mode entered - states updated');
   };
 
   // Handle fullscreen resume
   const handleFullscreenResumed = () => {
     console.log('handleFullscreenResumed called');
-    setIsFullscreenPaused(false);
-    setIsCurrentlyFullscreen(true);
+
+
     
     // Ensure counters are preserved by re-syncing with sessionStorage
     const storedSuspicious = sessionStorage.getItem('pauseSuspiciousActivityCount');
@@ -1138,10 +1084,10 @@ const InterviewScreen = (props) => {
 
   // Show fullscreen gate if not yet entered
   
-  if (!isFullscreenEntered) {
+  if (!isFullscreenEntered && !isComplete) {
     console.log('Showing FullscreenGate');
     return (
-      <FullscreenGate onFullscreenEntered={handleFullscreenEntered} />
+      <FullscreenGate onStart={async () => { if (await fullscreen.request()) handleFullscreenEntered(); }} ready={!isLoading && !!currentQuestion && !error} requesting={fullscreen.requesting} error={error || fullscreen.error} />
     );
   }
 
@@ -1150,7 +1096,7 @@ const InterviewScreen = (props) => {
     console.log('Showing FullscreenPause');
     return (
       <FullscreenPause 
-        onFullscreenResumed={handleFullscreenResumed}
+        onRequestFullscreen={async () => { if (await fullscreen.request()) handleFullscreenResumed(); }} fullscreenError={fullscreen.error} requestingFullscreen={fullscreen.requesting}
         currentQuestion={currentQuestion}
         questionIndex={questionIndex}
         totalQuestions={totalQuestions}
