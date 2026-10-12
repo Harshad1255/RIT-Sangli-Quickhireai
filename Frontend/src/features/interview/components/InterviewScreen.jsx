@@ -12,6 +12,7 @@ import TabMonitoringService from '../services/tabMonitoringService';
 import FullscreenGate from './FullscreenGate';
 import FullscreenPause from './FullscreenPause';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { completedSession, completedResponse, persistedAnswers } from '../services/interviewLifecycle';
 
 // Share in-flight starts across Strict Mode remounts; server also deduplicates.
 const interviewStarts = new Map();
@@ -66,11 +67,14 @@ const InterviewScreen = (props) => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState(restored?.transcript || "");
   const [currentTopic, setCurrentTopic] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [lifecycle, setLifecycle] = useState('initializing');
+  const isProcessing = lifecycle === 'submitting' || lifecycle === 'evaluating';
+  const setIsProcessing = value => setLifecycle(previous => value ? 'submitting' : (['completed','failed'].includes(previous) ? previous : 'in_progress'));
   const [feedback, setFeedback] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const isLoading = lifecycle === 'initializing';
+  const setIsLoading = value => setLifecycle(previous => value ? 'initializing' : (previous === 'initializing' ? 'ready' : previous));
   const [error, setError] = useState(null);
-  const [isComplete, setIsComplete] = useState(false);
+  const isComplete = lifecycle === 'completed';
   const [interimTranscript, setInterimTranscript] = useState('');
   const [code, setCode] = useState(restored?.code || "");
   const [allAnswers, setAllAnswers] = useState([]);
@@ -101,7 +105,11 @@ const InterviewScreen = (props) => {
   const [isCurrentlyFullscreen, setIsCurrentlyFullscreen] = useState(false);
   const submissionInFlight = useRef(false);
   const sessionEpoch = useRef(0);
+  const activeSessionId = useRef(null);
   const initializationSkills = JSON.stringify(props.interviewData?.skills || props.selectedSkills || []);
+  useEffect(() => {
+    if (lifecycle === 'ready' && isFullscreenEntered) setLifecycle('in_progress');
+  }, [lifecycle, isFullscreenEntered]);
   const recentlyIncrementedRef = useRef(false);
   const focusLossIncrementedRef = useRef(false);
   const [faceStatus, setFaceStatus] = useState('');
@@ -160,6 +168,9 @@ const InterviewScreen = (props) => {
     const initializeInterview = async () => {
       try {
         setIsLoading(true);
+        activeSessionId.current = null;
+        setFinalEvaluation(null);
+        setCurrentQuestion(null);
         setError(null);
 
         // Strict separation of mock and company interview flows
@@ -205,6 +216,8 @@ const InterviewScreen = (props) => {
         if (disposed || epoch !== sessionEpoch.current) return;
         if (response.data.success) {
           const { interview } = response.data;
+          if (interview.interviewCode !== codeToUse || !interview.sessionId) throw new Error('The server returned a different or invalid interview session.');
+          activeSessionId.current = interview.sessionId;
           setQuestions(interview.questions);
           const latestQuestion = interview.questions[interview.questions.length - 1];
           setCurrentQuestion(latestQuestion);
@@ -217,7 +230,15 @@ const InterviewScreen = (props) => {
           setSkippedQuestions([]);
           setIsFollowUpQuestion(!!latestQuestion?.isFollowUp);
           setFollowUpCount(latestQuestion?.isFollowUp ? 1 : 0);
-          if (interview.status === "completed" && interview.finalEvaluation) {setFinalEvaluation(interview.finalEvaluation);setIsComplete(true);}
+          if (completedSession(interview, codeToUse)) {
+            setFinalEvaluation({...interview.finalEvaluation, interviewCode:codeToUse, sessionId:interview.sessionId});
+            setLifecycle('completed');
+          } else if (interview.status === 'completed' || interview.status === 'failed' || interview.evaluationStatus === 'failed') {
+            setLifecycle('failed');
+            if (interview.status === 'completed' || interview.status === 'failed') throw new Error('This previous session does not have a valid completed evaluation. Start a new mock interview.');
+          } else if (!latestQuestion?.id) {
+            throw new Error('No active interview question was returned. Please retry.');
+          }
           if (response.data.resumed) return;
           clearState(interviewCode); // <-- clear persistent state on new interview
           // Always reset suspicious/app switch counts for a new interview
@@ -233,7 +254,8 @@ const InterviewScreen = (props) => {
       } catch (error) {
         if (disposed) return;
         console.error('Error initializing interview:', error);
-        setError('Failed to initialize interview. Please try again.');
+        setLifecycle('failed');
+        setError(error.message || 'Failed to initialize interview. Please try again.');
       } finally {
         if (!disposed) { setIsLoading(false);
           requestAnimationFrame(()=>console.info("[interview timing]",{stage:"initialization_visible",durationMs:Math.round(performance.now()-started)}));
@@ -345,14 +367,15 @@ const InterviewScreen = (props) => {
       };
       console.log('Submitting answer with payload:', requestPayload);
 
-      const response = await api.post('/interviews/evaluate-answer', requestPayload, {maxRetries:0,timeout:115000});
+      setLifecycle(answers.filter(a=>!a.isFollowUp).length + (submittedQuestion.isFollowUp ? 0 : 1) >= totalQuestions ? 'evaluating' : 'submitting');
+      const response = await api.post('/interviews/evaluate-answer', requestPayload, {maxRetries:0,timeout:150000});
 
       if (epoch !== sessionEpoch.current) return;
       // Log backend response
       console.log('Evaluation response:', response.data);
 
       // If interview is complete, show final evaluation
-      if (response.data.isComplete && response.data.evaluation) {
+      if (completedResponse(response.data, interviewCode, activeSessionId.current)) {
         const newAnswer = {
           question: submittedQuestion,
           answer: answerText.trim(),
@@ -361,14 +384,16 @@ const InterviewScreen = (props) => {
           questionNumber: questionIndex + 1,
           isFollowUp: isFollowUpQuestion
         };
-        setAnswers(prev => [...prev, newAnswer]);
-        setFinalEvaluation(response.data.evaluation);
-        setIsComplete(true);
+        setAnswers(prev => [...prev.filter(saved => (saved.questionId || saved.question?.id) !== newAnswer.question.id), newAnswer]);
+        setFinalEvaluation({...response.data.evaluation, interviewCode, sessionId:activeSessionId.current});
+        if (Array.isArray(response.data.answers) && Array.isArray(response.data.questions)) setAnswers(persistedAnswers(response.data));
+        setLifecycle('completed');
         // Do NOT call handleInterviewCompletion!
         return;
       }
 
       const { evaluation, nextQuestion, isFollowUp, progress } = response.data;
+      if (response.data.isComplete) throw new Error('The server has not confirmed a valid completed evaluation. Please retry.');
       
       // Store the answer
       const newAnswer = {
@@ -381,7 +406,7 @@ const InterviewScreen = (props) => {
       };
       
       console.log('Storing new answer:', newAnswer);
-      setAnswers(prev => [...prev, newAnswer]);
+      setAnswers(prev => [...prev.filter(saved => (saved.questionId || saved.question?.id) !== newAnswer.question.id), newAnswer]);
       setFeedback(evaluation);
 
       // Handle next question
@@ -426,7 +451,8 @@ const InterviewScreen = (props) => {
     } catch (error) {
       if (epoch !== sessionEpoch.current) return;
       console.error('Error submitting answer:', error);
-      setError(error.message || 'Failed to submit answer');
+      setLifecycle('failed');
+      setError(error.response?.data?.error || error.message || 'Failed to submit answer');
     } finally {
       submissionInFlight.current = false;
       if (epoch === sessionEpoch.current) setIsProcessing(false);
@@ -479,10 +505,11 @@ const InterviewScreen = (props) => {
         skipped: true
       };
       console.log('Skip payload:', payload); // <-- Debug log
-      const response = await api.post('/interviews/evaluate-answer', payload, {maxRetries:0,timeout:115000});
+      setLifecycle(answers.filter(a=>!a.isFollowUp).length + (validQuestion.isFollowUp ? 0 : 1) >= totalQuestions ? 'evaluating' : 'submitting');
+      const response = await api.post('/interviews/evaluate-answer', payload, {maxRetries:0,timeout:150000});
       if (epoch !== sessionEpoch.current) return;
       setSkippedQuestions(prev=>prev.includes(questionIndex) ? prev : [...prev,questionIndex]);
-      if (response.data.isComplete && response.data.evaluation) {
+      if (completedResponse(response.data, interviewCode, activeSessionId.current)) {
         const newAnswer = {
           question: validQuestion,
           answer: '',
@@ -490,12 +517,14 @@ const InterviewScreen = (props) => {
           evaluation: response.data.lastAnswerEvaluation || response.data.evaluation,
           questionNumber: questionIndex + 1
         };
-        setAnswers(prev => [...prev, newAnswer]);
-        setFinalEvaluation(response.data.evaluation);
-        setIsComplete(true);
+        setAnswers(prev => [...prev.filter(saved => (saved.questionId || saved.question?.id) !== newAnswer.question.id), newAnswer]);
+        setFinalEvaluation({...response.data.evaluation, interviewCode, sessionId:activeSessionId.current});
+        if (Array.isArray(response.data.answers) && Array.isArray(response.data.questions)) setAnswers(persistedAnswers(response.data));
+        setLifecycle('completed');
         return;
       }
       const { evaluation, nextQuestion, progress, isFollowUp } = response.data;
+      if (response.data.isComplete) throw new Error('The server has not confirmed a valid completed evaluation. Please retry.');
       const newAnswer = {
         question: validQuestion,
         answer: '',
@@ -503,7 +532,7 @@ const InterviewScreen = (props) => {
         evaluation,
         questionNumber: questionIndex + 1
       };
-      setAnswers(prev => [...prev, newAnswer]);
+      setAnswers(prev => [...prev.filter(saved => (saved.questionId || saved.question?.id) !== newAnswer.question.id), newAnswer]);
       setFeedback(evaluation);
       if (nextQuestion) {
         setQuestionIndex(progress ? progress.current - 1 : questionIndex + 1);
@@ -518,6 +547,7 @@ const InterviewScreen = (props) => {
     } catch (error) {
       if (epoch !== sessionEpoch.current) return;
       console.error('Error skipping question:', error);
+      setLifecycle('failed');
       setSkipError('Failed to skip question. Please try again.');
     } finally {
       submissionInFlight.current = false;
@@ -1055,6 +1085,7 @@ const InterviewScreen = (props) => {
     console.log('handleFullscreenEntered called');
     setIsFullscreenEntered(true);
     setIsCurrentlyFullscreen(true);
+    setLifecycle(previous => previous === 'ready' ? 'in_progress' : previous);
     console.log('Fullscreen mode entered - states updated');
   };
 
@@ -1146,7 +1177,7 @@ const InterviewScreen = (props) => {
     );
   }
 
-  if (isComplete && finalEvaluation) {
+  if (isComplete && finalEvaluation?.interviewCode === interviewCode && finalEvaluation?.sessionId === activeSessionId.current) {
     return (
       <div>
         <FinalEvaluation evaluation={finalEvaluation} answers={answers} />

@@ -10,6 +10,7 @@ router.use((req,res,next)=>{
 });
 const multer = require('multer');
 const interviewController = require('../controllers/interviewController');
+const { completedSession } = require('../services/sessionCompletion');
 const { authenticateToken, authorizeCompany } = require('../../auth/middleware/auth');
 const { MAX_CANDIDATE_FILE_BYTES } = require('../utils/candidateSpreadsheet');
 
@@ -131,7 +132,7 @@ router.post('/final-evaluation', async (req, res) => {
   try {
     const session = await interviewController.getInterviewSession(req.body.interviewCode);
     if (!session) return res.status(404).json({error:'Interview session not found'});
-    if (!session.finalEvaluation) return res.status(409).json({status:session.evaluationStatus || 'not_started',error:'Complete the interview before requesting its evaluation.'});
+    if (!completedSession(session)) return res.status(409).json({status:session.evaluationStatus || 'not_started',error:'Complete the interview before requesting its evaluation.'});
     res.json(session.finalEvaluation);
   } catch (error) {
     console.error('Error generating final evaluation:', error);

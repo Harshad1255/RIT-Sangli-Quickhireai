@@ -6,6 +6,7 @@ const questionController = require('./questionController');
 const resultController = require('./resultController');
 const Interview = require('../models/Interview');
 const InterviewSession = require('../models/InterviewSession');
+const { completedSession } = require('../services/sessionCompletion');
 
 // Re-export all functions from separated controllers
 module.exports = {
@@ -55,7 +56,7 @@ module.exports = {
     }
     try {
       const session = await InterviewSession.findOne({interviewCode:candidateCode});
-      if (!session || session.status !== 'completed' || !session.finalEvaluation) return res.status(409).json({success:false,error:'Interview evaluation is not complete.'});
+      if (!completedSession(session)) return res.status(409).json({success:false,error:'Interview evaluation is not complete.'});
       const finalEvaluation = session.finalEvaluation;
       const answers = session.answers;
       console.log('Looking for interview:', interviewId);

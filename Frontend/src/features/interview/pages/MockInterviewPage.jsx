@@ -4,6 +4,7 @@ import InterviewGuidelines from '../components/InterviewGuidelines';
 import SkillsSelection from '../components/SkillsSelection';
 import InterviewScreen from '../components/InterviewScreen';
 import BranchSelection from '../components/BranchSelection';
+import { newMockAttempt } from '../services/interviewLifecycle';
 
 const MockInterviewPage = () => {
   const location = useLocation();
@@ -15,9 +16,9 @@ const MockInterviewPage = () => {
     if (stateCode && stateCode !== 'undefined' && stateCode.trim()) {
       // Ensure the mock code starts with 'mock-'
       const code = stateCode.trim();
-      return code.startsWith('mock-') ? code : `mock-${code}`;
+      return newMockAttempt(code);
     }
-    return `mock-${Math.random().toString(36).substring(2, 8)}`;
+    return newMockAttempt();
   });
   
   const [step, setStep] = useState('branch'); // Start at branch selection
@@ -97,4 +98,4 @@ const MockInterviewPage = () => {
   return null;
 };
 
-export default MockInterviewPage; 
+export default MockInterviewPage;

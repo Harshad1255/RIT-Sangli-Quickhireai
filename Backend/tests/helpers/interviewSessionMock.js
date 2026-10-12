@@ -2,7 +2,7 @@
 module.exports = () => {
   const sessions = new Map();
   return class Session {
-    constructor(data) { Object.assign(this, data); }
+    constructor(data) { Object.assign(this, {_id:require('node:crypto').randomUUID()}, data); }
     async save() { sessions.set(this.interviewCode, this); }
     static async findOne({interviewCode}) { return sessions.get(interviewCode) || null; }
     static async findOneAndUpdate(filter, update) {

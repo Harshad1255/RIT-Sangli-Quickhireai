@@ -14,7 +14,7 @@ beforeEach(()=>{
  gemini.generateQuestion.mockImplementation(async()=>{await pause(200);return {question:'First question',topic:'JS'};});
  gemini.generateQuestionBatch.mockImplementation(async()=>{await pause(80);return Array.from({length:4},(_,i)=>({id:'prepared-'+i,question:'Prepared '+i,topic:'JS',category:i===1?'coding':'conceptual',questionNumber:i+2,isFollowUp:false}));});
  gemini.analyzeAnswer.mockImplementation(async()=>{await pause(300);return {status:'evaluated',score:9,overallScore:9};});
- gemini.generateFinalEvaluation.mockResolvedValue({overallScore:9});
+ gemini.generateFinalEvaluation.mockResolvedValue({overallScore:9,skillAssessment:{technicalKnowledge:9,codingAbility:9,communicationSkills:9,problemSolving:9}});
 });
 test('returns first question before batch, resumes without regeneration and uses cached next question',async()=>{
  const code='mock-latency-'+Date.now();const start=res();const t=performance.now();await questions.startInterview({body:{interviewCode:code,skills:['JS']}},start);
@@ -51,7 +51,7 @@ test('database lease rejects another worker without changing answers', async()=>
 test('interrupted final evaluation recovers saved answer and evaluates once on retry', async()=>{
  const q={id:'final-q',question:'Final Q',questionNumber:1,isFollowUp:false};
  const session=new sessions({interviewCode:'mock-final-retry',status:'active',skills:['JS'],totalQuestions:1,questions:[q],answers:[]});await session.save();
- gemini.generateFinalEvaluation.mockRejectedValueOnce(new Error('temporary failure')).mockResolvedValue({overallScore:9});
+ gemini.generateFinalEvaluation.mockRejectedValueOnce(new Error('temporary failure')).mockResolvedValue({overallScore:9,skillAssessment:{technicalKnowledge:9,codingAbility:9,communicationSkills:9,problemSolving:9}});
  const body={interviewCode:session.interviewCode,question:q,answer:'Original answer'};
  const failed=res();await results.processAnswer({body},failed);expect(failed.status).toHaveBeenCalledWith(500);expect(session.answers).toHaveLength(1);
  const recovered=res();await results.processAnswer({body:{...body,answer:'Changed retry text'}},recovered);
@@ -75,4 +75,12 @@ test('report persistence retry reuses final evaluation and upserts a stable repo
  const failed=res();await results.processAnswer({body},failed);expect(failed.status).toHaveBeenCalledWith(500);expect(session.finalEvaluation.overallScore).toBe(9);expect(session.status).toBe('active');
  const recovered=res();await results.processAnswer({body},recovered);expect(recovered.json.mock.calls[0][0].isComplete).toBe(true);expect(gemini.generateFinalEvaluation).toHaveBeenCalledTimes(1);expect(session.answers).toHaveLength(1);
  expect(report.mock.calls[1][0]).toEqual({interviewCode:session.interviewCode});expect(report.mock.calls[1][2].upsert).toBe(true);
+});
+
+test('unavailable answer evaluation remains failed until persisted answers recover',async()=>{
+ const q={id:'unavailable-q',question:'Q',questionNumber:1};const session=new sessions({interviewCode:'mock-unavailable-final',status:'active',skills:['JS'],totalQuestions:1,questions:[q],answers:[]});await session.save();
+ gemini.analyzeAnswer.mockResolvedValueOnce({status:'unavailable',evaluationFailed:true,score:null}).mockResolvedValue({status:'evaluated',score:9,overallScore:9});
+ const body={interviewCode:session.interviewCode,question:q,answer:'Saved answer'};
+ const failed=res();await results.processAnswer({body},failed);expect(failed.status).toHaveBeenCalledWith(503);expect(session.evaluationStatus).toBe('failed');expect(session.status).toBe('active');expect(session.finalEvaluation).toBeUndefined();expect(gemini.generateFinalEvaluation).not.toHaveBeenCalled();
+ const recovered=res();await results.processAnswer({body},recovered);expect(recovered.json.mock.calls[0][0].isComplete).toBe(true);expect(session.answers).toHaveLength(1);expect(session.answers[0].analysis.status).toBe('evaluated');expect(gemini.generateFinalEvaluation).toHaveBeenCalledTimes(1);
 });

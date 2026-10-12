@@ -1,4 +1,5 @@
 const preparation = require('../services/questionPreparation');
+const completion = require('../services/sessionCompletion');
 const evaluationUtils = require('../services/evaluationUtils');
 const Interview = require('../models/Interview');
 const Candidate = require('../../candidates/models/Candidate');
@@ -27,7 +28,8 @@ const processAnswerCore = async (req, res) => {
     const authoritativeQuestion = interview.questions.find(q => q.id === question.id);
     if (!authoritativeQuestion) return res.status(409).json({success:false,error:'Unknown interview question.'});
     question = authoritativeQuestion;
-    if (interview.status === 'completed' && interview.finalEvaluation) return res.json(interview.lastResponse?.isComplete ? interview.lastResponse : {success:true,isComplete:true,evaluation:interview.finalEvaluation,lastAnswerEvaluation:interview.answers[interview.answers.length-1]?.analysis,finalScore:interview.currentScore});
+    if (completion.completedSession(interview)) return res.json(interview.lastResponse?.isComplete ? interview.lastResponse : {success:true,isComplete:true,status:'completed',evaluationStatus:'completed',sessionId:interview._id,interviewCode,evaluation:interview.finalEvaluation,lastAnswerEvaluation:interview.answers[interview.answers.length-1]?.analysis,finalScore:interview.currentScore});
+    if (interview.status === 'completed') return res.status(409).json({success:false,status:'failed',error:'This saved session has an incomplete evaluation. Start a new mock attempt or contact the interviewer.'});
 
     // Use answers.length to track all answers, but we need to track main questions answered.
     // A main question is one that does not have isFollowUp true.
@@ -160,10 +162,34 @@ const processAnswerCore = async (req, res) => {
     // If no follow-up was generated, check if we've reached total main questions
     if (!isFollowUp) {
       if (newMainQuestionsAnswered >= interview.totalQuestions) {
+        if (interview.evaluationStatus === 'failed') {
+          for (const saved of interview.answers) {
+            if (saved.analysis?.status === 'unavailable') {
+              const savedQuestion = interview.questions.find(q=>q.id === saved.questionId);
+              saved.analysis = await geminiService.analyzeAnswer(saved.answer || saved.code, savedQuestion, {code:saved.code || ''});
+              saved.status = saved.analysis.status;
+            }
+          }
+          interview.markModified?.('answers');
+          analysis = interview.answers.find(saved=>saved.questionId === question.id)?.analysis || analysis;
+          const scores = interview.answers.map(saved=>saved.analysis?.score).filter(score=>typeof score === 'number' && Number.isFinite(score));
+          interview.currentScore = scores.length ? scores.reduce((sum,score)=>sum+score,0)/scores.length : null;
+          await interview.save();
+        }
+        if (!completion.answersComplete(interview)) {
+          interview.evaluationStatus = 'failed';
+          await interview.save();
+          return res.status(503).json({success:false,status:'failed',evaluationStatus:'failed',error:'Some answers could not be evaluated. Retry to recover the saved interview.'});
+        }
         interview.evaluationStatus = 'running';
         interview.evaluationJobId ||= `${interview._id || interviewCode}:final`;
         await interview.save();
-        const finalEvaluation = interview.finalEvaluation || await geminiService.generateFinalEvaluation(interview.answers);
+        const finalEvaluation = completion.validReport(interview.finalEvaluation) ? interview.finalEvaluation : await geminiService.generateFinalEvaluation(interview.answers);
+        if (!completion.validReport(finalEvaluation)) {
+          interview.evaluationStatus = 'failed';
+          await interview.save();
+          return res.status(503).json({success:false,status:'failed',error:'Final evaluation is unavailable. Your answers are saved; please retry.'});
+        }
         interview.finalEvaluation = finalEvaluation;
         interview.evaluationStatus = 'completed';
         await interview.save();
@@ -209,6 +235,12 @@ const processAnswerCore = async (req, res) => {
         
         const responseBody = {
           success: true,
+          status: 'completed',
+          evaluationStatus: 'completed',
+          sessionId: interview._id,
+          interviewCode,
+          answers: interview.answers,
+          questions: interview.questions,
           evaluation: finalEvaluation,
           lastAnswerEvaluation: {
             ...analysis,
@@ -541,7 +573,7 @@ const submitAllAnswers = async (req, res) => {
   try {
     const session = await InterviewSession.findOne({interviewCode:req.body.interviewCode});
     if (!session) return res.status(404).json({success:false,error:"Interview session not found"});
-    if (!session.finalEvaluation) return res.status(409).json({success:false,status:session.evaluationStatus || "not_started",error:"Submit answers through the active question endpoint first."});
+    if (!completion.completedSession(session)) return res.status(409).json({success:false,status:session.evaluationStatus || "not_started",error:"Submit answers through the active question endpoint first."});
     return res.json({success:true,answers:session.answers,finalEvaluation:session.finalEvaluation});
   } catch (error) {
     return res.status(500).json({success:false,error:"Unable to load interview results"});

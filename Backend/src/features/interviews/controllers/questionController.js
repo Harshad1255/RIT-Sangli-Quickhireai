@@ -2,11 +2,12 @@ const preparation = require('../services/questionPreparation');
 const geminiService = require('../services/geminiService');
 const Interview = require('../models/Interview');
 const InterviewSession = require('../models/InterviewSession');
+const { completedSession } = require('../services/sessionCompletion');
 
 // Export an empty map for backward compatibility during migration, though we shouldn't need it
 const activeInterviews = new Map();
 
-const publicSession = session => ({sessionId:session._id,interviewCode:session.interviewCode,questions:session.questions,answers:session.answers,skills:session.skills,totalQuestions:session.totalQuestions,status:session.status,startTime:session.startTime,finalEvaluation:session.finalEvaluation,evaluationStatus:session.evaluationStatus,processing:!!session.processingUntil && session.processingUntil > new Date()});
+const publicSession = session => ({sessionId:session._id,interviewCode:session.interviewCode,questions:session.questions,answers:session.answers,skills:session.skills,totalQuestions:session.totalQuestions,status:session.status === 'completed' && !completedSession(session) ? 'failed' : session.status,startTime:session.startTime,finalEvaluation:completedSession(session) ? session.finalEvaluation : null,evaluationStatus:session.status === 'completed' && !completedSession(session) ? 'failed' : session.evaluationStatus,processing:!!session.processingUntil && session.processingUntil > new Date()});
 // Start new interview
 const startInterviewCore = async (req, res) => {
   try {

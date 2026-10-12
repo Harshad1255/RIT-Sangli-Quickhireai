@@ -18,7 +18,7 @@ describe('Interview Flow Rules', () => {
     geminiService.generateQuestion.mockImplementation(async (skill, prev, idx, focus) => {
       return { question: `Q about ${skill} focusing on ${focus}`, topic: skill, difficulty: 'medium' };
     });
-    geminiService.analyzeAnswer.mockResolvedValue({ score: 9, feedback: 'Great', technicalAccuracy: 9, completeness: 9, clarity: 9 });
+    geminiService.analyzeAnswer.mockResolvedValue({ status: 'evaluated', score: 9, feedback: 'Great', technicalAccuracy: 9, completeness: 9, clarity: 9 });
 
     // Mock start interview (sets up session)
     // Actually, calling the controller functions with mocked req/res is easier.
@@ -58,7 +58,7 @@ describe('Interview Flow Rules', () => {
       question: `Fallback for ${skill} on ${focus}`, topic: skill
     }));
     geminiService.analyzeAnswer.mockRejectedValue(new Error('API Error'));
-    geminiService.generateFinalEvaluation.mockResolvedValue({ overallScore: 5 });
+    geminiService.generateFinalEvaluation.mockResolvedValue({ overallScore: 5, skillAssessment: { technicalKnowledge: 5, codingAbility: 5, communicationSkills: 5, problemSolving: 5 } });
 
     const reqStart = { body: { interviewCode: 'fail-code', skills: ['React'] } };
     const resStart = { json: jest.fn(), status: jest.fn().mockReturnThis() };
@@ -86,14 +86,14 @@ describe('Interview Flow Rules', () => {
   it('weak answer triggers at most one follow-up per main question', async () => {
     geminiService.generateQuestion.mockResolvedValue({ question: 'Main Q', topic: 'JS' });
     // First answer is weak (score 5)
-    geminiService.analyzeAnswer.mockResolvedValueOnce({ score: 5, feedback: 'Weak' })
+    geminiService.analyzeAnswer.mockResolvedValueOnce({ status: 'evaluated', score: 5, feedback: 'Weak' })
       // Follow-up answer is also weak
-      .mockResolvedValueOnce({ score: 5, feedback: 'Still weak' })
+      .mockResolvedValueOnce({ status: 'evaluated', score: 5, feedback: 'Still weak' })
       // Next answers are good
-      .mockResolvedValue({ score: 9, feedback: 'Good' });
+      .mockResolvedValue({ status: 'evaluated', score: 9, feedback: 'Good' });
       
     geminiService.generateFollowUpQuestion.mockResolvedValue({ question: 'Follow up Q', topic: 'JS' });
-    geminiService.generateFinalEvaluation.mockResolvedValue({ overallScore: 7 });
+    geminiService.generateFinalEvaluation.mockResolvedValue({ overallScore: 7, skillAssessment: { technicalKnowledge: 7, codingAbility: 7, communicationSkills: 7, problemSolving: 7 } });
 
     const reqStart = { body: { interviewCode: 'weak-code', skills: ['Node'] } };
     const resStart = { json: jest.fn(), status: jest.fn().mockReturnThis() };
@@ -124,7 +124,7 @@ describe('Interview Flow Rules', () => {
     geminiService.generateQuestion.mockResolvedValue({ question: 'Main Q', topic: 'JS' });
     // Analyze fails -> { evaluationFailed: true, score: null }
     geminiService.analyzeAnswer.mockRejectedValue(new Error('Fail'));
-    geminiService.generateFinalEvaluation.mockResolvedValue({ overallScore: 8 });
+    geminiService.generateFinalEvaluation.mockResolvedValue({ overallScore: 8, skillAssessment: { technicalKnowledge: 8, codingAbility: 8, communicationSkills: 8, problemSolving: 8 } });
 
     const reqStart = { body: { interviewCode: 'eval-fail', skills: ['SQL'] } };
     const resStart = { json: jest.fn(), status: jest.fn().mockReturnThis() };

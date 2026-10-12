@@ -1,10 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './FullscreenGate.css';
 
 const FullscreenGate = ({ onFullscreenEntered }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
   const [showInstructions, setShowInstructions] = useState(true);
+  const notified = useRef(false);
+  const notifyEntered = useCallback(() => {
+    if (notified.current) return;
+    notified.current = true;
+    onFullscreenEntered();
+  }, [onFullscreenEntered]);
 
   useEffect(() => {
     // Check if fullscreen is supported
@@ -27,10 +33,7 @@ const FullscreenGate = ({ onFullscreenEntered }) => {
       if (fullscreenElement) {
         // Fullscreen entered successfully
         console.log('Fullscreen detected in FullscreenGate, calling onFullscreenEntered');
-        setTimeout(() => {
-          console.log('Calling onFullscreenEntered after delay');
-          onFullscreenEntered();
-        }, 500);
+        notifyEntered();
       }
     };
 
@@ -45,7 +48,7 @@ const FullscreenGate = ({ onFullscreenEntered }) => {
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
-  }, [onFullscreenEntered]);
+  }, [notifyEntered]);
 
   const requestFullscreen = async () => {
     try {
@@ -63,16 +66,16 @@ const FullscreenGate = ({ onFullscreenEntered }) => {
       }
       
       // Fallback: Check if fullscreen was actually entered after a short delay
-      setTimeout(() => {
+      {
         const fullscreenElement = document.fullscreenElement || 
                                  document.webkitFullscreenElement || 
                                  document.mozFullScreenElement || 
                                  document.msFullscreenElement;
         if (fullscreenElement && !isFullscreen) {
           console.log('Fallback: Fullscreen detected, calling onFullscreenEntered');
-          onFullscreenEntered();
+          notifyEntered();
         }
-      }, 1000);
+      }
       
     } catch (error) {
       console.error('Error entering fullscreen:', error);
@@ -180,4 +183,4 @@ const FullscreenGate = ({ onFullscreenEntered }) => {
   );
 };
 
-export default FullscreenGate; 
+export default FullscreenGate;
