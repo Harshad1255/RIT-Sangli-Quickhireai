@@ -1,10 +1,11 @@
+const { forJudge0 } = require('./javaSource');
 const axios = require('axios');
 const { normalizeOutput } = require('../normalizeOutput');
 const { VERDICTS } = require('../verdicts');
 const { LANGUAGE_IDS } = require('../languageMap');
 
 const POLL_INTERVAL_MS = Number(process.env.JUDGE0_POLL_INTERVAL_MS || 800);
-const POLL_TIMEOUT_MS = Number(process.env.JUDGE0_POLL_TIMEOUT_MS || 15000);
+const POLL_TIMEOUT_MS = Number(process.env.JUDGE0_POLL_TIMEOUT_MS || 60000);
 
 const decodeBase64 = (value) => {
   if (!value) return '';
@@ -33,10 +34,10 @@ const mapProviderStatus = (statusId) => {
   }
 };
 
-const execute = async ({ language, code, stdin = '', timeLimitMs = 2000, memoryLimitMb = 256 }) => {
+const execute = async ({ requestTimeoutMs, language, code, stdin = '', timeLimitMs = 2000, memoryLimitMb = 256 }) => {
+  const deadline = Date.now() + Math.min(requestTimeoutMs || Infinity, POLL_TIMEOUT_MS);
   const JUDGE0_API_URL = (process.env.JUDGE0_API_URL || process.env.JUDGE0_BASE_URL || '').replace(/\/$/, '');
   const JUDGE0_API_KEY = process.env.JUDGE0_API_KEY || '';
-  const JUDGE0_HOST = process.env.JUDGE0_HOST || 'judge0-ce.p.rapidapi.com';
 
   if (!JUDGE0_API_URL) {
     throw new Error('JUDGE0_API_URL is not configured');
@@ -56,15 +57,18 @@ const execute = async ({ language, code, stdin = '', timeLimitMs = 2000, memoryL
 
   const headers = { 'Content-Type': 'application/json' };
   if (JUDGE0_API_KEY) {
-    headers['X-RapidAPI-Key'] = JUDGE0_API_KEY;
-    headers['X-RapidAPI-Host'] = JUDGE0_HOST;
+    if (new URL(JUDGE0_API_URL).hostname.endsWith('.rapidapi.com')) {
+      headers['X-RapidAPI-Key'] = JUDGE0_API_KEY;
+      headers['X-RapidAPI-Host'] = new URL(JUDGE0_API_URL).hostname;
+    } else headers[process.env.JUDGE0_AUTH_HEADER || 'X-Auth-Token'] = JUDGE0_API_KEY;
   }
 
   const payload = {
-    source_code: Buffer.from(code, 'utf8').toString('base64'),
+    source_code: Buffer.from(language === 'java' ? forJudge0(code) : code, 'utf8').toString('base64'),
     language_id: languageId,
     stdin: Buffer.from(stdin || '', 'utf8').toString('base64'),
     cpu_time_limit: Math.max(0.1, Number(timeLimitMs) / 1000),
+    ...(language === 'cpp' ? { compiler_options: '-std=c++17' } : {}),
     memory_limit: Math.max(1, Number(memoryLimitMb) * 1024)
   };
 
@@ -72,23 +76,23 @@ const execute = async ({ language, code, stdin = '', timeLimitMs = 2000, memoryL
     const submission = await axios.post(
       `${JUDGE0_API_URL}/submissions?base64_encoded=true&wait=false`,
       payload,
-      { headers, timeout: 10000 }
+      { headers, timeout: Math.max(1, Math.min(10000, deadline - Date.now())) }
     );
     
     const token = submission.data?.token;
     if (!token) throw new Error('Execution provider did not return a submission token.');
 
-    const startedAt = Date.now();
     let data;
     
-    while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
-      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()))));
       const response = await axios.get(
         `${JUDGE0_API_URL}/submissions/${token}?base64_encoded=true`,
-        { headers, timeout: 10000 }
+        { headers, timeout: Math.max(1, Math.min(10000, deadline - Date.now())) }
       );
       data = response.data;
-      if (!data?.status || ![1, 2].includes(data.status.id)) break; // Status 1=In Queue, 2=Processing
+      if (!data?.status || typeof data.status.id !== 'number') throw Object.assign(new Error('Malformed Judge0 response'), { serviceReason: 'provider_unavailable' });
+      if (![1, 2].includes(data.status.id)) break; // Status 1=In Queue, 2=Processing
     }
 
     if (!data || !data.status || [1, 2].includes(data.status.id)) {
@@ -105,8 +109,11 @@ const execute = async ({ language, code, stdin = '', timeLimitMs = 2000, memoryL
       verdict,
       output: normalizeOutput(stdout),
       stderr: normalizeOutput(stderr || compileOutput),
-      runtimeMs: data.time ? Math.round(Number(data.time) * 1000) : 0,
-      memoryKb: Number(data.memory || 0)
+      compileOutput,
+      providerSubmissionId: token,
+      exitCode: data.exit_code ?? null,
+      runtimeMs: data.time != null && Number.isFinite(Number(data.time)) ? Math.round(Number(data.time) * 1000) : null,
+      memoryKb: data.memory != null ? Number(data.memory) : null
     };
   } catch (error) {
     console.error('Judge0 provider error:', error.message);

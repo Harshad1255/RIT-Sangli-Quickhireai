@@ -5,10 +5,15 @@ const testResultSchema = new mongoose.Schema({
   input: { type: String },
   expectedOutput: { type: String },
   actualOutput: { type: String },
+  verdict: String,
+  executed: Boolean,
+  exitCode: { type: Number, default: null },
+  compileOutput: String,
+  providerSubmissionId: String,
   stderr: { type: String, default: '' },
   passed: { type: Boolean, default: false },
-  runtime: { type: Number, default: 0 },
-  memory: { type: Number, default: 0 },
+  runtime: { type: Number, default: null },
+  memory: { type: Number, default: null },
   isSample: { type: Boolean, default: false },
   isHidden: { type: Boolean, default: false }
 }, { _id: false });
@@ -26,6 +31,9 @@ const codingSubmissionSchema = new mongoose.Schema({
     enum: ['Accepted', 'Wrong Answer', 'Time Limit Exceeded', 'Runtime Error', 'Compilation Error', 'Execution Service Error', 'Validation Error', 'Pending'],
     default: 'Wrong Answer' 
   },
+  evaluationStatus: String,
+  evaluationCompleted: Boolean,
+  serviceReason: String,
   testResults: [testResultSchema],
   passedTests: { type: Number, default: 0 },
   passedCount: { type: Number, default: 0 },

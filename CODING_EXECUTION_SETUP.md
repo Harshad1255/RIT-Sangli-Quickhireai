@@ -26,7 +26,7 @@ JUDGE0_API_URL=http://localhost:2358
 # JUDGE0_API_KEY=your_key_if_configured
 
 # OneCompiler Settings
-ONECOMPILER_API_URL=https://api.onecompiler.com/v1/run
+ONECOMPILER_API_URL=https://api.onecompiler.org/v1/run
 ONECOMPILER_API_KEY=your_onecompiler_api_key
 ```
 

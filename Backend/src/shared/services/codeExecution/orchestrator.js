@@ -1,4 +1,4 @@
-const { normalizeLanguage } = require('./languageMap');
+const { normalizeLanguage, LANGUAGE_IDS } = require('./languageMap');
 const { VERDICTS, getWorstVerdict } = require('./verdicts');
 const { normalizeOutput } = require('./normalizeOutput');
 const { unwrapDriverOutput } = require('../../../features/coding/services/functionDriver');
@@ -14,6 +14,7 @@ const getProviderFailureReason = (error) => {
   if (error?.serviceReason) return error.serviceReason;
   const message = String(error?.message || '').toLowerCase();
   const status = Number(error?.response?.status || error?.statusCode);
+  if (status === 429) return 'rate_limit';
   if (status === 401 || status === 403) return 'missing_key';
   if (status === 404) return 'missing_url';
   if (status >= 500) return 'provider_5xx';
@@ -33,11 +34,15 @@ const executionServiceFailure = (serviceReason) => ({
   serviceReason,
   output: '',
   stderr: '',
-  runtimeMs: 0,
-  memoryKb: 0
+  runtimeMs: null,
+  memoryKb: null,
+  evaluationStatus: "EXECUTION_SERVICE_ERROR",
+  evaluationCompleted: false,
+  score: null
 });
 
 const executeSingleRun = async (params) => {
+  const deadline = Date.now() + (params.requestTimeoutMs || 90000);
   const primaryProviderName = (process.env.CODE_EXECUTION_PROVIDER || 'judge0').trim().toLowerCase();
   const fallbackProviderName = (process.env.CODE_EXECUTION_FALLBACK_PROVIDER || 'onecompiler').trim().toLowerCase();
   
@@ -54,7 +59,7 @@ const executeSingleRun = async (params) => {
   }
 
   try {
-    const result = await primaryExecute(params);
+    const result = await primaryExecute({ ...params, requestTimeoutMs: Math.max(1, deadline - Date.now()) });
     if (result?.verdict === VERDICTS.EXECUTION_SERVICE_ERROR) {
       throw Object.assign(new Error('Provider returned an unavailable status.'), {
         serviceReason: result.serviceReason || 'provider_unavailable'
@@ -66,10 +71,10 @@ const executeSingleRun = async (params) => {
     const primaryFailureReason = getProviderFailureReason(primaryError);
     if (!primaryFailureReason) throw primaryError;
     console.error(`Primary provider (${primaryProviderName}) failed (${primaryFailureReason}).`);
-    if (fallbackExecute && primaryProviderName !== fallbackProviderName) {
+    if (fallbackExecute && primaryProviderName !== fallbackProviderName && Date.now() < deadline) {
       console.log(`Failing over to ${fallbackProviderName}.`);
       try {
-        const result = await fallbackExecute(params);
+        const result = await fallbackExecute({ ...params, requestTimeoutMs: Math.max(1, deadline - Date.now()) });
         if (result?.verdict === VERDICTS.EXECUTION_SERVICE_ERROR) {
           throw Object.assign(new Error('Fallback provider returned an unavailable status.'), {
             serviceReason: result.serviceReason || 'provider_unavailable'
@@ -88,13 +93,13 @@ const executeSingleRun = async (params) => {
   }
 };
 
-const executeCode = async ({ language, code, stdin = '', timeLimitMs = DEFAULT_TIME_LIMIT, memoryLimitMb = DEFAULT_MEMORY_LIMIT }) => {
+const executeCode = async ({ requestTimeoutMs, language, code, stdin = '', timeLimitMs = DEFAULT_TIME_LIMIT, memoryLimitMb = DEFAULT_MEMORY_LIMIT }) => {
   if (!CODE_EXECUTION_ENABLED) {
     return executionServiceFailure('disabled');
   }
 
   const normalizedLanguage = normalizeLanguage(language);
-  if (!normalizedLanguage) {
+  if (!LANGUAGE_IDS[normalizedLanguage]) {
     return {
       success: false,
       verdict: VERDICTS.VALIDATION_ERROR,
@@ -128,13 +133,18 @@ const executeCode = async ({ language, code, stdin = '', timeLimitMs = DEFAULT_T
   }
 
   const execution = await executeSingleRun({
+    requestTimeoutMs,
     language: normalizedLanguage,
     code,
     stdin,
     timeLimitMs,
     memoryLimitMb
   });
-  return { ...execution, output: unwrapDriverOutput(code, execution.output) };
+  return { ...execution, output: unwrapDriverOutput(code, execution.output),
+    evaluationStatus: execution.evaluationStatus || ({ "Compilation Error":"COMPILE_ERROR", "Runtime Error":"RUNTIME_ERROR", "Time Limit Exceeded":"TIME_LIMIT_EXCEEDED", "Validation Error":"VALIDATION_ERROR" })[execution.verdict] || "COMPLETED",
+    evaluationCompleted: ![VERDICTS.EXECUTION_SERVICE_ERROR, VERDICTS.VALIDATION_ERROR].includes(execution.verdict),
+    score: null
+  };
 };
 
 const judgeSolution = async ({ language, code, testCases = [], timeLimit = DEFAULT_TIME_LIMIT, memoryLimit = DEFAULT_MEMORY_LIMIT, visibleOnly = false }) => {
@@ -147,19 +157,25 @@ const judgeSolution = async ({ language, code, testCases = [], timeLimit = DEFAU
       passedTests: 0,
       totalTests: 0,
       testResults: [],
-      runtime: 0,
-      memory: 0
+      runtime: null,
+      memory: null,
+      score: null,
+      evaluationStatus: "VALIDATION_ERROR",
+      evaluationCompleted: false
     };
   }
 
+  const deadline = Date.now() + Number(process.env.CODE_EVALUATION_TIMEOUT_MS || 90000);
   const results = [];
   let passedCount = 0;
   let overallVerdict = VERDICTS.ACCEPTED;
-  let totalRuntime = 0;
-  let maxMemory = 0;
+  let totalRuntime = null;
+  let maxMemory = null;
 
   for (const testCase of casesToRun) {
-    const execution = await executeCode({
+    const remaining = deadline - Date.now();
+    const execution = remaining <= 0 ? executionServiceFailure("timeout") : await executeCode({
+      requestTimeoutMs: Math.max(1, remaining),
       language,
       code,
       stdin: testCase.input || '',
@@ -177,8 +193,10 @@ const judgeSolution = async ({ language, code, testCases = [], timeLimit = DEFAU
         actualOutput: execution.output || '',
         stderr: execution.stderr || '',
         passed: false,
-        runtime: 0,
-        memory: 0,
+        runtime: null,
+        memory: null,
+        verdict: execution.verdict,
+        executed: false,
         isHidden: Boolean(testCase.isHidden)
       });
       return {
@@ -190,7 +208,10 @@ const judgeSolution = async ({ language, code, testCases = [], timeLimit = DEFAU
         totalTests: casesToRun.length,
         testResults: results,
         runtime: totalRuntime,
-        memory: maxMemory
+        memory: maxMemory,
+        score: null,
+        evaluationStatus: "EXECUTION_SERVICE_ERROR",
+        evaluationCompleted: false
       };
     }
 
@@ -205,8 +226,8 @@ const judgeSolution = async ({ language, code, testCases = [], timeLimit = DEFAU
     if (passed) passedCount += 1;
     overallVerdict = getWorstVerdict(overallVerdict, caseVerdict);
     
-    totalRuntime = Math.max(totalRuntime, execution.runtimeMs || 0);
-    maxMemory = Math.max(maxMemory, execution.memoryKb || 0);
+    if (execution.runtimeMs != null) totalRuntime = Math.max(totalRuntime ?? 0, execution.runtimeMs);
+    if (execution.memoryKb != null) maxMemory = Math.max(maxMemory ?? 0, execution.memoryKb);
 
     results.push({
       testCaseId: testCase._id || null,
@@ -215,8 +236,13 @@ const judgeSolution = async ({ language, code, testCases = [], timeLimit = DEFAU
       actualOutput: testCase.isHidden ? (passed ? 'Passed' : 'Failed') : actualOutput,
       stderr: testCase.isHidden ? '' : execution.stderr,
       passed,
-      runtime: execution.runtimeMs || 0,
-      memory: execution.memoryKb || 0,
+      runtime: execution.runtimeMs ?? null,
+      memory: execution.memoryKb ?? null,
+      compileOutput: testCase.isHidden ? "" : execution.compileOutput || "",
+      exitCode: execution.exitCode ?? null,
+      providerSubmissionId: execution.providerSubmissionId,
+      verdict: caseVerdict,
+      executed: ![VERDICTS.COMPILATION_ERROR, VERDICTS.VALIDATION_ERROR].includes(execution.verdict),
       isHidden: Boolean(testCase.isHidden)
     });
   }
@@ -228,7 +254,10 @@ const judgeSolution = async ({ language, code, testCases = [], timeLimit = DEFAU
     totalTests: casesToRun.length,
     testResults: results,
     runtime: totalRuntime,
-    memory: maxMemory
+    memory: maxMemory,
+    evaluationStatus: ({ "Compilation Error":"COMPILE_ERROR", "Runtime Error":"RUNTIME_ERROR", "Time Limit Exceeded":"TIME_LIMIT_EXCEEDED", "Validation Error":"VALIDATION_ERROR" })[overallVerdict] || "COMPLETED",
+    evaluationCompleted: overallVerdict !== VERDICTS.VALIDATION_ERROR,
+    score: overallVerdict === VERDICTS.VALIDATION_ERROR ? null : Number((passedCount / casesToRun.length * 100).toFixed(2))
   };
 };
 

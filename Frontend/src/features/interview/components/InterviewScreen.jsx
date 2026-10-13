@@ -2,13 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import WebcamFeed from "./WebcamFeed";
 import { api } from "../../../shared/services/api";
 import "../styles/InterviewScreen.css";
-import RealTimeFeedback from './RealTimeFeedback';
 import FinalEvaluation from './FinalEvaluation';
 import speechRecognitionService from '../services/speechRecognitionService';
-import CodeEditor from './CodeEditor';
 import TechQuestionTypes from './TechQuestionTypes';
 
-import TabMonitoringService from '../services/tabMonitoringService';
 import FullscreenGate from './FullscreenGate';
 import FullscreenPause from './FullscreenPause';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -74,7 +71,6 @@ const InterviewScreen = (props) => {
   const [isFollowUpQuestion, setIsFollowUpQuestion] = useState(restored?.isFollowUpQuestion || false);
   const [followUpCount, setFollowUpCount] = useState(restored?.followUpCount || 0);
   const [selectedQuestionType, setSelectedQuestionType] = useState('concepts');
-  const [tabMonitoringService, setTabMonitoringService] = useState(null);
   const [suspiciousActivities, setSuspiciousActivities] = useState([]);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [isMonitoringActive, setIsMonitoringActive] = useState(false);
@@ -216,7 +212,7 @@ const InterviewScreen = (props) => {
     // Cleanup function
     return () => {
       if (isRecording) {
-        speechRecognitionService.stopRecording();
+        speechRecognitionService.cancel();
       }
     };
   }, [interviewCode, location.state, navigate, props.interviewData, props.selectedSkills, props.isMock]);
@@ -229,23 +225,99 @@ const InterviewScreen = (props) => {
     return storedData && storedSkills;
   };
 
-  const startRecording = () => {
+  const requestFullscreen = async () => {
     try {
-      setRecordingStatus('recording');
-      setRecordingError(null);
-      
+      const el = document.documentElement;
+      if (el.requestFullscreen) {
+        await el.requestFullscreen();
+      } else if (el.webkitRequestFullscreen) {
+        await el.webkitRequestFullscreen();
+      } else if (el.mozRequestFullScreen) {
+        await el.mozRequestFullScreen();
+      } else if (el.msRequestFullscreen) {
+        await el.msRequestFullscreen();
+      }
+      setIsCurrentlyFullscreen(true);
+    } catch (err) {
+      console.warn('Error entering fullscreen:', err);
+    }
+  };
+
+  const startRecording = async () => {
+    // 1. Ensure fullscreen
+    if (!isCurrentlyFullscreen) {
+      await requestFullscreen();
+      const fsElement = document.fullscreenElement || 
+                        document.webkitFullscreenElement || 
+                        document.mozFullScreenElement || 
+                        document.msFullscreenElement;
+      if (!fsElement) {
+        setRecordingError('Fullscreen mode is required to record. Please enter fullscreen.');
+        return;
+      }
+    }
+
+    setRecordingError(null);
+    setRecordingStatus('starting');
+
+    // 2. Check browser speech recognition support
+    if (!speechRecognitionService.isSupported()) {
+      setRecordingError('Speech-to-text is not supported in this browser. Please use Google Chrome or Microsoft Edge, or type your answer directly in the box below.');
+      setRecordingStatus('idle');
+      setIsRecording(false);
+      return;
+    }
+
+    // 3. Probe microphone hardware & permissions
+    try {
+      const micCheck = await speechRecognitionService.testMicrophoneAccess();
+      if (!micCheck.ok) {
+        setRecordingError(micCheck.message);
+        setRecordingStatus('idle');
+        setIsRecording(false);
+        return;
+      }
+    } catch (micErr) {
+      console.warn('Microphone check error:', micErr);
+    }
+
+    // 4. Start speech recognition with full callbacks
+    try {
       speechRecognitionService.startRecording(
         transcript,
-        (interim) => setInterimTranscript(interim),
-        (final) => setTranscript(final),
-        (error) => {
-          setRecordingError(error);
-          setRecordingStatus('idle');
+        {
+          onStart: () => {
+            setIsRecording(true);
+            setRecordingStatus('recording');
+          },
+          onInterimResult: (interim) => {
+            setInterimTranscript(interim);
+          },
+          onFinalResult: (final) => {
+            setTranscript(final);
+            setInterimTranscript('');
+          },
+          onError: (err) => {
+            console.error('Speech recognition error:', err);
+            setRecordingError(err.message || 'Speech recognition failed. You can type your answer below.');
+            setIsRecording(false);
+            setRecordingStatus('idle');
+            setInterimTranscript('');
+          },
+          onEnd: (final) => {
+            setIsRecording(false);
+            setRecordingStatus('idle');
+            setInterimTranscript('');
+            if (final && final.trim()) {
+              setTranscript(final.trim());
+            }
+          }
         }
       );
-      setIsRecording(true);
-    } catch (error) {
-      setRecordingError('Failed to start recording');
+    } catch (err) {
+      console.error('Error starting recording:', err);
+      setRecordingError(err.message || 'Failed to start recording. You can type your answer below.');
+      setIsRecording(false);
       setRecordingStatus('idle');
     }
   };
@@ -255,23 +327,21 @@ const InterviewScreen = (props) => {
       setRecordingStatus('processing');
       const finalTranscript = await speechRecognitionService.stopRecording();
       setIsRecording(false);
+      setInterimTranscript('');
       
       console.log('Recording stopped, final transcript:', finalTranscript);
       
-      if (!finalTranscript || !finalTranscript.trim()) {
-        console.log('No transcript detected');
-        setRecordingError('No speech detected. You can type your answer or try again.');
-        return;
+      if (finalTranscript && finalTranscript.trim()) {
+        setTranscript(finalTranscript.trim());
+      } else if (!transcript.trim()) {
+        console.log('No speech detected');
+        setRecordingError('No speech was detected. You can type your answer or try recording again.');
       }
-
-      // Set the transcript in state (user must click Submit)
-      setTranscript(finalTranscript.trim());
-      console.log('Transcript saved to state:', finalTranscript.trim());
-
     } catch (error) {
       console.error('Error in stopRecording:', error);
-      setRecordingError('Failed to process recording');
+      setRecordingError('Failed to process recording. You can type your answer below.');
     } finally {
+      setIsRecording(false);
       setRecordingStatus('idle');
       setInterimTranscript('');
     }
@@ -930,38 +1000,37 @@ const InterviewScreen = (props) => {
 
   // Monitor fullscreen exit
   useEffect(() => {
-    const handleFullscreenChange = () => {
+    const checkFullscreenState = () => {
       const fullscreenElement = document.fullscreenElement || 
                                document.webkitFullscreenElement || 
                                document.mozFullScreenElement || 
                                document.msFullscreenElement;
+      const inFs = Boolean(fullscreenElement);
+      setIsCurrentlyFullscreen(inFs);
+      return inFs;
+    };
+
+    const handleFullscreenChange = () => {
+      const inFs = checkFullscreenState();
       
-      // Update current fullscreen status
-      setIsCurrentlyFullscreen(!!fullscreenElement);
-      
-      if (!fullscreenElement && isFullscreenEntered) {
-        // Fullscreen was exited during interview
+      if (!inFs && isFullscreenEntered) {
         console.log('Fullscreen exited during interview');
-        setIsFullscreenPaused(false); // Disabled blocking per user request
+        setIsFullscreenPaused(false);
         
         // Stop recording if active
         if (isRecording) {
-          speechRecognitionService.stopRecording();
+          speechRecognitionService.cancel();
           setIsRecording(false);
+          setRecordingStatus('idle');
         }
-      } else if (fullscreenElement && isFullscreenPaused) {
-        // Fullscreen was re-entered
-        console.log('Fullscreen re-entered, resuming interview');
+      } else if (inFs) {
+        console.log('Fullscreen active, resuming interview');
         setIsFullscreenPaused(false);
-        setIsCurrentlyFullscreen(true);
-        // Don't reset counters - keep accumulated values
-      } else if (fullscreenElement && !isCurrentlyFullscreen) {
-        // Fullscreen was entered but we weren't tracking it
-        console.log('Fullscreen detected but not paused, updating status');
-        setIsCurrentlyFullscreen(true);
-        // Don't reset counters - keep accumulated values
       }
     };
+
+    // Check immediately on mount/update
+    checkFullscreenState();
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
@@ -974,7 +1043,7 @@ const InterviewScreen = (props) => {
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
-  }, [isFullscreenEntered]);
+  }, [isFullscreenEntered, isRecording]);
 
   // Fallback: Check fullscreen status periodically when paused
   useEffect(() => {
@@ -1059,9 +1128,10 @@ const InterviewScreen = (props) => {
   };
 
   // Handle disabled button clicks
-  const handleDisabledButtonClick = (buttonType) => {
+  const handleDisabledButtonClick = async (buttonType) => {
     if (!isCurrentlyFullscreen) {
-      console.log(`Button ${buttonType} clicked while not in fullscreen`);
+      console.log(`Button ${buttonType} clicked while not in fullscreen. Requesting fullscreen entry.`);
+      await requestFullscreen();
     }
   };
 
@@ -1207,15 +1277,33 @@ const InterviewScreen = (props) => {
           right: 0,
           background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
           color: 'white',
-          padding: '0.75rem 1rem',
-          textAlign: 'center',
+          padding: '0.75rem 1.5rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '1rem',
           fontWeight: '700',
-          fontSize: '1rem',
+          fontSize: '0.98rem',
           zIndex: 1000,
           boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)',
-          animation: 'pulse 2s infinite'
         }}>
-          Fullscreen required - all interview functions are disabled until you enter fullscreen mode
+          <span>Fullscreen required — interview controls are locked until you enter fullscreen mode</span>
+          <button
+            onClick={requestFullscreen}
+            style={{
+              background: '#fff',
+              color: '#dc2626',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '6px 16px',
+              fontWeight: 700,
+              fontSize: '0.92rem',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+            }}
+          >
+            Enter Fullscreen
+          </button>
         </div>
       )}
       
@@ -1577,7 +1665,10 @@ const InterviewScreen = (props) => {
                 }} 
                 placeholder="Your spoken answer will appear here, or you can type it."
                 value={transcript + (interimTranscript ? (transcript && !transcript.endsWith(' ') ? ' ' : '') + interimTranscript : '')}
-                onChange={(e) => setTranscript(e.target.value)}
+                onChange={(e) => {
+                  setTranscript(e.target.value);
+                  setInterimTranscript('');
+                }}
               />
             </div>
             {/* Control Buttons moved below transcript */}
@@ -1756,16 +1847,34 @@ const InterviewScreen = (props) => {
               <div className="fullscreen-warning" style={{
                 background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
                 color: 'white',
-                padding: '0.75rem 1rem',
-                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+                borderRadius: '10px',
                 marginTop: '12px',
-                fontSize: '0.9rem',
+                fontSize: '0.92rem',
                 fontWeight: '600',
                 textAlign: 'center',
                 boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
-                animation: 'pulse 2s infinite'
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px'
               }}>
-                All buttons are disabled. Enter fullscreen mode to continue the interview.
+                <span>Controls are locked. Fullscreen is required to record or submit.</span>
+                <button
+                  onClick={requestFullscreen}
+                  style={{
+                    background: '#fff',
+                    color: '#dc2626',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '6px 16px',
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Enter Fullscreen Now
+                </button>
               </div>
             )}
           </div>

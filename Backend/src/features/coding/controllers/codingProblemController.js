@@ -76,7 +76,7 @@ const codingProblemController = {
               apiKeyConfigured: Boolean(process.env.JUDGE0_API_KEY)
             },
             onecompiler: {
-              apiUrlConfigured: Boolean(process.env.ONECOMPILER_API_URL || 'https://api.onecompiler.com/v1/run'),
+              apiUrlConfigured: Boolean(process.env.ONECOMPILER_API_URL || 'https://api.onecompiler.org/v1/run'),
               apiKeyConfigured: Boolean(process.env.ONECOMPILER_API_KEY)
             }
           },
@@ -434,6 +434,7 @@ const codingProblemController = {
         return res.status(200).json({
           success: true,
           data: {
+            ...execRes,
             isRunOnly: true,
             verdict: execRes.verdict,
             code: execRes.code,
@@ -486,11 +487,12 @@ const codingProblemController = {
           verdict: evaluation.verdict,
           code: evaluation.code,
           serviceReason: evaluation.serviceReason,
+          ...evaluation,
           passedCount: evaluation.passedTests,
           totalCount: evaluation.totalTests,
           runtimeMs: evaluation.runtime,
           memoryKb: evaluation.memory,
-          memoryMb: evaluation.memory,
+          memoryMb: evaluation.memory == null ? null : evaluation.memory / 1024,
             output: evaluation.testResults?.[0]?.actualOutput || '',
             stderr: evaluation.testResults?.find(test => test.stderr)?.stderr || '',
           stdout: evaluation.testResults?.[0]?.actualOutput || '',
@@ -530,8 +532,9 @@ const codingProblemController = {
         memoryLimit: problem.memoryLimit || 256
       });
 
+      const infrastructureFailure = evaluation.verdict === "Execution Service Error" || evaluation.verdict === "Validation Error";
       // Update problem stats
-      problem.totalSubmissions += 1;
+      if (!infrastructureFailure) problem.totalSubmissions += 1;
       if (evaluation.verdict === 'Accepted') {
         problem.totalAccepted += 1;
       }
@@ -543,7 +546,7 @@ const codingProblemController = {
       // Persist CodingSubmission
       const passed = evaluation.passedTests;
       const total = evaluation.totalTests;
-      const score = total > 0 ? Number(((passed / total) * 100).toFixed(2)) : 0;
+      const score = infrastructureFailure ? null : total > 0 ? Number(((passed / total) * 100).toFixed(2)) : 0;
 
       const submission = new CodingSubmission({
         userId,
@@ -553,6 +556,9 @@ const codingProblemController = {
         code: userCode,
         sourceCode: userCode,
         verdict: evaluation.verdict,
+        evaluationStatus: evaluation.evaluationStatus || (infrastructureFailure ? "EXECUTION_SERVICE_ERROR" : "COMPLETED"),
+        evaluationCompleted: !infrastructureFailure,
+        serviceReason: evaluation.serviceReason,
         testResults: evaluation.testResults,
         passedTests: passed,
         passedCount: passed,
@@ -574,7 +580,7 @@ const codingProblemController = {
       await submission.save();
 
       const { testId } = req.body;
-      if (testId) {
+      if (testId && !infrastructureFailure) {
         const AptitudeAttempt = require('../../aptitude/models/AptitudeAttempt');
         const AssessmentSecurityEvent = require('../../assessment/models/AssessmentSecurityEvent');
         
@@ -642,6 +648,8 @@ const codingProblemController = {
         success: true,
         data: {
           submissionId: submission._id,
+          evaluationStatus: submission.evaluationStatus,
+          evaluationCompleted: submission.evaluationCompleted,
           verdict: evaluation.verdict,
           code: evaluation.code,
           serviceReason: evaluation.serviceReason,

@@ -53,10 +53,10 @@ router.post('/validate-code', interviewController.validateInterviewCode);
 
 // Interview session routes
 router.post('/start', interviewController.startInterview);
-router.get('/:id/questions', (req, res) => {
+router.get('/:id/questions', async (req, res) => {
   try {
     const interviewCode = req.params.id;
-    const session = interviewController.getInterviewSession(interviewCode);
+    const session = await interviewController.getInterviewSession(interviewCode);
     
     if (!session) {
       return res.status(404).json({ error: 'Interview session not found' });
@@ -102,7 +102,7 @@ router.post('/evaluate-answer', async (req, res) => {
     }
 
     // Get interview session
-    const session = interviewController.getInterviewSession(interviewCode);
+    const session = await interviewController.getInterviewSession(interviewCode);
     if (!session) {
       console.error('Session not found for code:', interviewCode);
       return res.status(404).json({ 

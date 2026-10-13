@@ -210,3 +210,14 @@ describe('coding problem execution routes', () => {
     expect(judgeSolution).not.toHaveBeenCalled();
   });
 });
+
+ test('persists provider failure with null score and does not update candidate statistics',async()=>{
+ judgeSolution.mockResolvedValue({verdict:'Execution Service Error',serviceReason:'rate_limit',passedTests:1,totalTests:3,runtime:null,memory:null,testResults:[],evaluationStatus:'EXECUTION_SERVICE_ERROR',evaluationCompleted:false});
+ const response=await request(app).post('/api/coding/problems/two-sum-id/submit').send({language:'cpp',code:'int main(){}'});
+ expect(response.status).toBe(201);expect(response.body.data.score).toBeNull();expect(response.body.data.evaluationCompleted).toBe(false);expect(problem.totalSubmissions).toBe(0);expect(CodingSubmission).toHaveBeenCalledWith(expect.objectContaining({score:null,serviceReason:'rate_limit',sourceCode:'int main(){}'}));
+ });
+ test('persists partial success with verified score',async()=>{
+ judgeSolution.mockResolvedValue({verdict:'Wrong Answer',passedTests:1,totalTests:3,runtime:2,memory:null,testResults:[{passed:true,isHidden:false}],evaluationStatus:'COMPLETED',evaluationCompleted:true});
+ const response=await request(app).post('/api/coding/problems/two-sum-id/submit').send({language:'cpp',code:'int main(){}'});
+ expect(response.body.data.score).toBe(33.33);expect(response.body.data.evaluationCompleted).toBe(true);expect(problem.totalSubmissions).toBe(1);
+ });

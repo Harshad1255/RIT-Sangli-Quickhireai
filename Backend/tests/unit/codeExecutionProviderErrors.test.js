@@ -77,3 +77,9 @@ describe('execution provider error classification', () => {
     }
   });
 });
+
+test('HTTP 429 is reported as rate limit without candidate score',async()=>{
+ judge0Provider.execute.mockRejectedValue(Object.assign(new Error('quota'),{response:{status:429}}));
+ const r=await executeCode({language:'cpp',code:'int main(){}'});
+ expect(r.serviceReason).toBe('rate_limit');expect(r.score).toBeNull();expect(r.evaluationCompleted).toBe(false);
+});

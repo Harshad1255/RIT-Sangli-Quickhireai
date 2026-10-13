@@ -1,4 +1,5 @@
 const serviceMessages = {
+  rate_limit: 'The execution provider quota or rate limit was reached. Please retry later or contact the administrator.',
   disabled: 'Code execution is disabled on this server. Contact your instructor.',
   missing_key: 'The execution provider is not configured. Contact the platform administrator.',
   missing_url: 'The execution provider is not configured. Contact the platform administrator.',

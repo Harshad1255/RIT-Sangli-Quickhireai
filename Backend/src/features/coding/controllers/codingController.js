@@ -140,7 +140,7 @@ exports.runCode = async (req, res, next) => {
     const wrappedCode = wrapCodeForExecution(language, code, problem.entryFunction);
 
     if (customInput !== undefined) {
-      const result = await executeCode({ language, code: wrappedCode, stdin: customInput, timeLimit: problem.timeLimit });
+      const result = await executeCode({ language, code: wrappedCode, stdin: customInput, timeLimitMs: problem.timeLimit, memoryLimitMb: problem.memoryLimit });
       return res.json({ success: true, data: result });
     }
 
@@ -200,6 +200,7 @@ exports.submitCode = async (req, res, next) => {
       visibleOnly: false
     });
 
+    const infrastructureFailure = ["Execution Service Error", "Validation Error"].includes(result.verdict);
     const xpEarned = result.verdict === 'Accepted' ? (problem.difficulty === 'Hard' ? 35 : problem.difficulty === 'Medium' ? 20 : 10) : 0;
 
     const submission = await CodingSubmission.create({
@@ -209,10 +210,13 @@ exports.submitCode = async (req, res, next) => {
       language,
       code,
       verdict: result.verdict,
+      evaluationStatus: result.evaluationStatus,
+      evaluationCompleted: result.evaluationCompleted,
+      serviceReason: result.serviceReason,
       testResults: result.testResults,
       passedTests: result.passedTests,
       totalTests: result.totalTests,
-      score: result.totalTests > 0 ? Number(((result.passedTests / result.totalTests) * 100).toFixed(2)) : 0,
+      score: infrastructureFailure ? null : result.totalTests > 0 ? Number(((result.passedTests / result.totalTests) * 100).toFixed(2)) : 0,
       runtime: result.runtime,
       memory: result.memory,
       executionLogs: result.executionLogs,
@@ -220,7 +224,7 @@ exports.submitCode = async (req, res, next) => {
       isRun: false
     });
 
-    if (contestContext) {
+    if (contestContext && !infrastructureFailure) {
       await updateContestLeaderboard({
         contest: contestContext.contest,
         userId,
@@ -232,7 +236,7 @@ exports.submitCode = async (req, res, next) => {
       });
     }
 
-    if (req.body.testId) {
+    if (req.body.testId && !infrastructureFailure) {
       const AptitudeAttempt = require('../../aptitude/models/AptitudeAttempt');
       const AssessmentSecurityEvent = require('../../assessment/models/AssessmentSecurityEvent');
       
@@ -278,7 +282,7 @@ exports.submitCode = async (req, res, next) => {
       }
     }
 
-    problem.totalSubmissions += 1;
+    if (!infrastructureFailure) problem.totalSubmissions += 1;
     if (result.verdict === 'Accepted') {
       problem.totalAccepted += 1;
       await recordCodingSolve(userId, problemId, language, result.runtime, problem.difficulty);
@@ -286,7 +290,7 @@ exports.submitCode = async (req, res, next) => {
     problem.acceptanceRate = Math.round((problem.totalAccepted / problem.totalSubmissions) * 100);
     await problem.save();
 
-    res.json({ success: true, data: { submission, verdict: result.verdict, xpEarned } });
+    res.json({ success: true, data: { ...result, submissionId: submission._id, submission, score: submission.score, verdict: result.verdict, xpEarned } });
   } catch (error) {
     next(error);
   }

@@ -21,6 +21,7 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
   const [submissionsHistory, setSubmissionsHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const editorRef = useRef(null);
+  const requestInFlight = useRef(false);
 
   useEffect(() => {
     if (problem) {
@@ -80,6 +81,8 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
   };
 
   const handleRunCode = async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     try {
       setLoadingAction('run');
       setExecutionResult(null);
@@ -97,11 +100,14 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
         errorMessage: getExecutionRequestError(err, 'run')
       });
     } finally {
+      requestInFlight.current = false;
       setLoadingAction('');
     }
   };
 
   const handleSubmitSolution = async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     try {
       setLoadingAction('submit');
       setExecutionResult(null);
@@ -226,7 +232,7 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
                           </span>
                         </td>
                         <td>{sub.language}</td>
-                        <td>{sub.runtimeMs} ms</td>
+                        <td>{sub.runtimeMs ?? "N/A"} ms</td>
                         <td>{new Date(sub.submittedAt).toLocaleString()}</td>
                       </tr>
                     ))}
@@ -244,10 +250,11 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
               <select
                 className="language-select"
                 value={language}
+                disabled={!!loadingAction}
                 onChange={(e) => setLanguage(e.target.value)}
               >
                 <option value="python">Python 3</option>
-                <option value="java">Java 17</option>
+                <option value="java">Java</option>
                 <option value="cpp">C++17</option>
               </select>
 
@@ -344,13 +351,13 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
             ) : (
               <div>
                 <div style={{ display: 'flex', gap: 20, marginBottom: 12, fontSize: '0.9rem', color: '#cbd5e1' }}>
-                  <div><strong>Runtime:</strong> {executionResult.runtime || executionResult.runtimeMs || 0} ms</div>
-                  <div><strong>Memory:</strong> {executionResult.memory || executionResult.memoryKb || 0} KB</div>
+                  <div><strong>Runtime:</strong> {executionResult.runtime ?? executionResult.runtimeMs ?? "N/A"} ms</div>
+                  <div><strong>Memory:</strong> {executionResult.memory ?? executionResult.memoryKb ?? "N/A"} KB</div>
                   {executionResult.isRunOnly || executionResult.totalTests === 0 ? (
                     <div><strong>Mode:</strong> Custom Run</div>
                   ) : (
                     <div>
-                      <strong>Score:</strong> {executionResult.score || 0} / 100 ({executionResult.passedTests || executionResult.passedTestCases || 0} / {executionResult.totalTests || executionResult.totalTestCases || 0} passed)
+                      <strong>Score:</strong> {executionResult.score ?? "N/A"} / 100 ({executionResult.passedTests || executionResult.passedTestCases || 0} / {executionResult.totalTests || executionResult.totalTestCases || 0} passed)
                     </div>
                   )}
                 </div>
