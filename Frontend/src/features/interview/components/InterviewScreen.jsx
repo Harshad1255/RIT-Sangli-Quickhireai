@@ -1247,6 +1247,7 @@ const InterviewScreen = (props) => {
 
   // Main interview layout
   console.log('Showing main interview layout');
+  const hasQuestion = Boolean(currentQuestion && (currentQuestion.question || currentQuestion.text));
   const activeBranch = props.branch || location.state?.branch || sessionStorage.getItem('selectedBranch') || '';
   const isNonCodingBranch = /civil|mech|elec|entc/i.test(activeBranch);
   const isCodeQuestion = !isNonCodingBranch && currentQuestion && (
