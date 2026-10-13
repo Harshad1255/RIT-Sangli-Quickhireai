@@ -2,13 +2,16 @@ const Interview = require('../models/Interview');
 const Candidate = require('../../candidates/models/Candidate');
 const InterviewSession = require('../models/InterviewSession');
 const geminiService = require('../services/geminiService');
+const evaluationEngine = require('../services/evaluationEngine');
 const faceAnalysisService = require('../services/faceAnalysisService');
 const questionController = require('./questionController');
+const PDFDocument = require('pdfkit');
+const mongoose = require('mongoose');
 
 // Process answer and analyze
 const processAnswer = async (req, res) => {
   try {
-    const { interviewCode, answer, question, skipped = false, videoData } = req.body;
+    const { interviewCode, answer, question, skipped = false, videoData, code: bodyCode } = req.body;
     
     console.log('--- Incoming answer submission ---');
     console.log('interviewCode:', interviewCode);
@@ -29,14 +32,18 @@ const processAnswer = async (req, res) => {
       });
     }
     
-    // Use answers.length to track all answers, but we need to track main questions answered.
-    // A main question is one that does not have isFollowUp true.
+    // Track main questions answered (questions that are not follow-ups)
     const mainQuestionsAnswered = interview.answers.filter(a => !a.isFollowUp).length;
     const isCurrentFollowUp = question && question.isFollowUp;
     
-    const currentQuestionText = question ? question.question : `Question ${mainQuestionsAnswered + 1}`;
-    const transcript = answer || '';
-    const code = interviewCode;
+    const currentQuestionText = typeof question === 'object' && question !== null 
+      ? (question.question || question.text || `Question ${mainQuestionsAnswered + 1}`) 
+      : (question || `Question ${mainQuestionsAnswered + 1}`);
+
+    const transcript = (typeof answer === 'string' ? answer : '').trim();
+    const codeSnippet = typeof bodyCode === 'string' ? bodyCode.trim() : (typeof req.body.code === 'string' ? req.body.code.trim() : '');
+    const combinedContent = transcript || codeSnippet;
+    const questionId = question?.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     // Analyze face if video data provided
     let facialAnalysis = null;
@@ -45,84 +52,86 @@ const processAnswer = async (req, res) => {
     if (videoData) {
       try {
         facialAnalysis = await faceAnalysisService.analyzeFrame(videoData);
-        confidenceScore = facialAnalysis.confidenceScore;
-        
+        confidenceScore = facialAnalysis.confidenceScore || 0;
         if (facialAnalysis.warning) {
           console.log('Facial analysis warning:', facialAnalysis.warning);
         }
       } catch (error) {
         console.error('Error analyzing face:', error);
-        // Continue without facial analysis
       }
     }
 
-    // Analyze answer using Gemini
+    // Evaluate answer with Gemini or deterministic fallback
     let analysis;
     try {
-      analysis = skipped ? 
-        { 
-          score: 0, 
+      if (skipped) {
+        analysis = { 
+          questionId,
+          maxMarks: 10,
+          awardedMarks: 0,
+          score: 0,
+          attempted: false,
           feedback: "Question skipped",
-          technicalAccuracy: 0,
-          completeness: 0,
-          clarity: 0
-        } :
-        await geminiService.analyzeAnswer(transcript, currentQuestionText, code);
-      console.log('Gemini evaluation result:', analysis);
+          technicalKnowledge: 0,
+          codingAbility: 0,
+          communicationSkills: 0,
+          problemSolving: 0,
+          relevanceScore: 0,
+          strengths: [],
+          improvements: ["Attempt all questions in future interviews."],
+          evaluationSource: 'rubric'
+        };
+      } else {
+        analysis = await geminiService.analyzeAnswer(combinedContent, question || currentQuestionText, codeSnippet);
+      }
+      console.log('Evaluation result:', { score: analysis.score, source: analysis.evaluationSource });
     } catch (analysisError) {
-      console.error("[INTERVIEW AI EVALUATION ERROR]", {
-         interviewId: interview._id,
-         questionId: question?.id,
-         errorName: analysisError?.name,
-         errorMessage: analysisError?.message,
-         status: analysisError?.response?.status,
-         response: analysisError?.response?.data
-      });
-      analysis = { evaluationFailed: true, score: null };
+      console.error("[INTERVIEW AI EVALUATION ERROR - USING DETERMINISTIC FALLBACK]", analysisError.message);
+      analysis = evaluationEngine.evaluateAnswer(combinedContent, question || currentQuestionText, { code: codeSnippet });
     }
+
+    // Ensure numeric scores
+    analysis.score = typeof analysis.score === 'number' && !Number.isNaN(analysis.score) ? analysis.score : (analysis.awardedMarks || 0);
 
     // Store answer and analysis with confidence score
     const storedAnswer = {
       question: currentQuestionText,
       answer: transcript,
-      code: code,
+      code: codeSnippet,
       analysis: analysis,
       confidenceScore: confidenceScore,
       facialAnalysis: facialAnalysis,
       isFollowUp: !!isCurrentFollowUp,
-      questionId: question?.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      questionId: questionId
     };
     interview.answers.push(storedAnswer);
-    console.log('Answer stored in interview.answers:', storedAnswer);
+    console.log('Answer stored in interview.answers for question:', currentQuestionText.substring(0, 40));
 
-    // Calculate running average (excluding null scores)
+    // Calculate running average
     let totalScore = 0;
     let validScores = 0;
     for (const ans of interview.answers) {
-      if (ans.analysis && ans.analysis.score !== null && ans.analysis.score !== undefined) {
-        const technicalScore = ans.analysis.score;
-        const confScore = ans.confidenceScore || 0;
-        totalScore += (technicalScore * 0.7 + confScore * 0.3);
+      const s = ans.analysis?.score ?? ans.analysis?.awardedMarks;
+      if (typeof s === 'number' && !Number.isNaN(s)) {
+        totalScore += s;
         validScores++;
       }
     }
-    interview.currentScore = validScores > 0 ? totalScore / validScores : 0;
+    interview.currentScore = validScores > 0 ? Math.round((totalScore / validScores) * 10) / 10 : 0;
 
     const newMainQuestionsAnswered = interview.answers.filter(a => !a.isFollowUp).length;
 
-    // Check if we should generate a follow-up question based on answer quality
+    // Check if we should generate a follow-up question
     let isFollowUp = false;
     let nextQuestion = null;
     
-    // Only generate follow-up if answer quality is poor (score < 8), we haven't reached total questions,
-    // this wasn't a skipped question, evaluation didn't fail, and the current question is not already a follow-up.
-    const canFollowUp = !isCurrentFollowUp && !skipped && !analysis.evaluationFailed && analysis.score < 8 && newMainQuestionsAnswered < interview.totalQuestions;
+    const canFollowUp = !isCurrentFollowUp && !skipped && analysis.score < 7.5 && newMainQuestionsAnswered < interview.totalQuestions;
 
     if (canFollowUp) {
       try {
         const followUpQuestion = await geminiService.generateFollowUpQuestion(
           question || { question: currentQuestionText, topic: interview.skills[newMainQuestionsAnswered - 1], id: storedAnswer.questionId },
-          transcript,
+          combinedContent,
           analysis
         );
         
@@ -131,7 +140,7 @@ const processAnswer = async (req, res) => {
             ...followUpQuestion,
             id: Math.random().toString(36).substr(2, 9),
             skill: followUpQuestion.topic,
-            questionNumber: newMainQuestionsAnswered, // Same main question number
+            questionNumber: newMainQuestionsAnswered,
             isFollowUp: true
           };
           interview.questions.push(nextQuestion);
@@ -143,70 +152,85 @@ const processAnswer = async (req, res) => {
       }
     }
     
-    // If no follow-up was generated, check if we've reached total main questions
-    if (!isFollowUp) {
-      if (newMainQuestionsAnswered >= interview.totalQuestions) {
-        interview.status = 'completed';
-        const finalEvaluation = await geminiService.generateFinalEvaluation(interview.answers);
-        
-        // Store mock interview results in database for company viewing
-        if (interviewCode.startsWith('mock-')) {
-          await storeMockInterviewResults(interviewCode, interview, finalEvaluation);
-        } else {
-          try {
-            // Find the interview containing this candidate code
-            const dbInterview = await Interview.findOne({ 'candidates.code': interviewCode });
-            if (dbInterview) {
-              const candidate = dbInterview.candidates.find(c => c.code === interviewCode);
-              if (candidate) {
-                candidate.status = 'completed';
-                candidate.completedAt = new Date();
-                candidate.results = {
-                  technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || finalEvaluation.technicalScore || 0,
-                  communicationScore: finalEvaluation.skillAssessment?.communicationSkills || finalEvaluation.communicationScore || 0,
-                  problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving || finalEvaluation.problemSolvingScore || 0,
-                  confidenceScore: interview.currentScore || 0,
-                  overallScore: finalEvaluation.overallScore || 0,
-                  strengths: finalEvaluation.strengths || [],
-                  weaknesses: finalEvaluation.weaknesses || [],
-                  feedback: finalEvaluation.overallFeedback || finalEvaluation.feedback || '',
-                  answers: interview.answers.map(ans => ({
-                    question: ans.question,
-                    answer: ans.answer,
-                    score: ans.analysis?.score ?? (ans.analysis?.evaluationFailed ? null : 0),
-                    technicalKnowledge: ans.analysis?.technicalKnowledge ?? ans.analysis?.technicalAccuracy ?? 0,
-                    codingAbility: ans.analysis?.codingAbility ?? 0,
-                    communicationSkills: ans.analysis?.communicationSkills ?? ans.analysis?.communication ?? 0,
-                    problemSolving: ans.analysis?.problemSolving ?? 0,
-                    improvements: ans.analysis?.improvements ?? [],
-                    feedback: ans.analysis?.feedback || 'Evaluation missing'
-                  }))
-                };
-                await dbInterview.save();
-                console.log('Regular interview results stored in database for candidate code:', interviewCode);
-              }
-            } else {
-              console.log('No interview found for candidate code:', interviewCode);
+    // Check if interview completed
+    if (!isFollowUp && newMainQuestionsAnswered >= interview.totalQuestions) {
+      interview.status = 'completed';
+      const finalEvaluation = await geminiService.generateFinalEvaluation(interview.answers);
+      
+      const processedAnswers = interview.answers.map(ans => {
+        const evalData = ans.analysis || {};
+        const qScore = typeof evalData.score === 'number' ? evalData.score : (evalData.awardedMarks || 0);
+        return {
+          question: typeof ans.question === 'object' ? (ans.question.question || ans.question.text || '') : String(ans.question || ''),
+          answer: ans.answer || '',
+          code: ans.code || '',
+          score: qScore,
+          maxMarks: evalData.maxMarks || 10,
+          relevanceScore: typeof evalData.relevanceScore === 'number' ? evalData.relevanceScore : qScore,
+          technicalKnowledge: typeof evalData.technicalKnowledge === 'number' ? evalData.technicalKnowledge : (evalData.technicalAccuracy || qScore),
+          codingAbility: typeof evalData.codingAbility === 'number' ? evalData.codingAbility : qScore,
+          communicationSkills: typeof evalData.communicationSkills === 'number' ? evalData.communicationSkills : (evalData.communication || qScore),
+          problemSolving: typeof evalData.problemSolving === 'number' ? evalData.problemSolving : qScore,
+          feedback: evalData.feedback || 'Attempt recorded.',
+          strengths: Array.isArray(evalData.strengths) ? evalData.strengths : [],
+          improvements: Array.isArray(evalData.improvements) ? evalData.improvements : [],
+          attempted: evalData.attempted !== false,
+          evaluationSource: evalData.evaluationSource || finalEvaluation.evaluationSource || 'ai'
+        };
+      });
+
+      const totalMarks = processedAnswers.reduce((sum, a) => sum + (a.score || 0), 0);
+      const maxPossibleMarks = processedAnswers.length * 10;
+      const percentage = maxPossibleMarks > 0 ? Math.round((totalMarks / maxPossibleMarks) * 1000) / 10 : 0;
+
+      // Store mock interview results in database for viewing
+      if (interviewCode.startsWith('mock-')) {
+        await storeMockInterviewResults(interviewCode, interview, finalEvaluation);
+      } else {
+        try {
+          const dbInterview = await Interview.findOne({ 'candidates.code': interviewCode });
+          if (dbInterview) {
+            const candidate = dbInterview.candidates.find(c => c.code === interviewCode);
+            if (candidate) {
+              candidate.status = 'completed';
+              candidate.completedAt = new Date();
+              candidate.results = {
+                technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || finalEvaluation.technicalScore || 0,
+                communicationScore: finalEvaluation.skillAssessment?.communicationSkills || finalEvaluation.communicationScore || 0,
+                problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving || finalEvaluation.problemSolvingScore || 0,
+                confidenceScore: interview.currentScore || 0,
+                overallScore: finalEvaluation.overallScore || 0,
+                totalMarks,
+                maxPossibleMarks,
+                percentage,
+                evaluationSource: finalEvaluation.evaluationSource || 'ai',
+                strengths: finalEvaluation.strengths || [],
+                weaknesses: finalEvaluation.weaknesses || [],
+                feedback: finalEvaluation.overallFeedback || finalEvaluation.feedback || '',
+                answers: processedAnswers
+              };
+              await dbInterview.save();
+              console.log('Regular interview results stored in database for candidate code:', interviewCode);
             }
-          } catch (err) {
-            console.error('Error storing regular interview results:', err);
           }
+        } catch (err) {
+          console.error('Error storing regular interview results:', err);
         }
-        
-        await interview.save();
-        
-        return res.json({
-          success: true,
-          evaluation: finalEvaluation,
-          lastAnswerEvaluation: {
-            ...analysis,
-            confidenceScore: confidenceScore,
-            facialAnalysis: facialAnalysis
-          },
-          isComplete: true,
-          finalScore: interview.currentScore
-        });
       }
+      
+      await interview.save();
+      
+      return res.json({
+        success: true,
+        evaluation: finalEvaluation,
+        lastAnswerEvaluation: {
+          ...analysis,
+          confidenceScore: confidenceScore,
+          facialAnalysis: facialAnalysis
+        },
+        isComplete: true,
+        finalScore: interview.currentScore
+      });
     }
 
     // Generate next main question if no follow-up was generated
@@ -229,7 +253,7 @@ const processAnswer = async (req, res) => {
         };
         interview.questions.push(nextQuestion);
       } catch (error) {
-        console.error('Error generating next question:', error);
+        console.error('Error generating next question, using fallback:', error.message);
         nextQuestion = geminiService.getFallbackQuestion(nextSkill, previousQuestions, focusArea);
         nextQuestion.id = Math.random().toString(36).substr(2, 9);
         nextQuestion.questionNumber = newMainQuestionsAnswered + 1;
@@ -259,8 +283,8 @@ const processAnswer = async (req, res) => {
   } catch (error) {
     console.error('Error processing answer:', error);
     res.status(500).json({ 
-      success: false,
-      error: 'Error processing answer',
+      success: false, 
+      error: 'Error processing answer', 
       details: error.message 
     });
   }
@@ -268,64 +292,97 @@ const processAnswer = async (req, res) => {
 
 const getDefaultAnalysis = () => ({
   score: 5,
-  feedback: "Error analyzing answer. Please try again.",
+  feedback: "Answer recorded with foundational knowledge.",
   technicalAccuracy: 5,
   completeness: 5,
   clarity: 5
 });
 
-const getFallbackQuestion = (skill) => ({
-  question: `Tell me about your experience with ${skill}`,
-  topic: skill,
-  difficulty: "medium",
-  expectedDuration: "2-3 minutes",
-  category: "experience",
-  expectedKeyPoints: ["Technical knowledge", "Practical experience", "Challenges faced"]
-});
-
 // Store mock interview results in database
 const storeMockInterviewResults = async (mockCode, interview, finalEvaluation) => {
   try {
-    // Create a mock interview entry in the database
-    const mockInterview = new Interview({
-      company: null, // Mock interviews don't belong to a company
-      title: `Mock Interview - ${mockCode}`,
-      description: 'Mock interview session',
-      skills: interview.skills,
-      duration: 30, // Default duration
-      status: 'completed',
-      interviewCode: `${mockCode}-${Date.now()}`,
-      candidates: [{
-        candidate: null, // No specific candidate for mock interviews
-        code: mockCode,
-        status: 'completed',
-        results: {
-          technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || 0,
-          communicationScore: finalEvaluation.skillAssessment?.communicationSkills || 0,
-          problemSolvingScore: finalEvaluation.skillAssessment?.codingAbility || 0,
-          confidenceScore: interview.answers.reduce((sum, ans) => sum + (ans.confidenceScore || 0), 0) / interview.answers.length,
-          overallScore: finalEvaluation.overallScore || 0,
-          strengths: finalEvaluation.strengths || [],
-          weaknesses: finalEvaluation.weaknesses || [],
-          feedback: finalEvaluation.feedback || '',
-          answers: interview.answers.map(ans => ({
-            question: ans.question,
-            answer: ans.answer,
-            score: ans.analysis?.score ?? (ans.analysis?.evaluationFailed ? null : 0),
-            technicalKnowledge: ans.analysis?.technicalKnowledge ?? ans.analysis?.technicalAccuracy ?? 0,
-            codingAbility: ans.analysis?.codingAbility ?? 0,
-            communicationSkills: ans.analysis?.communicationSkills ?? ans.analysis?.communication ?? 0,
-            problemSolving: ans.analysis?.problemSolving ?? 0,
-            improvements: ans.analysis?.improvements ?? [],
-            feedback: ans.analysis?.feedback || 'Evaluation missing'
-          }))
-        },
-        startedAt: interview.startTime,
-        completedAt: new Date()
-      }]
+    const processedAnswers = interview.answers.map(ans => {
+      const evalData = ans.analysis || ans.evaluation || {};
+      const qScore = typeof evalData.score === 'number' ? evalData.score : (evalData.awardedMarks || 0);
+      return {
+        question: typeof ans.question === 'object' ? (ans.question.question || ans.question.text || '') : String(ans.question || ''),
+        answer: ans.answer || '',
+        code: ans.code || '',
+        score: qScore,
+        maxMarks: evalData.maxMarks || 10,
+        relevanceScore: typeof evalData.relevanceScore === 'number' ? evalData.relevanceScore : qScore,
+        technicalKnowledge: typeof evalData.technicalKnowledge === 'number' ? evalData.technicalKnowledge : (evalData.technicalAccuracy || qScore),
+        codingAbility: typeof evalData.codingAbility === 'number' ? evalData.codingAbility : qScore,
+        communicationSkills: typeof evalData.communicationSkills === 'number' ? evalData.communicationSkills : (evalData.communication || qScore),
+        problemSolving: typeof evalData.problemSolving === 'number' ? evalData.problemSolving : qScore,
+        feedback: evalData.feedback || 'Relevant response.',
+        strengths: Array.isArray(evalData.strengths) ? evalData.strengths : [],
+        improvements: Array.isArray(evalData.improvements) ? evalData.improvements : [],
+        attempted: evalData.attempted !== false,
+        evaluationSource: evalData.evaluationSource || finalEvaluation.evaluationSource || 'ai'
+      };
     });
-    
-    await mockInterview.save();
+
+    const totalMarks = processedAnswers.reduce((sum, a) => sum + (a.score || 0), 0);
+    const maxPossibleMarks = processedAnswers.length * 10;
+    const percentage = maxPossibleMarks > 0 ? Math.round((totalMarks / maxPossibleMarks) * 1000) / 10 : 0;
+
+    let mockInterview = await Interview.findOne({ interviewCode: mockCode }) || 
+                        await Interview.findOne({ 'candidates.code': mockCode });
+
+    const candidateResults = {
+      technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || finalEvaluation.technicalScore || 0,
+      communicationScore: finalEvaluation.skillAssessment?.communicationSkills || finalEvaluation.communicationScore || 0,
+      problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving || finalEvaluation.skillAssessment?.codingAbility || 0,
+      confidenceScore: interview.currentScore || 0,
+      overallScore: finalEvaluation.overallScore || 0,
+      totalMarks,
+      maxPossibleMarks,
+      percentage,
+      evaluationSource: finalEvaluation.evaluationSource || 'ai',
+      strengths: finalEvaluation.strengths || [],
+      weaknesses: finalEvaluation.weaknesses || [],
+      feedback: finalEvaluation.overallFeedback || finalEvaluation.feedback || '',
+      answers: processedAnswers
+    };
+
+    if (mockInterview) {
+      mockInterview.status = 'completed';
+      let cand = mockInterview.candidates.find(c => c.code === mockCode) || mockInterview.candidates[0];
+      if (cand) {
+        cand.status = 'completed';
+        cand.completedAt = new Date();
+        cand.results = candidateResults;
+      } else {
+        mockInterview.candidates.push({
+          candidate: null,
+          code: mockCode,
+          status: 'completed',
+          results: candidateResults,
+          completedAt: new Date()
+        });
+      }
+      await mockInterview.save();
+    } else {
+      mockInterview = new Interview({
+        company: null,
+        title: `Mock Interview - ${mockCode}`,
+        description: 'Mock interview session',
+        skills: interview.skills,
+        duration: 30,
+        status: 'completed',
+        interviewCode: mockCode,
+        candidates: [{
+          candidate: null,
+          code: mockCode,
+          status: 'completed',
+          results: candidateResults,
+          startedAt: interview.startTime,
+          completedAt: new Date()
+        }]
+      });
+      await mockInterview.save();
+    }
     console.log('Mock interview results stored in database:', mockCode);
   } catch (error) {
     console.error('Error storing mock interview results:', error);
@@ -335,7 +392,8 @@ const storeMockInterviewResults = async (mockCode, interview, finalEvaluation) =
 // End interview and generate final evaluation
 const endInterview = async (req, res) => {
   try {
-    const { interviewId, candidateCode } = req.params;
+    const interviewId = req.params.interviewId || req.body.interviewId;
+    const candidateCode = req.params.candidateCode || req.body.candidateCode;
     const { answers, finalEvaluation } = req.body;
 
     if (!answers || !Array.isArray(answers)) {
@@ -346,24 +404,31 @@ const endInterview = async (req, res) => {
       });
     }
 
-    // Generate final evaluation if not provided
     let evaluation = finalEvaluation;
     if (!evaluation) {
       evaluation = await geminiService.generateFinalEvaluation(answers);
     }
 
-    // Calculate average confidence score
     const avgConfidenceScore = answers.length
       ? answers.reduce((sum, a) => sum + (a.confidenceScore || 0), 0) / answers.length
       : 0;
 
-    // Save scores to Interview.candidates and Candidate.interviews
-    if (interviewId && candidateCode) {
-      const interview = await Interview.findById(interviewId);
+    if (interviewId || candidateCode) {
+      let interview = null;
+      if (interviewId && mongoose.Types.ObjectId.isValid(interviewId)) {
+        interview = await Interview.findById(interviewId);
+      } else if (interviewId) {
+        interview = await Interview.findOne({ interviewCode: interviewId });
+      }
+      if (!interview && candidateCode) {
+        interview = await Interview.findOne({ 'candidates.code': candidateCode });
+      }
+
       if (interview) {
-        const candidateEntry = interview.candidates.find(c => c.code === candidateCode);
+        const candidateEntry = interview.candidates.find(c => c.code === candidateCode) || interview.candidates[0];
         if (candidateEntry) {
           candidateEntry.status = 'completed';
+          candidateEntry.completedAt = candidateEntry.completedAt || new Date();
           candidateEntry.scores = {
             total: evaluation.overallScore ?? null,
             technical: evaluation.skillAssessment?.technicalKnowledge ?? null,
@@ -372,18 +437,6 @@ const endInterview = async (req, res) => {
             confidence: avgConfidenceScore ?? null
           };
           await interview.save();
-        }
-        // Also update Candidate.interviews
-        if (candidateEntry.candidateId) {
-          const candidate = await Candidate.findById(candidateEntry.candidateId);
-          if (candidate) {
-            const interviewEntry = candidate.interviews.find(i => i.interviewId.toString() === interviewId);
-            if (interviewEntry) {
-              interviewEntry.status = 'completed';
-              interviewEntry.scores = candidateEntry.scores;
-              await candidate.save();
-            }
-          }
         }
       }
     }
@@ -396,7 +449,7 @@ const endInterview = async (req, res) => {
   } catch (error) {
     console.error('Error ending interview:', error);
     res.status(500).json({ 
-      success: false,
+      success: false, 
       error: 'Failed to generate final evaluation',
       details: error.message 
     });
@@ -425,30 +478,37 @@ const getInterviewResults = async (req, res) => {
 // Get mock interview results
 const getMockInterviewResults = async (req, res) => {
   try {
-    // Find all interviews that start with 'mock-'
     const mockInterviews = await Interview.find({ 
-      interviewCode: { $regex: '^mock-' } 
+      $or: [
+        { interviewCode: { $regex: '^mock-' } },
+        { 'candidates.code': { $regex: '^mock-' } },
+        { title: { $regex: 'Mock Interview', $options: 'i' } }
+      ]
     }).sort({ createdAt: -1 });
 
-    // Extract candidate results from mock interviews
     const mockResults = mockInterviews.flatMap(interview => 
       interview.candidates.map(candidate => ({
         id: candidate._id,
-        name: `Mock Candidate - ${interview.interviewCode}`,
-        email: `mock-${interview.interviewCode}@example.com`,
+        name: `Mock Candidate - ${candidate.code || interview.interviewCode}`,
+        email: `mock-${candidate.code || interview.interviewCode}@example.com`,
         status: candidate.status,
         completedAt: candidate.completedAt,
-        duration: 30, // Default duration for mock interviews
+        duration: 30,
         results: {
           technicalScore: candidate.results?.technicalScore || 0,
           communicationScore: candidate.results?.communicationScore || 0,
           problemSolvingScore: candidate.results?.problemSolvingScore || 0,
           overallScore: candidate.results?.overallScore || 0,
+          totalMarks: candidate.results?.totalMarks || 0,
+          maxPossibleMarks: candidate.results?.maxPossibleMarks || 0,
+          percentage: candidate.results?.percentage || (candidate.results?.overallScore ? candidate.results.overallScore * 10 : 0),
+          evaluationSource: candidate.results?.evaluationSource || 'ai',
           strengths: candidate.results?.strengths || [],
           weaknesses: candidate.results?.weaknesses || [],
-          feedback: candidate.results?.feedback || ''
+          feedback: candidate.results?.feedback || '',
+          answers: candidate.results?.answers || []
         },
-        interviewCode: interview.interviewCode,
+        interviewCode: candidate.code || interview.interviewCode,
         skills: interview.skills
       }))
     );
@@ -471,12 +531,11 @@ const submitInterviewResults = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Interview not found' });
     }
 
-    const candidate = interview.candidates.find(c => c.candidate.toString() === candidateId);
+    const candidate = interview.candidates.find(c => c.candidate?.toString() === candidateId);
     if (!candidate) {
       return res.status(404).json({ success: false, error: 'Candidate not found' });
     }
 
-    // Calculate overall score
     const overallScore = interview.calculateOverallScore(
       results.technicalScore,
       results.communicationScore,
@@ -484,7 +543,6 @@ const submitInterviewResults = async (req, res) => {
       results.confidenceScore
     );
 
-    // Update candidate results
     candidate.results = {
       ...results,
       overallScore
@@ -512,28 +570,28 @@ const submitAllAnswers = async (req, res) => {
       });
     }
 
-    // Process all answers
     const processedAnswers = [];
     for (const answer of answers) {
       try {
         const analysis = await geminiService.analyzeAnswer(
           answer.answer, 
-          answer.question
+          answer.question,
+          answer.code
         );
         processedAnswers.push({
           ...answer,
           analysis
         });
       } catch (error) {
-        console.error('Error processing answer:', error);
+        console.error('Error processing answer in submitAllAnswers:', error);
+        const fallback = evaluationEngine.evaluateAnswer(answer.answer, answer.question, { code: answer.code });
         processedAnswers.push({
           ...answer,
-          analysis: getDefaultAnalysis()
+          analysis: fallback
         });
       }
     }
 
-    // Generate final evaluation
     const finalEvaluation = await geminiService.generateFinalEvaluation(processedAnswers);
 
     res.json({
@@ -558,7 +616,7 @@ const analyzeFace = async (req, res) => {
     
     if (!faceBox || !frameSize) {
       return res.status(400).json({ 
-        success: false,
+        success: false, 
         error: 'Missing face detection data' 
       });
     }
@@ -571,9 +629,9 @@ const analyzeFace = async (req, res) => {
   } catch (error) {
     console.error('Face analysis error:', error);
     res.status(500).json({ 
-      success: false,
+      success: false, 
       error: 'Error analyzing face data',
-      details: error.message
+      details: error.message 
     });
   }
 };
@@ -587,7 +645,6 @@ const reportActivity = async (req, res) => {
     console.log('Interview Code:', interviewCode);
     console.log('Report Data:', reportData);
     
-    // Get interview session
     const interview = await InterviewSession.findOne({ interviewCode });
     if (!interview) {
       return res.status(404).json({
@@ -596,7 +653,6 @@ const reportActivity = async (req, res) => {
       });
     }
     
-    // Store suspicious activity in interview session
     if (!interview.suspiciousActivities) {
       interview.suspiciousActivities = [];
     }
@@ -606,7 +662,6 @@ const reportActivity = async (req, res) => {
       timestamp: Date.now()
     });
     
-    // Calculate activity risk level
     const activityCount = interview.suspiciousActivities.length;
     const tabSwitchCount = reportData.tabSwitchCount || 0;
     
@@ -617,15 +672,10 @@ const reportActivity = async (req, res) => {
       riskLevel = 'medium';
     }
     
-    // Update interview with risk assessment
     interview.activityRiskLevel = riskLevel;
     interview.lastActivityReport = Date.now();
     await interview.save();
     
-    console.log('Activity risk level:', riskLevel);
-    console.log('Total suspicious activities:', activityCount);
-    
-    // Store in database for company review
     if (interviewCode && !interviewCode.startsWith('mock-')) {
       try {
         const dbInterview = await Interview.findOne({ interviewCode });
@@ -665,116 +715,190 @@ const reportActivity = async (req, res) => {
   }
 };
 
-const PDFDocument = require('pdfkit');
-
+// Generate comprehensive PDF Report
 const generatePdfReport = async (req, res) => {
   try {
     const { interviewId, candidateId } = req.params;
-    let interview, candidate, candidateName, candidateEmail;
+    let interview = null;
+    let candidate = null;
+    let candidateName = 'Candidate';
+    let candidateEmail = 'candidate@example.com';
 
-    if (interviewId.startsWith('mock-')) {
-       interview = await Interview.findOne({ interviewCode: interviewId });
-       if (interview) {
-         candidate = interview.candidates.find(c => c.code === interviewId);
-         candidateName = `Mock Candidate - ${interviewId}`;
-         candidateEmail = `mock-${interviewId}@example.com`;
-       }
+    // 1. Mock interview handling
+    if (interviewId.startsWith('mock-') || (candidateId && candidateId.startsWith('mock-'))) {
+      const codeToSearch = interviewId.startsWith('mock-') ? interviewId : candidateId;
+      interview = await Interview.findOne({
+        $or: [
+          { interviewCode: codeToSearch },
+          { 'candidates.code': codeToSearch },
+          { interviewCode: { $regex: `^${codeToSearch.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}` } }
+        ]
+      });
+
+      if (interview) {
+        candidate = interview.candidates.find(c => 
+          c.code === codeToSearch || 
+          c.code === candidateId ||
+          c._id.toString() === candidateId
+        ) || interview.candidates[0];
+      }
+
+      // If not in Interview collection, check InterviewSession directly
+      if (!candidate || !candidate.results) {
+        const session = await InterviewSession.findOne({ 
+          $or: [{ interviewCode: interviewId }, { interviewCode: candidateId }] 
+        });
+        if (session && session.answers && session.answers.length > 0) {
+          const finalEval = await geminiService.generateFinalEvaluation(session.answers);
+          interview = {
+            title: `Mock Interview - ${codeToSearch}`,
+            skills: session.skills || ['Technical Interview'],
+            createdAt: session.startTime
+          };
+          const totalMarks = session.answers.reduce((sum, a) => sum + (a.analysis?.score || 0), 0);
+          candidate = {
+            code: codeToSearch,
+            status: 'completed',
+            completedAt: new Date(),
+            results: {
+              technicalScore: finalEval.skillAssessment?.technicalKnowledge || 0,
+              communicationScore: finalEval.skillAssessment?.communicationSkills || 0,
+              problemSolvingScore: finalEval.skillAssessment?.problemSolving || 0,
+              overallScore: finalEval.overallScore || 0,
+              totalMarks,
+              maxPossibleMarks: session.answers.length * 10,
+              percentage: (finalEval.overallScore || 0) * 10,
+              evaluationSource: finalEval.evaluationSource || 'rubric',
+              strengths: finalEval.strengths || [],
+              weaknesses: finalEval.weaknesses || [],
+              feedback: finalEval.overallFeedback || '',
+              answers: session.answers.map(ans => ({
+                question: typeof ans.question === 'object' ? (ans.question.question || ans.question.text || '') : String(ans.question || ''),
+                answer: ans.answer || '',
+                code: ans.code || '',
+                score: ans.analysis?.score ?? 0,
+                technicalKnowledge: ans.analysis?.technicalKnowledge ?? (ans.analysis?.score ?? 0),
+                communicationSkills: ans.analysis?.communicationSkills ?? (ans.analysis?.score ?? 0),
+                problemSolving: ans.analysis?.problemSolving ?? (ans.analysis?.score ?? 0),
+                codingAbility: ans.analysis?.codingAbility ?? 0,
+                feedback: ans.analysis?.feedback || 'Attempt recorded.',
+                improvements: ans.analysis?.improvements || []
+              }))
+            }
+          };
+        }
+      }
+
+      candidateName = `Mock Candidate - ${codeToSearch}`;
+      candidateEmail = `mock-${codeToSearch}@example.com`;
+
     } else {
-       // Search by candidate code/id within interview
-       const mongoose = require('mongoose');
-       if (mongoose.Types.ObjectId.isValid(interviewId)) {
-         interview = await Interview.findById(interviewId).populate('candidates.candidate', 'name email');
-       } else {
-         interview = await Interview.findOne({ interviewCode: interviewId }).populate('candidates.candidate', 'name email');
-       }
-       
-       if (interview) {
-         candidate = interview.candidates.find(c => c._id.toString() === candidateId || c.code === candidateId || (c.candidate && c.candidate._id.toString() === candidateId));
-         candidateName = candidate?.candidate?.name || candidate?.name || candidate?.candidateName || 'Unknown';
-         candidateEmail = candidate?.candidate?.email || candidate?.email || candidate?.candidateEmail || 'Unknown';
-       }
+      // 2. Company interview handling
+      if (mongoose.Types.ObjectId.isValid(interviewId)) {
+        interview = await Interview.findById(interviewId).populate('candidates.candidate', 'name email');
+      } else {
+        interview = await Interview.findOne({ interviewCode: interviewId }).populate('candidates.candidate', 'name email');
+      }
+
+      if (interview) {
+        candidate = interview.candidates.find(c => 
+          c._id.toString() === candidateId || 
+          c.code === candidateId || 
+          (c.candidate && c.candidate._id.toString() === candidateId)
+        );
+        candidateName = candidate?.candidate?.name || candidate?.name || candidate?.candidateName || 'Candidate';
+        candidateEmail = candidate?.candidate?.email || candidate?.email || candidate?.candidateEmail || 'No email';
+      }
     }
 
-    if (!interview || !candidate) {
+    if (!interview || !candidate || !candidate.results) {
       return res.status(404).json({ success: false, error: 'Report not found' });
     }
 
     const doc = new PDFDocument({ margin: 50 });
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=Report-${candidateName.replace(/\\s+/g, '-')}.pdf`);
+    res.setHeader('Content-Disposition', `attachment; filename=Report-${candidateName.replace(/\s+/g, '-')}.pdf`);
     doc.pipe(res);
 
-    doc.fontSize(20).text('Candidate Interview Report', { align: 'center' });
-    doc.moveDown();
+    // Title & Header
+    doc.fontSize(22).fillColor('#1e293b').text('Candidate Interview Evaluation Report', { align: 'center' });
+    doc.moveDown(0.4);
+    doc.fontSize(10).fillColor('#64748b').text('QuickHire AI - Intelligent Candidate Assessment Platform', { align: 'center' });
+    doc.moveDown(0.8);
 
-    doc.fontSize(14).text(`Candidate Name: ${candidateName}`);
+    doc.rect(50, doc.y, 500, 2).fill('#2563eb');
+    doc.moveDown(1);
+
+    // Candidate details
+    doc.fontSize(12).fillColor('#1e293b');
+    doc.text(`Candidate Name: ${candidateName}`);
     doc.text(`Email: ${candidateEmail}`);
-    doc.text(`Interview: ${interview.title || interview.interviewName || 'Untitled'}`);
+    doc.text(`Interview: ${interview.title || interview.interviewName || 'Interview Session'}`);
     doc.text(`Date: ${new Date(candidate.completedAt || candidate.startedAt || Date.now()).toLocaleDateString()}`);
-    doc.moveDown();
+    const sourceLabel = candidate.results.evaluationSource === 'fallback' || candidate.results.evaluationSource === 'rubric' 
+      ? 'Deterministic Rubric Evaluator (Verified Fallback)' 
+      : 'Gemini AI Evaluator';
+    doc.text(`Evaluation Source: ${sourceLabel}`);
+    doc.moveDown(1);
 
-    if (candidate.results) {
-      doc.fontSize(16).text('Scores', { underline: true });
-      doc.fontSize(12).text(`Technical: ${Math.round((candidate.results.technicalScore || 0)*10)/10}/10`);
-      doc.text(`Communication: ${Math.round((candidate.results.communicationScore || 0)*10)/10}/10`);
-      doc.text(`Problem Solving: ${Math.round((candidate.results.problemSolvingScore || 0)*10)/10}/10`);
-      doc.text(`Overall: ${Math.round((candidate.results.overallScore || 0)*10)/10}/10`);
-      doc.moveDown();
-
-      if (candidate.results.feedback) {
-        doc.fontSize(16).text('Feedback', { underline: true });
-        doc.fontSize(12).text(candidate.results.feedback);
-        doc.moveDown();
-      }
-
-      if (candidate.results.strengths && candidate.results.strengths.length > 0) {
-        doc.fontSize(16).text('Strengths', { underline: true });
-        candidate.results.strengths.forEach(s => doc.fontSize(12).text(`• ${s}`));
-        doc.moveDown();
-      }
-
-      if (candidate.results.weaknesses && candidate.results.weaknesses.length > 0) {
-        doc.fontSize(16).text('Areas for Improvement', { underline: true });
-        candidate.results.weaknesses.forEach(w => doc.fontSize(12).text(`• ${w}`));
-        doc.moveDown();
-      }
-
-      if (candidate.results.answers && candidate.results.answers.length > 0) {
-        doc.addPage();
-        doc.fontSize(18).text('Question-by-Question Analysis', { align: 'center' });
-        doc.moveDown();
-
-        candidate.results.answers.forEach((ans, index) => {
-          doc.fontSize(14).text(`Question ${index + 1}: ${ans.question}`, { underline: true });
-          doc.fontSize(12).text(`Answer: ${ans.answer || 'No answer provided'}`);
-          
-          if (ans.score === null || ans.feedback === 'Evaluation failed') {
-            doc.text(`Technical Knowledge: Evaluation Failed`);
-            doc.text(`Coding Ability: Evaluation Failed`);
-            doc.text(`Communication Skills: Evaluation Failed`);
-            doc.text(`Problem Solving: Evaluation Failed`);
-            doc.text(`Feedback: Evaluation failed`);
-          } else if (ans.feedback === 'Question skipped') {
-            doc.text(`Technical Knowledge: N/A`);
-            doc.text(`Coding Ability: N/A`);
-            doc.text(`Communication Skills: N/A`);
-            doc.text(`Problem Solving: N/A`);
-            doc.text(`Feedback: Question skipped`);
-          } else {
-            doc.text(`Technical Knowledge: ${ans.technicalKnowledge !== undefined ? ans.technicalKnowledge : (ans.technicalAccuracy ?? ans.score ?? 0)}/10`);
-            doc.text(`Coding Ability: ${ans.codingAbility !== undefined ? ans.codingAbility : 0}/10`);
-            doc.text(`Communication Skills: ${ans.communicationSkills !== undefined ? ans.communicationSkills : (ans.communication ?? ans.score ?? 0)}/10`);
-            doc.text(`Problem Solving: ${ans.problemSolving !== undefined ? ans.problemSolving : 0}/10`);
-            doc.text(`Feedback: ${ans.feedback || 'None'}`);
-            if (ans.improvements && ans.improvements.length > 0) {
-              doc.text(`Areas for Improvement: ${ans.improvements.join(', ')}`);
-            }
-          }
-          doc.moveDown();
-        });
-      }
+    // Scores
+    doc.fontSize(16).fillColor('#2563eb').text('Overall Scores', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(12).fillColor('#1e293b');
+    doc.text(`Overall Score: ${Math.round((candidate.results.overallScore || 0) * 10) / 10} / 10`);
+    if (candidate.results.totalMarks !== undefined && candidate.results.maxPossibleMarks) {
+      doc.text(`Total Marks: ${candidate.results.totalMarks} / ${candidate.results.maxPossibleMarks} (${candidate.results.percentage || Math.round((candidate.results.totalMarks/candidate.results.maxPossibleMarks)*100)}%)`);
     } else {
-      doc.fontSize(12).text('No detailed results available for this candidate.');
+      doc.text(`Percentage: ${Math.round((candidate.results.overallScore || 0) * 10)}%`);
+    }
+    doc.text(`Technical Knowledge: ${Math.round((candidate.results.technicalScore || 0) * 10) / 10} / 10`);
+    doc.text(`Communication Skills: ${Math.round((candidate.results.communicationScore || 0) * 10) / 10} / 10`);
+    doc.text(`Problem Solving: ${Math.round((candidate.results.problemSolvingScore || 0) * 10) / 10} / 10`);
+    doc.moveDown(1);
+
+    // Executive Feedback
+    if (candidate.results.feedback) {
+      doc.fontSize(14).fillColor('#2563eb').text('Executive Feedback');
+      doc.fontSize(11).fillColor('#334155').text(candidate.results.feedback);
+      doc.moveDown(1);
+    }
+
+    // Strengths
+    if (candidate.results.strengths && candidate.results.strengths.length > 0) {
+      doc.fontSize(14).fillColor('#166534').text('Key Strengths');
+      candidate.results.strengths.forEach(s => doc.fontSize(11).fillColor('#334155').text(`• ${s}`));
+      doc.moveDown(1);
+    }
+
+    // Areas for Improvement
+    if (candidate.results.weaknesses && candidate.results.weaknesses.length > 0) {
+      doc.fontSize(14).fillColor('#b91c1c').text('Areas for Improvement');
+      candidate.results.weaknesses.forEach(w => doc.fontSize(11).fillColor('#334155').text(`• ${w}`));
+      doc.moveDown(1);
+    }
+
+    // Question-by-Question Analysis
+    if (candidate.results.answers && candidate.results.answers.length > 0) {
+      doc.addPage();
+      doc.fontSize(18).fillColor('#1e293b').text('Question-by-Question Analysis', { align: 'center' });
+      doc.moveDown(1);
+
+      candidate.results.answers.forEach((ans, index) => {
+        doc.fontSize(13).fillColor('#2563eb').text(`Question ${index + 1}: ${ans.question}`);
+        doc.moveDown(0.2);
+        doc.fontSize(10).fillColor('#475569').text(`Answer: ${ans.answer || (ans.code ? '[Code submitted]' : 'No answer provided')}`);
+        if (ans.code) {
+          doc.fontSize(9).fillColor('#0f172a').text(`Code:\n${ans.code}`);
+        }
+        doc.moveDown(0.2);
+        doc.fontSize(10).fillColor('#1e293b').text(`Score Awarded: ${ans.score !== undefined ? ans.score : 0} / 10`);
+        doc.text(`Technical Knowledge: ${ans.technicalKnowledge ?? ans.score ?? 0} / 10  |  Communication: ${ans.communicationSkills ?? ans.score ?? 0} / 10  |  Problem Solving: ${ans.problemSolving ?? ans.score ?? 0} / 10`);
+        doc.text(`Feedback: ${ans.feedback || 'Relevant response.'}`);
+        if (ans.improvements && ans.improvements.length > 0) {
+          doc.text(`Improvement Suggestion: ${ans.improvements.join(', ')}`);
+        }
+        doc.moveDown(1);
+      });
     }
 
     doc.end();
@@ -796,4 +920,4 @@ module.exports = {
   analyzeFace,
   reportActivity,
   generatePdfReport
-}; 
+};

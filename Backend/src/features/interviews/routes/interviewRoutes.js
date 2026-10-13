@@ -93,8 +93,10 @@ router.post('/evaluate-answer', async (req, res) => {
       });
     }
 
-    // Allow empty answer for skipped questions
-    if (!answer && !skipped) {
+    // Allow empty answer for skipped questions or if code was provided
+    const hasAnswerContent = (typeof answer === 'string' && answer.trim().length > 0) || 
+                            (typeof req.body.code === 'string' && req.body.code.trim().length > 0);
+    if (!hasAnswerContent && !skipped) {
       return res.status(400).json({ 
         success: false,
         error: 'Answer is required unless question is being skipped'

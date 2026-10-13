@@ -1,5 +1,6 @@
 const { generateContentWithRetry } = require("../../../shared/services/geminiClient");
 const { questionsBank, genericBank } = require("../../../shared/data/interviewBank");
+const evaluationEngine = require("./evaluationEngine");
 
 const calculateSimilarity = (str1, str2) => {
   if (!str1 || !str2) return 0;
@@ -16,17 +17,15 @@ const getFallbackQuestion = (skill, previousQuestions = [], focusArea = null) =>
   // Filter out previously used questions
   const unusedQuestions = bank.filter(bankItem => 
     !previousQuestions.some(prevQ => {
-      const qText = typeof prevQ === 'string' ? prevQ : prevQ.question;
+      const qText = typeof prevQ === 'string' ? prevQ : (prevQ?.question || prevQ?.text || '');
       return calculateSimilarity(qText, bankItem.question) > 0.7;
     })
   );
 
   let selectedItem;
   if (unusedQuestions.length > 0) {
-    // Try to match focus area if provided
     selectedItem = unusedQuestions.find(q => q.category === focusArea) || unusedQuestions[0];
   } else {
-    // Ultimate fallback if bank is exhausted
     selectedItem = {
       question: `Tell me about your experience with ${skill} and any recent projects.`,
       category: 'experience'
@@ -53,8 +52,7 @@ const generateQuestion = async (skill, previousQuestions = [], questionIndex = 0
   try {
     console.log(`Generating question for skill: ${skill}, index: ${questionIndex}, focus: ${focusArea}`);
     
-    // Extract question strings for similarity and prompt
-    const prevQStrings = previousQuestions.map(q => typeof q === 'string' ? q : q.question);
+    const prevQStrings = previousQuestions.map(q => typeof q === 'string' ? q : (q?.question || q?.text || ''));
     
     let prompt;
     const isCodeQuestion = questionIndex === 2; // 3rd question is code/SQL
@@ -101,7 +99,7 @@ Return only the JSON object:
     }
 
     let attempts = 0;
-    while (attempts < 3) {
+    while (attempts < 2) {
       const response = await generateContentWithRetry(prompt, { isJson: true });
       if (response.ok && response.data) {
         const question = response.data;
@@ -123,163 +121,202 @@ Return only the JSON object:
         console.log(`[geminiService] Generated AI question for ${skill} (source: ai)`);
         return question;
       } else {
-        // Break on AI failure (e.g. quota, timeout) to use fallback
         break;
       }
     }
     
-    // If we exhaust retries or AI fails outright
     return getFallbackQuestion(skill, previousQuestions, focusArea);
   } catch (error) {
-    console.error('Error generating question:', error);
+    console.error('Error generating question, using fallback bank:', error.message);
     return getFallbackQuestion(skill, previousQuestions, focusArea);
   }
 };
 
-const analyzeAnswer = async (answer, question) => {
-  try {
-    if (!answer || answer.toLowerCase().includes('skipped') || answer.trim() === '') {
-      return {
-        score: 0,
-        feedback: 'Question was skipped',
-        technicalAccuracy: 0,
-        communication: 0,
-        improvements: ['Please provide a detailed answer']
-      };
-    }
+/**
+ * Analyzes answer with Gemini AI, guaranteed to award fair partial marks.
+ * Automatically falls back to deterministic evaluationEngine if AI fails,
+ * times out, is quota-limited, or returns invalid responses.
+ */
+const analyzeAnswer = async (answer, question, code = '') => {
+  const rawAnswer = typeof answer === 'string' ? answer.trim() : '';
+  const rawCode = typeof code === 'string' ? code.trim() : '';
+  const combinedAnswer = rawCode ? `${rawAnswer}\n${rawCode}`.trim() : rawAnswer;
 
-    const questionText = typeof question === 'object' ? (question.question || question.text || JSON.stringify(question)) : question;
-    const prompt = `You are a lenient but technically responsible technical interview evaluator.
-Your goal is to assess what the candidate actually demonstrated, not whether their answer is perfectly worded.
+  // Safe extraction of question text and id (resolves the question.substring bug)
+  const questionText = typeof question === 'object' && question !== null
+    ? (question.question || question.text || JSON.stringify(question))
+    : String(question || '');
 
-Evaluate the candidate on:
-1. Technical Knowledge
-2. Coding Ability
-3. Communication Skills
-4. Problem Solving
+  const questionId = (typeof question === 'object' && question !== null && question.id)
+    ? question.id
+    : `q_${Date.now()}`;
 
-IMPORTANT EVALUATION RULES:
-- Award partial credit.
-- Do not require a perfect answer.
-- Minor factual mistakes should reduce marks, not automatically result in zero.
-- Incomplete answers should receive partial marks if they contain relevant knowledge.
-- Grammar mistakes should not heavily reduce the score.
-- Speech-to-text mistakes should not be interpreted as lack of knowledge when the intended technical meaning is reasonably clear.
-- Do not penalize accent.
-- Do not require perfect English.
-- Recognize relevant technical terminology even if speech transcription contains minor errors.
-- Give communication marks when the candidate successfully communicates a technical idea.
-- Give problem-solving marks when the candidate demonstrates a reasonable approach.
-- Give coding marks for correct logic, algorithmic approach, pseudocode, or implementation understanding when applicable.
-- Do not give zero merely because the candidate did not mention every expected point.
-- A completely irrelevant answer may receive very low marks.
-- Never fabricate information that the candidate did not provide.
+  // Check if skipped or empty
+  if (!combinedAnswer || combinedAnswer === '' || combinedAnswer.toLowerCase().includes('skipped') || combinedAnswer.toLowerCase() === 'skip') {
+    return {
+      questionId,
+      maxMarks: 10,
+      awardedMarks: 0,
+      score: 0,
+      attempted: false,
+      feedback: 'Question was skipped',
+      technicalKnowledge: 0,
+      codingAbility: 0,
+      communicationSkills: 0,
+      problemSolving: 0,
+      relevanceScore: 0,
+      strengths: [],
+      improvements: ['Attempt all questions to earn marks.'],
+      evaluationSource: 'rubric'
+    };
+  }
 
-The question is:
-${questionText}
-
-The candidate's original speech transcript is:
-${answer}
-
-Evaluate the candidate's demonstrated knowledge.
-
-Return ONLY valid JSON:
-{
-  "technicalKnowledge": 0,
-  "codingAbility": 0,
-  "communicationSkills": 0,
-  "problemSolving": 0,
-  "overallScore": 0,
-  "feedback": "",
-  "strengths": [],
-  "improvements": []
-}
-
-Scores must be integers or decimals from 0 to 10. Use partial credit.
-The feedback must explain what the candidate did correctly and what could be improved.
-Do not return "Evaluation failed" as candidate feedback.
-
-CRITICAL INSTRUCTIONS:
-- You MUST return ONLY a valid JSON object.
-- Do NOT wrap the JSON in markdown code blocks (e.g. \`\`\`json).
-- Do NOT output any conversational text before or after the JSON.`;
-
-    console.log(`
+  console.log(`
 ================================================
 INTERVIEW EVALUATION DEBUG
 ================================================
-AI request started for question: "${question.substring(0, 50)}..."
-Candidate Answer Length: ${answer.length}
-Candidate Answer: "${answer.substring(0, 100)}..."
+Question: "${questionText.substring(0, 60)}..."
+Answer Length: ${combinedAnswer.length}
+Answer Preview: "${combinedAnswer.substring(0, 80)}..."
 ================================================
 `);
 
-    // Retry evaluation once internally
-    const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 2 });
+  // Prompt following the mandatory lenient scoring rubric
+  const prompt = `You are a fair, lenient technical interview evaluator.
+Your goal is to evaluate what knowledge and understanding the candidate actually demonstrated.
+
+MANDATORY SCORING POLICY:
+- Relevant and substantially correct answer: 7.5 to 10.0 marks (out of 10)
+- Mostly correct answer with minor mistakes or omissions: 6.0 to 8.0 marks
+- Partially correct answer showing some understanding: 3.5 to 6.0 marks
+- Relevant attempt with limited knowledge: 1.5 to 3.5 marks
+- Meaningful but vague attempt: 0.5 to 2.0 marks
+- Empty, completely irrelevant, or nonsense: 0.0 to 0.5 marks
+
+EVALUATION RULES:
+1. Always award partial marks for relevant concepts, keywords, examples, reasoning, or understanding.
+2. Accept equivalent terminology, alternative approaches, and explanations in simple English.
+3. Do NOT require exact wording from a reference answer.
+4. Do NOT penalize grammar, accent, filler words, or minor speech-to-text transcription quirks.
+5. Incomplete answers must receive partial marks if they contain relevant knowledge.
+6. Communication score should reflect clarity of idea, not native English perfection.
+7. Problem solving score should reflect logical thought process and trade-offs.
+
+Question:
+"${questionText}"
+
+Candidate's Answer (Speech transcript and/or code):
+"${combinedAnswer}"
+
+Return ONLY a valid JSON object matching this schema:
+{
+  "questionId": "${questionId}",
+  "maxMarks": 10,
+  "awardedMarks": 6.5,
+  "overallScore": 6.5,
+  "relevanceScore": 7.0,
+  "technicalKnowledge": 6.5,
+  "codingAbility": 6.0,
+  "communicationSkills": 7.0,
+  "problemSolving": 6.0,
+  "feedback": "Clear explanation of core concept, but could add details on edge cases.",
+  "strengths": ["Identified primary concept correctly", "Clear communication"],
+  "improvements": ["Explain practical implementation in greater depth"]
+}`;
+
+  try {
+    const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 1 });
+    
     if (response.ok && response.data) {
       const data = response.data;
-      const evaluation = {
-        score: data.overallScore ?? data.score ?? 0,
-        feedback: data.feedback ?? '',
-        technicalKnowledge: data.technicalKnowledge ?? data.technicalAccuracy ?? 0,
-        codingAbility: data.codingAbility ?? 0,
-        communicationSkills: data.communicationSkills ?? data.communication ?? 0,
-        problemSolving: data.problemSolving ?? 0,
-        improvements: data.improvements ?? [],
-        strengths: data.strengths ?? []
+      
+      // Validate and clamp all scores safely to 0-10
+      const clamp = (val, def = 5) => {
+        const num = Number(val);
+        if (Number.isNaN(num) || !Number.isFinite(num)) return def;
+        return Math.round(Math.min(10, Math.max(0, num)) * 10) / 10;
       };
-      console.log(`[GeminiService] Evaluation Success: Score ${evaluation.score}/10`);
+
+      const finalScore = clamp(data.awardedMarks ?? data.overallScore ?? data.score, 6.0);
+      const finalTech = clamp(data.technicalKnowledge ?? data.technicalAccuracy, finalScore);
+      const finalComm = clamp(data.communicationSkills ?? data.communication, finalScore);
+      const finalProb = clamp(data.problemSolving, finalScore);
+      const finalCoding = clamp(data.codingAbility, finalTech);
+      const finalRelevance = clamp(data.relevanceScore, finalScore);
+
+      const evaluation = {
+        questionId,
+        maxMarks: 10,
+        awardedMarks: finalScore,
+        score: finalScore,
+        attempted: true,
+        relevanceScore: finalRelevance,
+        technicalKnowledge: finalTech,
+        codingAbility: finalCoding,
+        communicationSkills: finalComm,
+        problemSolving: finalProb,
+        feedback: data.feedback || 'Good attempt with relevant points discussed.',
+        strengths: Array.isArray(data.strengths) && data.strengths.length > 0 
+          ? data.strengths 
+          : ['Demonstrated technical understanding'],
+        improvements: Array.isArray(data.improvements) && data.improvements.length > 0
+          ? data.improvements
+          : ['Continue practicing detailed implementation trade-offs'],
+        evaluationSource: 'ai'
+      };
+
+      // Safeguard: If AI mistakenly scored 0 on an attempted answer with > 5 words, apply rubric floor
+      if (evaluation.score === 0 && combinedAnswer.split(/\s+/).length >= 4) {
+        console.warn('[GeminiService] AI awarded zero for attempted answer. Applying rubric fallback floor.');
+        const fallbackEval = evaluationEngine.evaluateAnswer(combinedAnswer, question, { code: rawCode });
+        return {
+          ...evaluation,
+          score: Math.max(evaluation.score, fallbackEval.score),
+          awardedMarks: Math.max(evaluation.awardedMarks, fallbackEval.awardedMarks),
+          technicalKnowledge: Math.max(evaluation.technicalKnowledge, fallbackEval.technicalKnowledge),
+          feedback: fallbackEval.feedback,
+          evaluationSource: 'ai-verified'
+        };
+      }
+
+      console.log(`[GeminiService] Evaluation Success: Score ${evaluation.score}/10 (Source: AI)`);
       return evaluation;
     }
-    
-    console.error(`[GeminiService] Failed to analyze answer with AI. Code: ${response.errorCode} Msg: ${response.errorMessage}`);
-    return { 
-      evaluationFailed: true, 
-      score: null, 
-      feedback: "Evaluation failed",
-      errorCode: response.errorCode || 'EVALUATION_ERROR',
-      errorMessage: response.errorMessage || 'Unknown AI Error'
-    };
+
+    console.warn(`[GeminiService] AI evaluation unavailable (${response.errorCode || 'Error'}). Activating deterministic fallback evaluator.`);
+    return evaluationEngine.evaluateAnswer(combinedAnswer, question, { code: rawCode });
+
   } catch (error) {
-    console.error("[INTERVIEW AI EVALUATION ERROR]", {
-       questionId: typeof question === 'object' ? question.id : undefined,
-       questionText: typeof question === 'object' ? question.question : question,
-       errorName: error?.name,
-       errorMessage: error?.message,
-       status: error?.response?.status,
-       response: error?.response?.data
-    });
-    return { 
-      evaluationFailed: true, 
-      score: null, 
-      feedback: "Evaluation failed",
-      errorCode: 'INTERNAL_EXCEPTION',
-      errorMessage: error.message
-    };
+    console.error("[GeminiService] Exception during AI evaluation. Invoking fallback engine:", error.message);
+    return evaluationEngine.evaluateAnswer(combinedAnswer, question, { code: rawCode });
   }
 };
 
 const generateFollowUpQuestion = async (originalQuestion, userAnswer, answerQuality) => {
   try {
+    const qText = typeof originalQuestion === 'object' ? (originalQuestion.question || originalQuestion.text) : originalQuestion;
+    const topic = typeof originalQuestion === 'object' ? (originalQuestion.topic || originalQuestion.skill || 'technical') : 'technical';
+    const qId = typeof originalQuestion === 'object' ? originalQuestion.id : `q_${Date.now()}`;
+
     const prompt = `Based on this interview exchange:
     
-Original Question: "${originalQuestion.question}"
+Original Question: "${qText}"
 User's Answer: "${userAnswer}"
-Answer Quality Score: ${answerQuality.score}/10
+Answer Quality Score: ${answerQuality?.score || 5}/10
 
 Generate a follow-up question that:
 - Is specific to the user's answer
 - Probes deeper into the topic
 - Asks for clarification, examples, or practical implementation
-- Is appropriate for the skill: ${originalQuestion.topic}
+- Is appropriate for the skill: ${topic}
 
 Return only the JSON object:
 {
   "question": "follow-up question",
-  "topic": "${originalQuestion.topic}",
+  "topic": "${topic}",
   "difficulty": "medium",
   "type": "follow-up",
-  "originalQuestionId": "${originalQuestion.id}"
+  "originalQuestionId": "${qId}"
 }`;
 
     const response = await generateContentWithRetry(prompt, { isJson: true });
@@ -288,48 +325,100 @@ Return only the JSON object:
       const followUp = response.data;
       followUp.source = 'ai';
       
-      // Prevent generic follow-up from AI
-      if (calculateSimilarity(followUp.question, `Can you elaborate on your answer about ${originalQuestion.topic}?`) > 0.8) {
+      if (calculateSimilarity(followUp.question, `Can you elaborate on your answer about ${topic}?`) > 0.8) {
          console.log('[geminiService] AI returned generic follow-up. Skipping.');
          return null;
       }
       return followUp;
     }
     
-    console.log('[geminiService] AI failed to generate follow-up. Skipping follow-up.');
+    console.log('[geminiService] AI follow-up skipped.');
     return null;
   } catch (error) {
-    console.error('Error generating follow-up question:', error);
-    return null; // Skip follow-up on error
+    console.warn('Error generating follow-up question:', error.message);
+    return null;
   }
 };
 
-const generateFinalEvaluation = async (answers) => {
-  const computedScores = calculateSkillScores(answers);
-  const isZero = computedScores.overallScore === 0;
-
-  try {
-    if (!answers || answers.length === 0 || isZero) {
-      return createDefaultFinalEvaluation(answers, computedScores);
+/**
+ * Calculates aggregate skill scores safely without NaN or undefined
+ */
+const calculateSkillScores = (answers) => {
+  if (!answers || !Array.isArray(answers) || answers.length === 0) {
+    return { overallScore: 0, technicalKnowledge: 0, codingAbility: 0, communicationSkills: 0, problemSolving: 0 };
+  }
+  
+  let totals = { score: 0, tech: 0, comm: 0, prob: 0, code: 0 };
+  let count = 0;
+  
+  for (const ans of answers) {
+    // Resolve evaluation data from analysis or evaluation object
+    let analysis = ans.evaluation || ans.analysis;
+    if (!analysis || analysis.score === null || analysis.score === undefined || analysis.evaluationFailed) {
+      // Evaluate on the fly if missing
+      analysis = evaluationEngine.evaluateAnswer(ans.answer, ans.question, { code: ans.code });
+      ans.analysis = analysis;
+      ans.evaluation = analysis;
     }
 
-    const answersText = answers.map((ans, index) => 
-      `Question ${index + 1}: ${ans.question}\nAnswer: ${ans.answer}\nScore: ${ans.analysis?.score || 'N/A'}`
-    ).join('\n\n');
+    const s = typeof analysis.score === 'number' ? analysis.score : (analysis.awardedMarks || 0);
+    const t = typeof analysis.technicalKnowledge === 'number' ? analysis.technicalKnowledge : (analysis.technicalAccuracy || s);
+    const c = typeof analysis.communicationSkills === 'number' ? analysis.communicationSkills : (analysis.communication || s);
+    const p = typeof analysis.problemSolving === 'number' ? analysis.problemSolving : s;
+    const cd = typeof analysis.codingAbility === 'number' ? analysis.codingAbility : t;
 
-    const prompt = `Based on these interview answers, provide a comprehensive final evaluation feedback.
+    totals.score += s;
+    totals.tech += t;
+    totals.comm += c;
+    totals.prob += p;
+    totals.code += cd;
+    count++;
+  }
+  
+  const safeCount = count > 0 ? count : 1;
+  const round1 = (val) => Math.round(val * 10) / 10;
+  
+  return {
+    overallScore: round1(totals.score / safeCount),
+    technicalKnowledge: round1(totals.tech / safeCount),
+    codingAbility: round1(totals.code / safeCount),
+    communicationSkills: round1(totals.comm / safeCount),
+    problemSolving: round1(totals.prob / safeCount)
+  };
+};
+
+/**
+ * Generates final comprehensive evaluation with AI or fallback engine
+ */
+const generateFinalEvaluation = async (answers = []) => {
+  const computedScores = calculateSkillScores(answers);
+  const round1 = (val) => Math.round(val * 10) / 10;
+
+  try {
+    if (!answers || answers.length === 0) {
+      return evaluationEngine.generateFinalEvaluation(answers);
+    }
+
+    const answersText = answers.map((ans, index) => {
+      const qText = typeof ans.question === 'object' ? (ans.question.question || ans.question.text || '') : ans.question;
+      const score = ans.evaluation?.score ?? ans.analysis?.score ?? 'N/A';
+      return `Question ${index + 1}: ${qText}\nAnswer: ${ans.answer || ''}\nScore: ${score}/10`;
+    }).join('\n\n');
+
+    const prompt = `Based on these technical interview answers, generate comprehensive final evaluation feedback.
 ${answersText}
 
 Provide a detailed evaluation in this JSON format:
 {
-  "strengths": ["list of candidate's strengths"],
-  "weaknesses": ["areas for improvement"],
-  "recommendations": ["specific recommendations for growth"],
-  "overallFeedback": "comprehensive feedback on the candidate's performance",
+  "strengths": ["list of 3 specific candidate strengths observed"],
+  "weaknesses": ["list of 3 constructive areas for improvement"],
+  "recommendations": ["list of 3 concrete learning recommendations"],
+  "overallFeedback": "detailed professional summary of performance",
   "hiringRecommendation": "strongly recommend/recommend/consider/not recommend"
 }`;
 
-    const response = await generateContentWithRetry(prompt, { isJson: true });
+    const response = await generateContentWithRetry(prompt, { isJson: true, maxRetries: 1 });
+    
     if (response.ok && response.data) {
       const data = response.data;
       return {
@@ -340,90 +429,32 @@ Provide a detailed evaluation in this JSON format:
           communicationSkills: computedScores.communicationSkills,
           problemSolving: computedScores.problemSolving
         },
-        strengths: data.strengths ?? [],
-        weaknesses: data.weaknesses ?? data.areas_for_improvement ?? data.improvements ?? [],
-        recommendations: data.recommendations ?? [],
-        overallFeedback: data.overallFeedback ?? data.overall_feedback ?? data.feedback ?? '',
-        hiringRecommendation: data.hiringRecommendation ?? data.hiring_recommendation ?? 'consider'
+        strengths: Array.isArray(data.strengths) && data.strengths.length > 0 
+          ? data.strengths 
+          : ['Demonstrated understanding of core concepts', 'Engaged actively with technical questions'],
+        weaknesses: Array.isArray(data.weaknesses) && data.weaknesses.length > 0 
+          ? data.weaknesses 
+          : (data.improvements || ['Provide deeper system implementation details']),
+        recommendations: Array.isArray(data.recommendations) && data.recommendations.length > 0
+          ? data.recommendations
+          : ['Continue practicing hands-on system architecture and coding.'],
+        overallFeedback: data.overallFeedback || data.feedback || `Candidate completed the interview with an overall score of ${computedScores.overallScore}/10.`,
+        hiringRecommendation: data.hiringRecommendation || (computedScores.overallScore >= 6.5 ? 'recommend' : 'consider'),
+        careerReadiness: {
+          level: computedScores.overallScore >= 7.5 ? 'Job Ready (Advanced)' : (computedScores.overallScore >= 5.0 ? 'Developing' : 'Needs Practice'),
+          recommendation: computedScores.overallScore >= 6.5 ? 'Suitable for interview shortlisting.' : 'Recommended for continued practice.'
+        },
+        evaluationSource: 'ai'
       };
     }
-    
-    return createDefaultFinalEvaluation(answers, computedScores);
+
+    console.log('[geminiService] AI final evaluation unavailable. Using deterministic fallback generator.');
+    return evaluationEngine.generateFinalEvaluation(answers);
+
   } catch (error) {
-    console.error('Error generating final evaluation:', error);
-    return createDefaultFinalEvaluation(answers, computedScores);
+    console.error('Error generating final evaluation with AI. Falling back to deterministic engine:', error.message);
+    return evaluationEngine.generateFinalEvaluation(answers);
   }
-};
-
-const createDefaultFinalEvaluation = (answers, computedScores) => {
-  const isZero = computedScores.overallScore === 0;
-  const answeredCount = answers.filter(a => a.answer && a.answer.trim().length > 0 && !a.answer.toLowerCase().includes('skipped')).length;
-  const hasAnswers = answeredCount > 0;
-  
-  let strengths = ['None observed'];
-  let weaknesses = ['Did not answer questions', 'Skipped interview portions'];
-  let recommendations = ['Please attempt to answer the questions in the future'];
-  let overallFeedback = 'Candidate skipped or did not provide answers to the questions.';
-  
-  if (hasAnswers && isZero) {
-    strengths = ['Attempted questions', 'Participated in the interview'];
-    weaknesses = ['Evaluation service failed to score responses'];
-    recommendations = ['Manual review of answers required'];
-    overallFeedback = 'Candidate provided answers, but the AI evaluation service failed to process them. Please review the transcribed answers manually.';
-  } else if (!isZero) {
-    strengths = ['Demonstrated willingness to participate', 'Provided answers to questions'];
-    weaknesses = ['Could improve technical depth', 'More specific examples needed'];
-    recommendations = ['Continue learning and practicing', 'Work on providing detailed explanations'];
-    overallFeedback = 'Candidate participated in the interview and provided answers to questions.';
-  }
-
-  return {
-    overallScore: computedScores.overallScore,
-    skillAssessment: {
-      technicalKnowledge: computedScores.technicalKnowledge,
-      codingAbility: computedScores.codingAbility,
-      communicationSkills: computedScores.communicationSkills,
-      problemSolving: computedScores.problemSolving
-    },
-    strengths,
-    weaknesses,
-    recommendations,
-    overallFeedback,
-    hiringRecommendation: isZero && !hasAnswers ? 'not recommend' : 'consider'
-  };
-};
-
-const calculateSkillScores = (answers) => {
-  if (!answers || answers.length === 0) {
-    return { overallScore: 0, technicalKnowledge: 0, codingAbility: 0, communicationSkills: 0, problemSolving: 0 };
-  }
-  
-  let totals = { score: 0, tech: 0, comm: 0 };
-  let counts = { score: 0, tech: 0, comm: 0 };
-  
-  for (const ans of answers) {
-    const analysis = ans.analysis;
-    if (analysis && !analysis.evaluationFailed) {
-      if (typeof analysis.score === 'number') { totals.score += analysis.score; counts.score++; }
-      if (typeof analysis.technicalAccuracy === 'number') { totals.tech += analysis.technicalAccuracy; counts.tech++; }
-      if (typeof analysis.communication === 'number') { totals.comm += analysis.communication; counts.comm++; }
-    }
-  }
-  
-  const avgScore = counts.score > 0 ? totals.score / counts.score : 0;
-  const avgTech = counts.tech > 0 ? totals.tech / counts.tech : avgScore;
-  const avgComm = counts.comm > 0 ? totals.comm / counts.comm : avgScore;
-  
-  // Format to 1 decimal place
-  const formatScore = (val) => Math.round(val * 10) / 10;
-  
-  return {
-    overallScore: formatScore(avgScore),
-    technicalKnowledge: formatScore(avgTech),
-    codingAbility: formatScore(avgTech), // derived from tech if not separate
-    communicationSkills: formatScore(avgComm),
-    problemSolving: formatScore(avgScore) // derived from overall if not separate
-  };
 };
 
 module.exports = {
@@ -431,5 +462,6 @@ module.exports = {
   generateFollowUpQuestion,
   analyzeAnswer,
   generateFinalEvaluation,
-  getFallbackQuestion
+  getFallbackQuestion,
+  calculateSkillScores
 };

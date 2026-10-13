@@ -39,14 +39,32 @@ const CandidateSchema = new mongoose.Schema({
       min: 0,
       max: 10
     },
+    totalMarks: Number,
+    maxPossibleMarks: Number,
+    percentage: Number,
+    evaluationSource: {
+      type: String,
+      default: 'ai'
+    },
     strengths: [String],
     weaknesses: [String],
     feedback: String,
     answers: [{
       question: String,
       answer: String,
+      code: String,
       score: Number,
-      feedback: String
+      maxMarks: { type: Number, default: 10 },
+      relevanceScore: Number,
+      technicalKnowledge: Number,
+      codingAbility: Number,
+      communicationSkills: Number,
+      problemSolving: Number,
+      feedback: String,
+      strengths: [String],
+      improvements: [String],
+      attempted: { type: Boolean, default: true },
+      evaluationSource: { type: String, default: 'ai' }
     }]
   },
   activityReports: [{
@@ -113,14 +131,15 @@ interviewSchema.methods.generateCandidateCode = function() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 };
 
-// Calculate overall score
+// Calculate overall score (0 to 10 with 1 decimal place)
 interviewSchema.methods.calculateOverallScore = function(technical, communication, problemSolving, confidence) {
+  const t = Number(technical) || 0;
+  const c = Number(communication) || 0;
+  const p = Number(problemSolving) || 0;
+  const cf = Number(confidence) || 0;
   return Math.round(
-    (technical * 0.4) + 
-    (communication * 0.3) + 
-    (problemSolving * 0.2) + 
-    (confidence * 0.1)
-  );
+    ((t * 0.4) + (c * 0.3) + (p * 0.2) + (cf * 0.1)) * 10
+  ) / 10;
 };
 
 module.exports = mongoose.model('Interview', interviewSchema); 
