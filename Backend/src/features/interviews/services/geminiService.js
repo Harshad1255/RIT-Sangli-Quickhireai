@@ -1,5 +1,5 @@
 const { generateContentWithRetry } = require("../../../shared/services/geminiClient");
-const { questionsBank, genericBank } = require("../../../shared/data/interviewBank");
+const { questionsBank, genericBank, getQuestionsForSkill } = require("../../../shared/data/interviewBank");
 const evaluationEngine = require("./evaluationEngine");
 
 const calculateSimilarity = (str1, str2) => {
@@ -11,24 +11,100 @@ const calculateSimilarity = (str1, str2) => {
   return commonWords.length / Math.max(words1.length, words2.length);
 };
 
-const getFallbackQuestion = (skill, previousQuestions = [], focusArea = null) => {
-  const bank = questionsBank[skill] || genericBank;
+const detectBranch = (skill, explicitBranch = null) => {
+  if (explicitBranch && typeof explicitBranch === 'string' && explicitBranch.trim()) {
+    const b = explicitBranch.trim().toLowerCase();
+    if (b.includes('civil')) return 'Civil';
+    if (b.includes('mech')) return 'Mechanical';
+    if (b.includes('elec')) return 'Electrical';
+    if (b.includes('entc') || b.includes('telecom')) return 'ENTC';
+    if (b.includes('cs') || b.includes('it') || b.includes('software')) return 'CS/IT';
+  }
+
+  const s = String(skill || '').toLowerCase();
+  const civilTokens = ['beam', 'column', 'truss', 'frame', 'soil', 'foundation', 'retaining', 'earthquake', 'road', 'railway', 'traffic', 'airport', 'survey', 'level', 'theodolite', 'gps', 'concrete', 'cement', 'civil', 'slump', 'geotech', 'structural', 'rcc', 'cbr', 'camber'];
+  const mechTokens = ['thermo', 'entropy', 'fluid', 'pump', 'turbine', 'hydraulic', 'gear', 'bearing', 'shaft', 'casting', 'welding', 'machining', 'mechanical', 'otto', 'diesel'];
+  const elecTokens = ['power system', 'transformer', 'electrical machine', 'dc motor', 'induction motor', 'synchronous', 'transmission line', 'substation', 'relays', 'electrical'];
+  const entcTokens = ['analog circuit', 'op-amp', 'modulation', 'demodulation', 'antenna', '8085', '8086', 'microprocessor', 'logic gate', 'flip-flop', 'entc', 'electronics'];
+
+  if (civilTokens.some(t => s.includes(t))) return 'Civil';
+  if (mechTokens.some(t => s.includes(t))) return 'Mechanical';
+  if (elecTokens.some(t => s.includes(t))) return 'Electrical';
+  if (entcTokens.some(t => s.includes(t))) return 'ENTC';
+  return 'CS/IT';
+};
+
+const getFallbackQuestion = (skill, previousQuestions = [], focusArea = null, branch = null) => {
+  const resolvedBranch = detectBranch(skill, branch);
+  const bank = getQuestionsForSkill(skill, resolvedBranch);
   
-  // Filter out previously used questions
-  const unusedQuestions = bank.filter(bankItem => 
-    !previousQuestions.some(prevQ => {
-      const qText = typeof prevQ === 'string' ? prevQ : (prevQ?.question || prevQ?.text || '');
-      return calculateSimilarity(qText, bankItem.question) > 0.7;
-    })
-  );
+  const prevQStrings = (previousQuestions || []).map(q => {
+    if (!q) return '';
+    if (typeof q === 'string') return q.toLowerCase();
+    return (q.question || q.text || '').toLowerCase();
+  }).filter(Boolean);
+
+  // Filter out any questions that are similar or share key words with previous questions
+  const unusedQuestions = bank.filter(bankItem => {
+    const bText = (bankItem.question || '').toLowerCase();
+    return !prevQStrings.some(prevQ => {
+      if (calculateSimilarity(prevQ, bText) > 0.45) return true;
+      if (bText.length > 20 && prevQ.includes(bText.substring(0, 25))) return true;
+      if (prevQ.length > 20 && bText.includes(prevQ.substring(0, 25))) return true;
+      return false;
+    });
+  });
 
   let selectedItem;
   if (unusedQuestions.length > 0) {
     selectedItem = unusedQuestions.find(q => q.category === focusArea) || unusedQuestions[0];
   } else {
+    // Generate fresh non-repeating question using dynamic templates based on branch
+    const salt = (previousQuestions.length || 0) + 1;
+    const dynamicTemplates = {
+      Civil: [
+        `Explain the fundamental structural and material analysis principles for ${skill} in Civil Engineering.`,
+        `Describe the step-by-step practical testing procedure or on-site inspection methods used for ${skill}.`,
+        `What are the most critical safety factors, load considerations, and code compliance standards for ${skill}?`,
+        `How do environmental degradation, moisture, and structural stress affect ${skill} over its design lifespan?`,
+        `Discuss the key engineering trade-offs between conventional design and modern advanced techniques for ${skill}.`
+      ],
+      Mechanical: [
+        `Explain the core thermodynamic and mechanical principles governing ${skill}.`,
+        `How do you calculate stress distribution, efficiency, or thermal behavior for ${skill}?`,
+        `What are common failure modes (fatigue, wear, cavitation) in ${skill} and how are they prevented?`,
+        `Discuss design optimization and material selection considerations for ${skill}.`,
+        `Describe a practical manufacturing or maintenance procedure for ${skill}.`
+      ],
+      Electrical: [
+        `Explain the operating principles, equivalent circuit, and power flow characteristics for ${skill}.`,
+        `How do you analyze stability, losses, and power factor in systems involving ${skill}?`,
+        `What protection schemes and safety devices are implemented for ${skill}?`,
+        `Discuss testing, calibration, and fault diagnosis procedures for ${skill}.`,
+        `Explain recent technological advancements and energy efficiency standards for ${skill}.`
+      ],
+      ENTC: [
+        `Explain signal behavior, noise response, and circuit characteristics for ${skill}.`,
+        `How do you design, simulate, or calculate parameters for ${skill}?`,
+        `What are the trade-offs between analog and digital implementations of ${skill}?`,
+        `Explain timing constraints, frequency response, and stability in ${skill}.`,
+        `Describe practical measurement and debugging techniques for ${skill}.`
+      ],
+      'CS/IT': [
+        `Explain the internal working and fundamental principles of ${skill}.`,
+        `How do you optimize performance and manage scalability in ${skill}?`,
+        `Discuss common security vulnerabilities or memory management issues in ${skill}.`,
+        `What are the key trade-offs between ${skill} and alternative technologies?`,
+        `Describe how you would design a robust production-grade architecture using ${skill}.`
+      ]
+    };
+
+    const templates = dynamicTemplates[resolvedBranch] || dynamicTemplates['Civil'];
+    const chosenTemplate = templates[(salt - 1) % templates.length];
+
     selectedItem = {
-      question: `Tell me about your experience with ${skill} and any recent projects.`,
-      category: 'experience'
+      question: chosenTemplate,
+      category: focusArea || 'fundamentals'
     };
   }
 
@@ -37,60 +113,102 @@ const getFallbackQuestion = (skill, previousQuestions = [], focusArea = null) =>
     topic: skill,
     difficulty: "medium",
     expectedDuration: "2-3 minutes",
-    category: selectedItem.category || "fundamentals",
-    expectedKeyPoints: ["Technical knowledge", "Practical experience", "Challenges faced"],
+    category: selectedItem.category || focusArea || "fundamentals",
+    expectedKeyPoints: ["Technical knowledge", "Practical applications", "Engineering standards"],
     id: Math.random().toString(36).substring(2, 10),
     skill,
+    branch: resolvedBranch,
     source: 'fallback'
   };
   
-  console.log(`[geminiService] Served fallback question for skill ${skill} (source: fallback)`);
+  console.log(`[geminiService] Served unique fallback question for ${skill} (${resolvedBranch})`);
   return result;
 };
 
-const generateQuestion = async (skill, previousQuestions = [], questionIndex = 0, focusArea = null) => {
+const generateQuestion = async (skill, previousQuestions = [], questionIndex = 0, focusArea = null, branch = null) => {
   try {
-    console.log(`Generating question for skill: ${skill}, index: ${questionIndex}, focus: ${focusArea}`);
+    const resolvedBranch = detectBranch(skill, branch);
+    console.log(`Generating question for skill: ${skill}, branch: ${resolvedBranch}, index: ${questionIndex}, focus: ${focusArea}`);
     
-    const prevQStrings = previousQuestions.map(q => typeof q === 'string' ? q : (q?.question || q?.text || ''));
+    const prevQStrings = (previousQuestions || []).map(q => {
+      if (!q) return '';
+      if (typeof q === 'string') return q;
+      return q.question || q.text || '';
+    }).filter(Boolean);
     
     let prompt;
-    const isCodeQuestion = questionIndex === 2; // 3rd question is code/SQL
+    const isCSE = resolvedBranch === 'CS/IT';
+    const isCodeQuestion = isCSE && questionIndex === 2; // ONLY 3rd question of CS/IT is code/SQL
 
     if (isCodeQuestion) {
-      prompt = `Generate a direct, realistic technical interview question for the skill: ${skill}.
+      prompt = `Generate a direct, realistic technical interview question for the skill: ${skill} in Computer Science / IT.
 The question should:
-- Require the candidate to write a code snippet or SQL query (choose the most relevant for the skill).
-- Be clear and concise, and suitable for a real technical interview.
+- Require the candidate to write a code snippet or SQL query.
+- Be clear and concise, and suitable for a real software technical interview.
 - Avoid scenario-based or imagination wording.
 - Require a specific, factual answer.
 - Focus area: ${focusArea || 'coding'}
-- Be different from these previous questions: ${prevQStrings.join(' | ')}
+- Be completely different from these previous questions: ${prevQStrings.join(' | ')}
 
 Return only the JSON object:
 {
   "question": "direct code/coding/SQL interview question",
-  "topic": "specific topic within ${skill}",
+  "topic": "${skill}",
   "difficulty": "medium",
   "expectedDuration": "2-3 minutes",
   "category": "coding",
   "expectedKeyPoints": ["2-3 key points"]
 }`;
-    } else {
-      prompt = `Generate a direct, realistic technical interview question for the skill: ${skill}.
-The question should:
-- Be clear and concise.
-- Be suitable for a real technical interview (not a scenario or imagination).
-- Test the candidate's knowledge of ${skill} directly.
-- Avoid "imagine", "describe a project", or scenario-based wording.
-- Require a specific, factual answer.
-- Focus area: ${focusArea || 'fundamentals'}
-- Be different from these previous questions: ${prevQStrings.join(' | ')}
+    } else if (resolvedBranch === 'Civil') {
+      prompt = `Generate a direct, realistic technical interview question for the Civil Engineering subject/topic: "${skill}".
+IMPORTANT RULES:
+- This is a CIVIL ENGINEERING interview.
+- STRICTLY DO NOT ask any programming, software development, coding, Python, JavaScript, or computer science questions.
+- Focus on practical structural engineering, soil mechanics, concrete technology, transportation, highway design, surveying, foundation engineering, or site execution.
+- Question index: ${questionIndex + 1}. Focus area: ${focusArea || 'fundamentals'}.
+${questionIndex === 2 ? '- Require a practical engineering calculation, formula explanation, or design step (e.g. bending moment, bearing capacity, slump, CBR, or camber calculation).' : '- Ask a direct, factual technical concept or practical on-site application.'}
+- Be completely different from these previous questions: ${prevQStrings.join(' | ')}
 
 Return only the JSON object:
 {
-  "question": "direct, factual technical interview question",
-  "topic": "specific topic within ${skill}",
+  "question": "direct Civil Engineering technical interview question",
+  "topic": "${skill}",
+  "difficulty": "medium",
+  "expectedDuration": "2-3 minutes",
+  "category": "${focusArea || 'fundamentals'}",
+  "expectedKeyPoints": ["2-3 key technical points"]
+}`;
+    } else if (resolvedBranch === 'Mechanical' || resolvedBranch === 'Electrical' || resolvedBranch === 'ENTC') {
+      prompt = `Generate a direct, realistic technical interview question for ${resolvedBranch} Engineering topic: "${skill}".
+IMPORTANT RULES:
+- This is an engineering interview for ${resolvedBranch} Engineering.
+- STRICTLY DO NOT ask computer programming or software coding questions.
+- Focus on core ${resolvedBranch} engineering principles, mechanisms, calculations, and industrial applications.
+- Focus area: ${focusArea || 'fundamentals'}.
+${questionIndex === 2 ? '- Include an engineering calculation, formula derivation, or practical design scenario.' : '- Ask a direct, factual technical question.'}
+- Be completely different from these previous questions: ${prevQStrings.join(' | ')}
+
+Return only the JSON object:
+{
+  "question": "direct ${resolvedBranch} Engineering technical interview question",
+  "topic": "${skill}",
+  "difficulty": "medium",
+  "expectedDuration": "2-3 minutes",
+  "category": "${focusArea || 'fundamentals'}",
+  "expectedKeyPoints": ["2-3 key technical points"]
+}`;
+    } else {
+      prompt = `Generate a direct, realistic technical interview question for the skill: "${skill}".
+The question should:
+- Test candidate's knowledge of ${skill} directly.
+- Be clear and concise, suitable for a technical interview.
+- Focus area: ${focusArea || 'fundamentals'}.
+- Be completely different from these previous questions: ${prevQStrings.join(' | ')}
+
+Return only the JSON object:
+{
+  "question": "direct technical interview question",
+  "topic": "${skill}",
   "difficulty": "medium",
   "expectedDuration": "1-2 minutes",
   "category": "${focusArea || 'fundamentals'}",
@@ -108,27 +226,35 @@ Return only the JSON object:
           throw new Error('Invalid question format from AI');
         }
 
-        const isDuplicate = prevQStrings.some(prevQ => calculateSimilarity(prevQ, question.question) > 0.7);
+        // Anti-repetition check
+        const isDuplicate = prevQStrings.some(prevQ => {
+          if (calculateSimilarity(prevQ, question.question) > 0.55) return true;
+          const qLower = question.question.toLowerCase();
+          const pLower = prevQ.toLowerCase();
+          return qLower.includes(pLower.substring(0, 30)) || pLower.includes(qLower.substring(0, 30));
+        });
+
         if (isDuplicate) {
-          console.log(`[geminiService] Duplicate question generated, retrying... (Attempt ${attempts+1})`);
+          console.log(`[geminiService] Duplicate question detected for ${skill}, retrying... (Attempt ${attempts+1})`);
           attempts++;
           continue;
         }
 
         question.id = Math.random().toString(36).substring(2, 10);
         question.skill = skill;
+        question.branch = resolvedBranch;
         question.source = 'ai';
-        console.log(`[geminiService] Generated AI question for ${skill} (source: ai)`);
+        console.log(`[geminiService] Generated AI question for ${skill} [${resolvedBranch}] (source: ai)`);
         return question;
       } else {
         break;
       }
     }
     
-    return getFallbackQuestion(skill, previousQuestions, focusArea);
+    return getFallbackQuestion(skill, previousQuestions, focusArea, resolvedBranch);
   } catch (error) {
     console.error('Error generating question, using fallback bank:', error.message);
-    return getFallbackQuestion(skill, previousQuestions, focusArea);
+    return getFallbackQuestion(skill, previousQuestions, focusArea, branch);
   }
 };
 

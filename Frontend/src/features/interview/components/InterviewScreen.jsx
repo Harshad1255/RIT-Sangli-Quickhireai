@@ -167,6 +167,11 @@ const InterviewScreen = (props) => {
           return;
         }
 
+        const branchToUse = props.branch || location.state?.branch || sessionStorage.getItem('selectedBranch') || '';
+        if (branchToUse) {
+          sessionStorage.setItem('selectedBranch', branchToUse);
+        }
+
         // Store skills in session storage if coming from location state (for mock interviews)
         if (isMock && props.selectedSkills && props.selectedSkills.length > 0) {
           sessionStorage.setItem('selectedSkills', JSON.stringify(props.selectedSkills));
@@ -175,7 +180,8 @@ const InterviewScreen = (props) => {
 
         const response = await api.post('/interviews/start', {
           interviewCode: codeToUse,
-          skills
+          skills,
+          branch: branchToUse
         });
 
         if (response.data.success) {
@@ -365,12 +371,13 @@ const InterviewScreen = (props) => {
       setIsProcessing(true);
       setError(null);
       
-      // Log the request payload
+      const branchToUse = props.branch || location.state?.branch || sessionStorage.getItem('selectedBranch') || '';
       const requestPayload = {
         answer: answerText.trim(),
         question: currentQuestion,
         interviewCode,
         code: codeText || '',
+        branch: branchToUse
       };
       console.log('Submitting answer with payload:', requestPayload);
 
@@ -492,12 +499,14 @@ const InterviewScreen = (props) => {
         setIsRecording(false);
       }
       
+      const branchToUse = props.branch || location.state?.branch || sessionStorage.getItem('selectedBranch') || '';
       const payload = {
         answer: '',
         question: validQuestion, // always send valid object
         interviewCode,
         code: '',
-        skipped: true
+        skipped: true,
+        branch: branchToUse
       };
       console.log('Skip payload:', payload); // <-- Debug log
       const response = await api.post('/interviews/evaluate-answer', payload);
@@ -1238,8 +1247,9 @@ const InterviewScreen = (props) => {
 
   // Main interview layout
   console.log('Showing main interview layout');
-  const hasQuestion = currentQuestion && (currentQuestion.question || currentQuestion.text);
-  const isCodeQuestion = currentQuestion && (
+  const activeBranch = props.branch || location.state?.branch || sessionStorage.getItem('selectedBranch') || '';
+  const isNonCodingBranch = /civil|mech|elec|entc/i.test(activeBranch);
+  const isCodeQuestion = !isNonCodingBranch && currentQuestion && (
     /sql|query|code|program|function|algorithm|cpp|java|python|javascript/i.test(currentQuestion.question || currentQuestion.text)
   );
   return (

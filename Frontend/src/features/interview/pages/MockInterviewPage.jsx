@@ -66,14 +66,17 @@ const MockInterviewPage = () => {
         branch={selectedBranch}
         onContinue={(skills) => {
           setSelectedSkills(skills);
-          console.log('Starting mock interview with skills:', skills, 'and code:', mockCode);
+          console.log('Starting mock interview with skills:', skills, 'branch:', selectedBranch, 'and code:', mockCode);
+          sessionStorage.setItem('selectedBranch', selectedBranch || '');
+          sessionStorage.setItem('selectedSkills', JSON.stringify(skills));
           
           // Navigate to the mock interview session route. 
           // InterviewScreen.jsx will handle the /interviews/start API call.
           navigate(`/interview/mock/session/${mockCode}`, { 
             state: { 
               selectedSkills: skills,
-              mockCode: mockCode 
+              mockCode: mockCode,
+              branch: selectedBranch || ''
             } 
           });
         }}

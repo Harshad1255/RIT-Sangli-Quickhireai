@@ -147,10 +147,87 @@ const DOMAIN_KNOWLEDGE = {
       'javascript', 'runtime', 'compiler', 'checks', 'errors', 'safe', 'parameters',
       'return', 'structure', 'contract', 'code', 'refactoring'
     ]
+  },
+  'civil': {
+    coreConcepts: [
+      'beam', 'column', 'truss', 'frame', 'bending moment', 'shear force', 'neutral axis',
+      'deflection', 'moment of inertia', 'euler', 'buckling', 'slenderness ratio',
+      'effective length', 'rankine', 'reinforcement', 'concrete', 'cement', 'water cement ratio',
+      'compressive strength', 'tensile strength', 'workability', 'slump test', 'curing',
+      'segregation', 'honeycombing', 'rcc', 'rebar', 'limit state', 'working stress',
+      'factor of safety', 'soil', 'soil mechanics', 'void ratio', 'porosity', 'saturation',
+      'permeability', 'darcy', 'compaction', 'consolidation', 'terzaghi', 'proctor', 'omc',
+      'atterberg', 'liquid limit', 'plastic limit', 'plasticity index', 'mohr coulomb',
+      'shear strength', 'cohesion', 'bearing capacity', 'foundation', 'shallow foundation',
+      'deep foundation', 'footing', 'raft', 'pile', 'skin friction', 'settlement',
+      'retaining wall', 'earth pressure', 'active pressure', 'passive pressure', 'overturning',
+      'sliding', 'weep holes', 'earthquake', 'seismic', 'zone factor', 'base shear',
+      'is 1893', 'is 456', 'is 13920', 'liquefaction', 'pavement', 'flexible pavement',
+      'rigid pavement', 'subgrade', 'cbr', 'california bearing ratio', 'camber', 'superelevation',
+      'sight distance', 'stopping sight distance', 'ssd', 'osd', 'bitumen', 'asphalt',
+      'rutting', 'alligator cracking', 'railway', 'gauge', 'broad gauge', 'ballast', 'creep',
+      'traffic', 'traffic volume', 'traffic density', 'pcu', 'webster', 'rotary', 'roundabout',
+      'airport', 'runway', 'wind rose', 'taxiway', 'surveying', 'chain', 'levelling',
+      'theodolite', 'traverse', 'bowditch', 'total station', 'gps', 'dgps', 'contour',
+      'rise and fall', 'height of instrument'
+    ],
+    explanationWords: [
+      'structural', 'load', 'design', 'stress', 'strain', 'failure', 'support', 'material',
+      'site', 'test', 'ratio', 'safety', 'standard', 'calculation', 'capacity', 'pressure',
+      'soil', 'foundation', 'construction', 'engineering', 'durability', 'stability'
+    ]
+  },
+  'mechanical': {
+    coreConcepts: [
+      'thermodynamics', 'entropy', 'enthalpy', 'carnot', 'rankine', 'otto', 'diesel',
+      'efficiency', 'heat transfer', 'conduction', 'convection', 'radiation', 'fluid mechanics',
+      'viscosity', 'reynolds number', 'bernoulli', 'laminar', 'turbulent', 'head loss',
+      'darcy', 'pump', 'centrifugal pump', 'turbine', 'cavitation', 'hydraulic',
+      'machine design', 'stress concentration', 'fatigue', 'endurance limit', 's-n curve',
+      'tresca', 'von mises', 'shear stress', 'bending moment', 'torsion', 'shaft',
+      'gear', 'spur', 'helical', 'bevel', 'worm', 'bearing', 'manufacturing', 'casting',
+      'gating', 'riser', 'chvorinov', 'welding', 'arc welding', 'porosity', 'machining',
+      'lathe', 'milling', 'cnc', 'orthogonal cutting', 'merchant'
+    ],
+    explanationWords: [
+      'mechanism', 'temperature', 'pressure', 'heat', 'work', 'energy', 'velocity',
+      'flow', 'stress', 'strain', 'deformation', 'failure', 'power', 'torque'
+    ]
+  },
+  'electrical': {
+    coreConcepts: [
+      'power system', 'transmission', 'distribution', 'transformer', 'step up', 'step down',
+      'core', 'winding', 'eddy current', 'hysteresis', 'open circuit', 'short circuit',
+      'power factor', 'reactive power', 'active power', 'apparent power', 'induction motor',
+      'synchronous motor', 'dc motor', 'slip', 'rotor', 'stator', 'torque', 'armature reaction',
+      'control system', 'open loop', 'closed loop', 'transfer function', 'routh hurwitz',
+      'bode plot', 'nyquist', 'gain margin', 'phase margin', 'pid', 'measurements',
+      'pmmc', 'moving iron', 'galvanometer', 'shunt', 'multiplier', 'wattmeter', 'megger',
+      'fault', 'relay', 'circuit breaker'
+    ],
+    explanationWords: [
+      'voltage', 'current', 'flux', 'resistance', 'impedance', 'frequency', 'power',
+      'magnetic', 'electric', 'circuit', 'signal', 'generator', 'load', 'phase'
+    ]
+  },
+  'entc': {
+    coreConcepts: [
+      'digital electronics', 'logic gate', 'boolean', 'k-map', 'sop', 'pos', 'combinational',
+      'sequential', 'flip-flop', 'sr', 'jk', 'd flip-flop', 't flip-flop', 'counter',
+      'multiplexer', 'analog circuit', 'op-amp', 'inverting', 'non-inverting', 'virtual ground',
+      'gain', 'bandwidth', 'slew rate', 'cmrr', 'oscillator', 'barkhausen', 'filter',
+      'butterworth', 'bjt', 'ce', 'cb', 'cc', 'communication system', 'modulation',
+      'am', 'fm', 'sampling', 'nyquist', 'aliasing', 'pcm', 'quantization', 'qpsk',
+      'antenna', 'microprocessor', '8085', '8086', 'instruction', 'interrupt', 'trap'
+    ],
+    explanationWords: [
+      'frequency', 'signal', 'noise', 'analog', 'digital', 'gain', 'carrier',
+      'waveform', 'clock', 'transmission', 'pulse', 'channel', 'spectrum'
+    ]
   }
 };
 
-// Common phonetic / speech-to-text corrections for developer terminology
+// Common phonetic / speech-to-text corrections for engineering terminology
 const STT_NORMALIZATION_MAP = {
   'a sink': 'async',
   'a sync': 'async',
@@ -173,7 +250,14 @@ const STT_NORMALIZATION_MAP = {
   'use effect': 'useeffect',
   'use state': 'usestate',
   'use memo': 'usememo',
-  'use callback': 'usecallback'
+  'use callback': 'usecallback',
+  'theo the light': 'theodolite',
+  'theo do light': 'theodolite',
+  'super elevation': 'superelevation',
+  'water cement': 'water-cement',
+  'bending moment': 'bending moment',
+  'shear force': 'shear force',
+  'mohr coulomb': 'mohr-coulomb'
 };
 
 /**
@@ -221,6 +305,19 @@ function analyzeQuestion(questionInput) {
     if (lowerTopic.includes(domain) || normalizedQ.includes(domain)) {
       detectedDomain = domain;
       break;
+    }
+  }
+
+  if (!detectedDomain) {
+    const combinedSearch = lowerTopic + ' ' + normalizedQ;
+    if (/beam|column|truss|frame|soil|foundation|retaining|earthquake|road|railway|traffic|airport|survey|level|theodolite|concrete|civil|cement|slump|cbr|camber|rcc/i.test(combinedSearch)) {
+      detectedDomain = 'civil';
+    } else if (/thermo|entropy|fluid|pump|turbine|hydraulic|gear|bearing|shaft|casting|welding|machining|mechanical|otto|diesel/i.test(combinedSearch)) {
+      detectedDomain = 'mechanical';
+    } else if (/power system|transformer|induction motor|dc machine|electrical|substation/i.test(combinedSearch)) {
+      detectedDomain = 'electrical';
+    } else if (/analog circuit|op-amp|modulation|antenna|8085|8086|microprocessor|logic gate|flip-flop|entc/i.test(combinedSearch)) {
+      detectedDomain = 'entc';
     }
   }
 

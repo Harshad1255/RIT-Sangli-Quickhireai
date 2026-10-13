@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const InterviewSessionSchema = new mongoose.Schema({
   interviewCode: { type: String, required: true, unique: true },
   skills: [String],
+  branch: { type: String, default: '' },
   status: { type: String, default: 'active' },
   startTime: { type: Date, default: Date.now },
   currentQuestionIndex: { type: Number, default: 0 },

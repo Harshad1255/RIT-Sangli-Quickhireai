@@ -170,6 +170,42 @@ describe('QuickHire AI - Interview Evaluation Pipeline Tests', () => {
       expect(Number.isFinite(scores.technicalKnowledge)).toBe(true);
     });
 
+    test('12. Generates Civil Engineering questions without asking for coding or CSE', async () => {
+      const civilQ1 = geminiService.getFallbackQuestion('Beams', [], 'fundamentals', 'Civil');
+      const civilQ2 = geminiService.getFallbackQuestion('Soil Mechanics', [civilQ1], 'fundamentals', 'Civil');
+
+      expect(civilQ1).toBeDefined();
+      expect(civilQ2).toBeDefined();
+      expect(civilQ1.question).not.toBe(civilQ2.question);
+      expect(/javascript|python|sql query|react|node/i.test(civilQ1.question)).toBe(false);
+      expect(/javascript|python|sql query|react|node/i.test(civilQ2.question)).toBe(false);
+    });
+
+    test('13. Anti-repetition: sequential questions do not repeat identical text', () => {
+      const q1 = geminiService.getFallbackQuestion('Beams', [], 'fundamentals', 'Civil');
+      const q2 = geminiService.getFallbackQuestion('Beams', [q1], 'practical use', 'Civil');
+      const q3 = geminiService.getFallbackQuestion('Beams', [q1, q2], 'trade-offs', 'Civil');
+
+      expect(q1.question).not.toBe(q2.question);
+      expect(q2.question).not.toBe(q3.question);
+      expect(q1.question).not.toBe(q3.question);
+    });
+
+    test('14. Accurately evaluates Civil Engineering answer with high marks', () => {
+      const question = {
+        question: 'Explain the bending moment and shear force in a beam.',
+        topic: 'Beams',
+        category: 'Civil'
+      };
+      const answer = 'Bending moment is the internal reaction that induces bending in a structural beam due to external loads, calculated as force times distance. Shear force is the perpendicular force trying to shear the beam across its section. At points where shear force is zero, bending moment is maximum.';
+
+      const result = evaluationEngine.evaluateAnswer(answer, question);
+
+      expect(result.score).toBeGreaterThanOrEqual(7.0);
+      expect(result.score).toBeLessThanOrEqual(10.0);
+      expect(result.technicalKnowledge).toBeGreaterThanOrEqual(6.5);
+    });
+
   });
 
 });

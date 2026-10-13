@@ -20,11 +20,29 @@ const processAnswer = async (req, res) => {
     // Get interview session from DB
     let interview = await InterviewSession.findOne({ interviewCode });
     if (!interview) {
-      // Fallback: create a new session if not found (should not happen in normal flow)
+      const explicitBranch = req.body.branch;
+      const qText = typeof question === 'object' ? (question?.question || question?.text || '') : String(question || '');
+      const isCivil = (explicitBranch && explicitBranch.toLowerCase().includes('civil')) || 
+                      /beam|column|truss|frame|soil|foundation|retaining|earthquake|road|railway|traffic|airport|survey|level|theodolite|concrete|civil/i.test(qText);
+      const isMech = (explicitBranch && explicitBranch.toLowerCase().includes('mech')) ||
+                     /thermo|entropy|fluid|pump|turbine|hydraulic|gear|bearing|shaft|welding|casting|mechanical/i.test(qText);
+      const isElec = (explicitBranch && explicitBranch.toLowerCase().includes('elec')) ||
+                     /power system|transformer|induction motor|dc machine|electrical/i.test(qText);
+      const isEntc = (explicitBranch && explicitBranch.toLowerCase().includes('entc')) ||
+                     /analog circuit|op-amp|modulation|antenna|8085|microprocessor|logic gate|entc/i.test(qText);
+
+      const branch = isCivil ? 'Civil' : (isMech ? 'Mechanical' : (isElec ? 'Electrical' : (isEntc ? 'ENTC' : 'CS/IT')));
+      const defaultSkills = isCivil ? ['Structural Engineering', 'Soil Mechanics', 'Transportation', 'Surveying'] :
+                            (isMech ? ['Thermodynamics', 'Fluid Mechanics', 'Machine Design', 'Manufacturing'] :
+                            (isElec ? ['Power Systems', 'Control Systems', 'Electrical Machines', 'Measurements'] :
+                            (isEntc ? ['Digital Electronics', 'Analog Circuits', 'Communication Systems', 'Microprocessors'] :
+                            ['JavaScript', 'Python', 'React'])));
+
       interview = new InterviewSession({
         interviewCode,
         answers: [],
-        skills: ['JavaScript', 'Python', 'React'],
+        skills: defaultSkills,
+        branch,
         totalQuestions: 5,
         currentScore: 0,
         questions: [],
@@ -237,24 +255,34 @@ const processAnswer = async (req, res) => {
     if (!nextQuestion) {
       const nextSkillIndex = Math.min(newMainQuestionsAnswered, interview.skills.length - 1);
       const nextSkill = interview.skills[nextSkillIndex];
-      const previousQuestions = interview.questions || [];
+      const branch = interview.branch || req.body.branch;
       
-      const focuses = ['fundamentals', 'practical application', 'coding', 'debugging', 'trade-offs'];
+      // Collect full history of asked questions from both questions array and answers array
+      const previousQuestions = [
+        ...(interview.questions || []).map(q => typeof q === 'string' ? q : (q?.question || q?.text || '')),
+        ...(interview.answers || []).map(a => typeof a.question === 'object' ? (a.question?.question || a.question?.text || '') : String(a.question || ''))
+      ].filter(Boolean);
+      
+      const isCSE = branch === 'CS/IT';
+      const focuses = isCSE 
+        ? ['fundamentals', 'practical application', 'coding', 'debugging', 'trade-offs']
+        : ['fundamentals', 'practical application', 'design & calculation', 'troubleshooting & quality', 'standards & trade-offs'];
       const focusArea = focuses[newMainQuestionsAnswered % focuses.length];
 
       try {
-        nextQuestion = await geminiService.generateQuestion(nextSkill, previousQuestions, newMainQuestionsAnswered, focusArea);
+        nextQuestion = await geminiService.generateQuestion(nextSkill, previousQuestions, newMainQuestionsAnswered, focusArea, branch);
         nextQuestion = {
           ...nextQuestion,
           id: Math.random().toString(36).substr(2, 9),
           skill: nextSkill,
+          branch: branch,
           questionNumber: newMainQuestionsAnswered + 1,
           isFollowUp: false
         };
         interview.questions.push(nextQuestion);
       } catch (error) {
         console.error('Error generating next question, using fallback:', error.message);
-        nextQuestion = geminiService.getFallbackQuestion(nextSkill, previousQuestions, focusArea);
+        nextQuestion = geminiService.getFallbackQuestion(nextSkill, previousQuestions, focusArea, branch);
         nextQuestion.id = Math.random().toString(36).substr(2, 9);
         nextQuestion.questionNumber = newMainQuestionsAnswered + 1;
         nextQuestion.isFollowUp = false;

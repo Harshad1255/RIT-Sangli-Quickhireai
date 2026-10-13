@@ -8,8 +8,8 @@ const activeInterviews = new Map();
 // Start new interview
 const startInterview = async (req, res) => {
   try {
-    const { interviewCode, skills } = req.body;
-    console.log('Starting interview:', { interviewCode, skills });
+    const { interviewCode, skills, branch } = req.body;
+    console.log('Starting interview:', { interviewCode, skills, branch });
     const isMock = interviewCode && interviewCode.startsWith('mock-');
     console.log('MOCK CODE CHECK:', interviewCode, isMock);
 
@@ -49,13 +49,13 @@ const startInterview = async (req, res) => {
     }
 
     const totalQuestions = 5;
-    const skillsArray = skills.length >= totalQuestions
-      ? skills.slice(0, totalQuestions)
-      : [...skills, ...Array(totalQuestions - skills.length).fill(skills[0])];
+    // Evenly cycle through selected skills instead of repeating skills[0]
+    const skillsArray = Array.from({ length: totalQuestions }, (_, i) => skills[i % skills.length]);
 
     const interviewSession = new InterviewSession({
       interviewCode,
       skills: skillsArray,
+      branch: branch || '',
       status: 'active',
       startTime: new Date(),
       currentQuestionIndex: 0,
@@ -65,7 +65,7 @@ const startInterview = async (req, res) => {
     });
 
     try {
-      const firstQuestion = await geminiService.generateQuestion(skillsArray[0], [], 0, 'fundamentals');
+      const firstQuestion = await geminiService.generateQuestion(skillsArray[0], [], 0, 'fundamentals', branch);
       const formattedQ = {
         ...firstQuestion,
         id: Math.random().toString(36).substr(2, 9),
@@ -76,7 +76,7 @@ const startInterview = async (req, res) => {
       interviewSession.questions.push(formattedQ);
     } catch (error) {
       console.error('Error generating first question:', error);
-      const fbQ = geminiService.getFallbackQuestion(skillsArray[0], [], 'fundamentals');
+      const fbQ = geminiService.getFallbackQuestion(skillsArray[0], [], 'fundamentals', branch);
       fbQ.questionNumber = 1;
       fbQ.isFollowUp = false;
       interviewSession.questions.push(fbQ);
