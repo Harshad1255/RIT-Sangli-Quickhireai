@@ -1,16 +1,7 @@
 const express = require('express');
 const router = express.Router();
-router.use((req,res,next)=>{
-  const requestId = require('crypto').randomUUID();
-  const started = Date.now();
-  req.requestId = requestId;
-  res.setHeader('X-Request-Id',requestId);
-  res.on('finish',()=>console.info('[interview timing]',{requestId,stage:'api_response',method:req.method,path:req.route?.path,status:res.statusCode,durationMs:Date.now()-started}));
-  next();
-});
 const multer = require('multer');
 const interviewController = require('../controllers/interviewController');
-const { completedSession } = require('../services/sessionCompletion');
 const { authenticateToken, authorizeCompany } = require('../../auth/middleware/auth');
 const { MAX_CANDIDATE_FILE_BYTES } = require('../utils/candidateSpreadsheet');
 
@@ -62,10 +53,10 @@ router.post('/validate-code', interviewController.validateInterviewCode);
 
 // Interview session routes
 router.post('/start', interviewController.startInterview);
-router.get('/:id/questions', async (req, res) => {
+router.get('/:id/questions', (req, res) => {
   try {
     const interviewCode = req.params.id;
-    const session = await interviewController.getInterviewSession(interviewCode);
+    const session = interviewController.getInterviewSession(interviewCode);
     
     if (!session) {
       return res.status(404).json({ error: 'Interview session not found' });
@@ -80,13 +71,19 @@ router.get('/:id/questions', async (req, res) => {
 });
 
 // Results and analysis routes
-router.post('/retry-evaluation/:interviewCode', authenticateToken, authorizeCompany, require('../controllers/retryEvaluationController'));
 router.post('/process-answer', interviewController.processAnswer);
 router.post('/evaluate-answer', async (req, res) => {
   try {
     const { answer, question, interviewCode, questionNumber, skipped } = req.body;
     
-    require("../../../shared/services/evaluationDiagnostics").log("evaluation_endpoint_received",{requestId:req.requestId});
+    console.log('Received answer evaluation request:', {
+      interviewCode,
+      questionNumber,
+      hasAnswer: !!answer,
+      hasQuestion: !!question,
+      skipped: !!skipped,
+      answer: answer ? answer.substring(0, 50) + '...' : 'empty' // Log first 50 chars of answer
+    });
 
     // Allow empty answer if question is being skipped
     if (!question) {
@@ -97,10 +94,20 @@ router.post('/evaluate-answer', async (req, res) => {
     }
 
     // Allow empty answer for skipped questions
-    if (!answer && !req.body.code && !skipped) {
+    if (!answer && !skipped) {
       return res.status(400).json({ 
         success: false,
         error: 'Answer is required unless question is being skipped'
+      });
+    }
+
+    // Get interview session
+    const session = interviewController.getInterviewSession(interviewCode);
+    if (!session) {
+      console.error('Session not found for code:', interviewCode);
+      return res.status(404).json({ 
+        success: false,
+        error: 'Interview session not found'
       });
     }
 
@@ -124,10 +131,10 @@ router.post('/evaluate-answer', async (req, res) => {
 
 router.post('/final-evaluation', async (req, res) => {
   try {
-    const session = await interviewController.getInterviewSession(req.body.interviewCode);
-    if (!session) return res.status(404).json({error:'Interview session not found'});
-    if (!completedSession(session)) return res.status(409).json({status:session.evaluationStatus || 'not_started',error:'Complete the interview before requesting its evaluation.'});
-    res.json(session.finalEvaluation);
+    const { answers } = req.body;
+    const geminiService = require('../services/geminiService');
+    const finalEvaluation = await geminiService.generateFinalEvaluation(answers);
+    res.json(finalEvaluation);
   } catch (error) {
     console.error('Error generating final evaluation:', error);
     res.status(500).json({ error: 'Error generating final evaluation' });
@@ -146,4 +153,4 @@ router.get('/report/:interviewId/:candidateId', authenticateToken, interviewCont
 router.post('/analyze-face', interviewController.analyzeFace);
 router.post('/report-activity', interviewController.reportActivity);
 
-module.exports = router;
+module.exports = router; 

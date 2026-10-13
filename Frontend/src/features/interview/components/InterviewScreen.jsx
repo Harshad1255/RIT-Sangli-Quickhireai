@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import WebcamFeed from "./WebcamFeed";
 import { api } from "../../../shared/services/api";
 import "../styles/InterviewScreen.css";
 import RealTimeFeedback from './RealTimeFeedback';
 import FinalEvaluation from './FinalEvaluation';
-import { SpeechRecognitionService } from '../services/speechRecognitionService';
+import speechRecognitionService from '../services/speechRecognitionService';
 import CodeEditor from './CodeEditor';
 import TechQuestionTypes from './TechQuestionTypes';
 
@@ -12,19 +12,6 @@ import TabMonitoringService from '../services/tabMonitoringService';
 import FullscreenGate from './FullscreenGate';
 import FullscreenPause from './FullscreenPause';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { completedSession, completedResponse, persistedAnswers } from '../services/interviewLifecycle';
-import useInterviewFullscreen, { fullscreenActive } from '../services/useInterviewFullscreen';
-
-// Share in-flight starts across Strict Mode remounts; server also deduplicates.
-const interviewStarts = new Map();
-const startSession = body => {
-  const key = body.interviewCode;
-  if (!interviewStarts.has(key)) {
-    const request = api.post('/interviews/start', body, {maxRetries:0,timeout:45000}).finally(()=>interviewStarts.delete(key));
-    interviewStarts.set(key,request);
-  }
-  return interviewStarts.get(key);
-};
 
 // Persistent state keys
 const getStorageKey = (code) => `interviewState_${code}`;
@@ -58,27 +45,23 @@ const InterviewScreen = (props) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { interviewCode: paramInterviewCode } = useParams();
-  const interviewCode = props.isMock ? (props.interviewCode || paramInterviewCode) : (props.candidateCode || sessionStorage.getItem('candidateCode') || props.interviewCode || paramInterviewCode);
+  const interviewCode = props.interviewCode || paramInterviewCode;
 
   // --- State initialization ---
-  const restored = useMemo(() => restoreState(interviewCode), [interviewCode]);
+  const restored = restoreState(interviewCode);
   const [currentQuestion, setCurrentQuestion] = useState(restored?.currentQuestion || null);
   const [questions, setQuestions] = useState(restored?.questions || []);
   const [questionIndex, setQuestionIndex] = useState(restored?.questionIndex || 0);
   const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState(restored?.transcript || "");
-  const transcriptRef = useRef(restored?.transcript || "");
+  const [transcript, setTranscript] = useState("");
   const [currentTopic, setCurrentTopic] = useState("");
-  const [lifecycle, setLifecycle] = useState('initializing');
-  const isProcessing = lifecycle === 'submitting' || lifecycle === 'evaluating';
-  const setIsProcessing = value => setLifecycle(previous => value ? 'submitting' : (['completed','failed'].includes(previous) ? previous : 'in_progress'));
+  const [isProcessing, setIsProcessing] = useState(false);
   const [feedback, setFeedback] = useState(null);
-  const isLoading = lifecycle === 'initializing';
-  const setIsLoading = value => setLifecycle(previous => value ? 'initializing' : (previous === 'initializing' ? 'awaiting_fullscreen' : previous));
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const isComplete = lifecycle === 'completed';
+  const [isComplete, setIsComplete] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
-  const [code, setCode] = useState(restored?.code || "");
+  const [code, setCode] = useState("");
   const [allAnswers, setAllAnswers] = useState([]);
   const [finalEvaluation, setFinalEvaluation] = useState(null);
   const [totalQuestions, setTotalQuestions] = useState(5);
@@ -86,14 +69,6 @@ const InterviewScreen = (props) => {
   const [skippedQuestions, setSkippedQuestions] = useState(restored?.skippedQuestions || []);
   const [recordingStatus, setRecordingStatus] = useState('idle'); // 'idle', 'recording', 'processing'
   const [recordingError, setRecordingError] = useState(null);
-  const [speechLanguage, setSpeechLanguage] = useState('en-IN');
-  const [mediaStream, setMediaStream] = useState(null);
-  const [mediaPreparing, setMediaPreparing] = useState(false);
-  const [mediaError, setMediaError] = useState(null);
-  const mediaStreamRef = useRef(null);
-  const speechRecognitionServiceRef = useRef(null);
-  if (!speechRecognitionServiceRef.current) speechRecognitionServiceRef.current = new SpeechRecognitionService();
-  const speechRecognitionService = speechRecognitionServiceRef.current;
   const [skipError, setSkipError] = useState(null);
   const [hasSavedCompletion, setHasSavedCompletion] = useState(false);
   const [isFollowUpQuestion, setIsFollowUpQuestion] = useState(restored?.isFollowUpQuestion || false);
@@ -111,84 +86,11 @@ const InterviewScreen = (props) => {
   const [sharedSuspiciousActivityCount, setSharedSuspiciousActivityCount] = useState(() => getStoredCount('pauseSuspiciousActivityCount'));
   const [sharedAppSwitchCount, setSharedAppSwitchCount] = useState(() => getStoredCount('pauseAppSwitchCount'));
   const [isFullscreenEntered, setIsFullscreenEntered] = useState(false);
-  const fullscreen = useInterviewFullscreen();
-  const isCurrentlyFullscreen = fullscreen.active;
-  const isFullscreenPaused = isFullscreenEntered && !isCurrentlyFullscreen && !isComplete;
-  const submissionInFlight = useRef(false);
-  const sessionEpoch = useRef(0);
-  const activeSessionId = useRef(null);
-  const initializationSkills = JSON.stringify(props.interviewData?.skills || props.selectedSkills || []);
-  useEffect(() => {
-    if (lifecycle === 'ready' && isFullscreenEntered) setLifecycle('in_progress');
-  }, [lifecycle, isFullscreenEntered]);
+  const [isFullscreenPaused, setIsFullscreenPaused] = useState(false);
+  const [isCurrentlyFullscreen, setIsCurrentlyFullscreen] = useState(false);
   const recentlyIncrementedRef = useRef(false);
   const focusLossIncrementedRef = useRef(false);
   const [faceStatus, setFaceStatus] = useState('');
-
-  useEffect(() => {
-    transcriptRef.current = transcript;
-  }, [transcript]);
-
-  useEffect(() => () => {
-    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
-    mediaStreamRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    if (!mediaStream) return undefined;
-    const handleTrackEnded = () => {
-      mediaStream.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-      setMediaStream(null);
-      setMediaError('The camera or microphone disconnected. Reconnect both devices and allow access again.');
-    };
-    const tracks = mediaStream.getTracks();
-    tracks.forEach(track => track.addEventListener('ended', handleTrackEnded, {once: true}));
-    return () => tracks.forEach(track => track.removeEventListener('ended', handleTrackEnded));
-  }, [mediaStream]);
-
-  useEffect(() => {
-    if (!isComplete) return;
-    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
-    mediaStreamRef.current = null;
-    setMediaStream(null);
-  }, [isComplete]);
-
-  const requestMediaAccess = async () => {
-    if (mediaStreamRef.current?.getTracks().some(track => track.readyState === 'live')) return;
-    setMediaPreparing(true);
-    setMediaError(null);
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Camera and microphone access requires a supported browser on HTTPS or localhost.');
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: {width: {ideal: 640}, height: {ideal: 480}, facingMode: 'user'}
-      });
-      const hasCamera = stream.getVideoTracks().some(track => track.readyState === 'live');
-      const hasMicrophone = stream.getAudioTracks().some(track => track.readyState === 'live');
-      if (!hasCamera || !hasMicrophone) {
-        stream.getTracks().forEach(track => track.stop());
-        throw new Error('A live camera and microphone are both required. Check your connected devices and retry.');
-      }
-      mediaStreamRef.current = stream;
-      setMediaStream(stream);
-    } catch (failure) {
-      const messages = {
-        NotAllowedError: 'Camera or microphone access was denied. Allow both in your browser site settings, then retry.',
-        PermissionDeniedError: 'Camera or microphone access was denied. Allow both in your browser site settings, then retry.',
-        NotFoundError: 'A camera or microphone was not found. Connect both devices and retry.',
-        DevicesNotFoundError: 'A camera or microphone was not found. Connect both devices and retry.',
-        NotReadableError: 'The camera or microphone is already in use by another app. Close that app and retry.',
-        TrackStartError: 'The camera or microphone could not start. Close other apps using them and retry.',
-        SecurityError: 'Camera and microphone access requires HTTPS or localhost.'
-      };
-      setMediaError(messages[failure.name] || failure.message || 'Could not access the camera and microphone. Check browser permissions and retry.');
-    } finally {
-      setMediaPreparing(false);
-    }
-  };
 
   // Add at the top of the component
   const getStoredLogs = () => {
@@ -214,7 +116,7 @@ const InterviewScreen = (props) => {
   // --- Save state on relevant changes ---
   useEffect(() => {
     if (!interviewCode) return;
-    const timer = setTimeout(()=>saveState(interviewCode, {
+    saveState(interviewCode, {
       currentQuestion,
       questions,
       questionIndex,
@@ -222,11 +124,8 @@ const InterviewScreen = (props) => {
       skippedQuestions,
       isFollowUpQuestion,
       followUpCount,
-      transcript,
-      code,
-    }), 250);
-    return ()=>clearTimeout(timer);
-  }, [interviewCode, currentQuestion, questions, questionIndex, answers, skippedQuestions, isFollowUpQuestion, followUpCount, transcript, code]);
+    });
+  }, [interviewCode, currentQuestion, questions, questionIndex, answers, skippedQuestions, isFollowUpQuestion, followUpCount]);
 
   // --- On interview start, clear previous state ---
   useEffect(() => {
@@ -238,15 +137,9 @@ const InterviewScreen = (props) => {
   }, [interviewCode]);
 
   useEffect(() => {
-    let disposed = false;
-    const epoch = ++sessionEpoch.current;
-    const started = performance.now();
     const initializeInterview = async () => {
       try {
         setIsLoading(true);
-        activeSessionId.current = null;
-        setFinalEvaluation(null);
-        setCurrentQuestion(null);
         setError(null);
 
         // Strict separation of mock and company interview flows
@@ -284,38 +177,21 @@ const InterviewScreen = (props) => {
           sessionStorage.setItem('interviewData', JSON.stringify({ interviewCode: codeToUse }));
         }
 
-        const response = await startSession( {
+        const response = await api.post('/interviews/start', {
           interviewCode: codeToUse,
           skills
         });
 
-        if (disposed || epoch !== sessionEpoch.current) return;
         if (response.data.success) {
           const { interview } = response.data;
-          if (interview.interviewCode !== codeToUse || !interview.sessionId) throw new Error('The server returned a different or invalid interview session.');
-          activeSessionId.current = interview.sessionId;
           setQuestions(interview.questions);
-          const latestQuestion = interview.questions[interview.questions.length - 1];
-          setCurrentQuestion(latestQuestion);
-          const pending = interview.answers?.find(a=>a.questionId === latestQuestion?.id && a.analysis?.status === "pending");
-          setTranscript(pending?.answer || (restored?.currentQuestion?.id === latestQuestion?.id ? restored.transcript || "" : ""));
-          setCode(pending?.code || (restored?.currentQuestion?.id === latestQuestion?.id ? restored.code || "" : ""));
+          setCurrentQuestion(interview.questions[0]);
           setTotalQuestions(interview.totalQuestions);
-          setQuestionIndex(Math.max(0, (latestQuestion?.questionNumber || 1) - 1));
-          setAnswers((interview.answers || []).filter(a=>a.analysis?.status !== "pending").map(a=>({...a,question:interview.questions.find(q=>q.id === a.questionId) || {question:a.question},evaluation:a.analysis})));
+          setQuestionIndex(0);
+          setAnswers([]);
           setSkippedQuestions([]);
-          setIsFollowUpQuestion(!!latestQuestion?.isFollowUp);
-          setFollowUpCount(latestQuestion?.isFollowUp ? 1 : 0);
-          if (completedSession(interview, codeToUse)) {
-            setFinalEvaluation({...interview.finalEvaluation, interviewCode:codeToUse, sessionId:interview.sessionId});
-            setLifecycle('completed');
-          } else if (interview.status === 'completed' || interview.status === 'failed' || interview.evaluationStatus === 'failed') {
-            setLifecycle('failed');
-            if (interview.status === 'completed' || interview.status === 'failed') throw new Error('This previous session does not have a valid completed evaluation. Start a new mock interview.');
-          } else if (!latestQuestion?.id) {
-            throw new Error('No active interview question was returned. Please retry.');
-          }
-          if (response.data.resumed) return;
+          setIsFollowUpQuestion(false);
+          setFollowUpCount(0);
           clearState(interviewCode); // <-- clear persistent state on new interview
           // Always reset suspicious/app switch counts for a new interview
           sessionStorage.setItem('pauseSuspiciousActivityCount', '0');
@@ -328,22 +204,22 @@ const InterviewScreen = (props) => {
           throw new Error(response.data.error || 'Failed to initialize interview');
         }
       } catch (error) {
-        if (disposed) return;
         console.error('Error initializing interview:', error);
-        setLifecycle('failed');
-        setError(error.message || 'Failed to initialize interview. Please try again.');
+        setError('Failed to initialize interview. Please try again.');
       } finally {
-        if (!disposed) { setIsLoading(false);
-          requestAnimationFrame(()=>console.info("[interview timing]",{stage:"initialization_visible",durationMs:Math.round(performance.now()-started)}));
-        }
+        setIsLoading(false);
       }
     };
 
     initializeInterview();
 
     // Cleanup function
-    return () => { disposed = true; sessionEpoch.current++; speechRecognitionService.cancel(); };
-  }, [interviewCode, initializationSkills, props.isMock, speechRecognitionService]);
+    return () => {
+      if (isRecording) {
+        speechRecognitionService.stopRecording();
+      }
+    };
+  }, [interviewCode, location.state, navigate, props.interviewData, props.selectedSkills, props.isMock]);
 
   // Remove the session checking interval as it's causing the redirect issue
   // Instead, check session validity only when needed
@@ -354,36 +230,22 @@ const InterviewScreen = (props) => {
   };
 
   const startRecording = () => {
-    if (!fullscreenActive() || isComplete || isLoading || isProcessing) return;
     try {
-      setRecordingStatus('initializing');
+      setRecordingStatus('recording');
       setRecordingError(null);
       
       speechRecognitionService.startRecording(
-        transcriptRef.current,
+        transcript,
         (interim) => setInterimTranscript(interim),
-        (final) => {
-          transcriptRef.current = final;
-          setTranscript(final);
-        },
+        (final) => setTranscript(final),
         (error) => {
           setRecordingError(error);
           setRecordingStatus('idle');
-          setIsRecording(false);
-        },
-        {
-          language: speechLanguage,
-          onStateChange: (state) => {
-            setRecordingStatus(state === 'initializing' || state === 'listening' || state === 'processing' ? state : 'idle');
-            setIsRecording(speechRecognitionService.isRecording);
-          }
         }
       );
-      setIsRecording(speechRecognitionService.isRecording);
-      if (!speechRecognitionService.isRecording) setRecordingStatus('idle');
+      setIsRecording(true);
     } catch (error) {
-      setRecordingError(error.message || 'Failed to start recording. You can type your answer.');
-      setIsRecording(false);
+      setRecordingError('Failed to start recording');
       setRecordingStatus('idle');
     }
   };
@@ -394,6 +256,8 @@ const InterviewScreen = (props) => {
       const finalTranscript = await speechRecognitionService.stopRecording();
       setIsRecording(false);
       
+      console.log('Recording stopped, final transcript:', finalTranscript);
+      
       if (!finalTranscript || !finalTranscript.trim()) {
         console.log('No transcript detected');
         setRecordingError('No speech detected. You can type your answer or try again.');
@@ -401,8 +265,8 @@ const InterviewScreen = (props) => {
       }
 
       // Set the transcript in state (user must click Submit)
-      transcriptRef.current = finalTranscript.trim();
       setTranscript(finalTranscript.trim());
+      console.log('Transcript saved to state:', finalTranscript.trim());
 
     } catch (error) {
       console.error('Error in stopRecording:', error);
@@ -420,21 +284,8 @@ const InterviewScreen = (props) => {
 
   // For now, use a styled textarea with line numbers (for simplicity and reliability)
   const submitAnswer = async (payload) => {
-    if (!fullscreenActive() || isComplete || isLoading) return;
-    if (submissionInFlight.current) return;
-    submissionInFlight.current = true;
-    const epoch = sessionEpoch.current;
-    const submittedQuestion = currentQuestion;
-    const started = performance.now();
     try {
       let answerText = typeof payload === 'string' ? payload : payload.transcript;
-      if (speechRecognitionService.isRecording || speechRecognitionService.running) {
-        answerText = await speechRecognitionService.stopRecording();
-        setIsRecording(false);
-        setInterimTranscript('');
-        transcriptRef.current = answerText;
-        setTranscript(answerText);
-      }
       let codeText = typeof payload === 'string' ? code : payload.code;
       // If transcript/answerText is empty but codeText is present, use codeText as the answer
       if ((!answerText || !answerText.trim()) && codeText && codeText.trim()) {
@@ -444,55 +295,53 @@ const InterviewScreen = (props) => {
         throw new Error('No answer to submit');
       }
       setIsProcessing(true);
-      if (!fullscreenActive()) return;
       setError(null);
       
       // Log the request payload
       const requestPayload = {
         answer: answerText.trim(),
-        speechConfidence: speechRecognitionService.speechConfidence,
-        question: submittedQuestion,
+        question: currentQuestion,
         interviewCode,
         code: codeText || '',
       };
+      console.log('Submitting answer with payload:', requestPayload);
 
-      setLifecycle(answers.filter(a=>!a.isFollowUp).length + (submittedQuestion.isFollowUp ? 0 : 1) >= totalQuestions ? 'evaluating' : 'submitting');
-      const response = await api.post('/interviews/evaluate-answer', requestPayload, {maxRetries:0,timeout:150000});
+      const response = await api.post('/interviews/evaluate-answer', requestPayload);
 
-      if (epoch !== sessionEpoch.current) return;
       // Log backend response
+      console.log('Evaluation response:', response.data);
 
       // If interview is complete, show final evaluation
-      if (completedResponse(response.data, interviewCode, activeSessionId.current)) {
+      if (response.data.isComplete && response.data.evaluation) {
         const newAnswer = {
-          question: submittedQuestion,
+          question: currentQuestion,
           answer: answerText.trim(),
           code: codeText || '',
           evaluation: response.data.lastAnswerEvaluation || response.data.evaluation,
           questionNumber: questionIndex + 1,
           isFollowUp: isFollowUpQuestion
         };
-        setAnswers(prev => [...prev.filter(saved => (saved.questionId || saved.question?.id) !== newAnswer.question.id), newAnswer]);
-        setFinalEvaluation({...response.data.evaluation, interviewCode, sessionId:activeSessionId.current});
-        if (Array.isArray(response.data.answers) && Array.isArray(response.data.questions)) setAnswers(persistedAnswers(response.data));
-        setLifecycle('completed');
+        setAnswers(prev => [...prev, newAnswer]);
+        setFinalEvaluation(response.data.evaluation);
+        setIsComplete(true);
         // Do NOT call handleInterviewCompletion!
         return;
       }
 
       const { evaluation, nextQuestion, isFollowUp, progress } = response.data;
-      if (response.data.isComplete) throw new Error('The server has not confirmed a valid completed evaluation. Please retry.');
       
       // Store the answer
       const newAnswer = {
-        question: submittedQuestion,
+        question: currentQuestion,
         answer: answerText.trim(),
         code: codeText || '',
         evaluation,
         questionNumber: progress ? progress.current : questionIndex + 1,
         isFollowUp: isFollowUpQuestion
       };
-      setAnswers(prev => [...prev.filter(saved => (saved.questionId || saved.question?.id) !== newAnswer.question.id), newAnswer]);
+      
+      console.log('Storing new answer:', newAnswer);
+      setAnswers(prev => [...prev, newAnswer]);
       setFeedback(evaluation);
 
       // Handle next question
@@ -516,8 +365,6 @@ const InterviewScreen = (props) => {
         }
         
         setCurrentQuestion(nextQuestion);
-        setQuestions(previous => previous.some(q => q.id === nextQuestion.id) ? previous : [...previous, nextQuestion]);
-        requestAnimationFrame(()=>console.info("[interview timing]",{stage:"submit_to_question_visible",durationMs:Math.round(performance.now()-started)}));
         
         // Ensure recording is stopped for the next question
         if (isRecording) {
@@ -525,7 +372,6 @@ const InterviewScreen = (props) => {
           setIsRecording(false);
         }
         
-        speechRecognitionService.cancel();
         setTranscript('');
         setInterimTranscript('');
         setCode('');
@@ -535,13 +381,10 @@ const InterviewScreen = (props) => {
         setError('Error: Next question missing from server response.');
       }
     } catch (error) {
-      if (epoch !== sessionEpoch.current) return;
       console.error('Error submitting answer:', error);
-      setLifecycle('failed');
-      setError(error.response?.data?.error || error.message || 'Failed to submit answer');
+      setError(error.message || 'Failed to submit answer');
     } finally {
-      submissionInFlight.current = false;
-      if (epoch === sessionEpoch.current) setIsProcessing(false);
+      setIsProcessing(false);
     }
   };
 
@@ -565,18 +408,15 @@ const InterviewScreen = (props) => {
 
   // Fix skip: always send valid question object
   const skipQuestion = async () => {
-    if (!fullscreenActive() || isComplete || isLoading) return;
-    if (submissionInFlight.current) return;
-    const epoch = sessionEpoch.current;
     const validQuestion = getValidQuestion();
     if (!validQuestion) {
       setSkipError('Cannot skip: Invalid question data.');
       return;
     }
-    submissionInFlight.current = true;
     try {
       setIsProcessing(true);
       setSkipError(null);
+      setSkippedQuestions(prev => [...prev, questionIndex]);
       
       // Stop recording if active before skipping
       if (isRecording) {
@@ -592,11 +432,8 @@ const InterviewScreen = (props) => {
         skipped: true
       };
       console.log('Skip payload:', payload); // <-- Debug log
-      setLifecycle(answers.filter(a=>!a.isFollowUp).length + (validQuestion.isFollowUp ? 0 : 1) >= totalQuestions ? 'evaluating' : 'submitting');
-      const response = await api.post('/interviews/evaluate-answer', payload, {maxRetries:0,timeout:150000});
-      if (epoch !== sessionEpoch.current) return;
-      setSkippedQuestions(prev=>prev.includes(questionIndex) ? prev : [...prev,questionIndex]);
-      if (completedResponse(response.data, interviewCode, activeSessionId.current)) {
+      const response = await api.post('/interviews/evaluate-answer', payload);
+      if (response.data.isComplete && response.data.evaluation) {
         const newAnswer = {
           question: validQuestion,
           answer: '',
@@ -604,14 +441,12 @@ const InterviewScreen = (props) => {
           evaluation: response.data.lastAnswerEvaluation || response.data.evaluation,
           questionNumber: questionIndex + 1
         };
-        setAnswers(prev => [...prev.filter(saved => (saved.questionId || saved.question?.id) !== newAnswer.question.id), newAnswer]);
-        setFinalEvaluation({...response.data.evaluation, interviewCode, sessionId:activeSessionId.current});
-        if (Array.isArray(response.data.answers) && Array.isArray(response.data.questions)) setAnswers(persistedAnswers(response.data));
-        setLifecycle('completed');
+        setAnswers(prev => [...prev, newAnswer]);
+        setFinalEvaluation(response.data.evaluation);
+        setIsComplete(true);
         return;
       }
-      const { evaluation, nextQuestion, progress, isFollowUp } = response.data;
-      if (response.data.isComplete) throw new Error('The server has not confirmed a valid completed evaluation. Please retry.');
+      const { evaluation, nextQuestion } = response.data;
       const newAnswer = {
         question: validQuestion,
         answer: '',
@@ -619,26 +454,21 @@ const InterviewScreen = (props) => {
         evaluation,
         questionNumber: questionIndex + 1
       };
-      setAnswers(prev => [...prev.filter(saved => (saved.questionId || saved.question?.id) !== newAnswer.question.id), newAnswer]);
+      setAnswers(prev => [...prev, newAnswer]);
       setFeedback(evaluation);
       if (nextQuestion) {
-        setQuestionIndex(progress ? progress.current - 1 : questionIndex + 1);
-        setIsFollowUpQuestion(!!isFollowUp);
+        setQuestionIndex(prev => prev + 1);
         setCurrentQuestion(nextQuestion);
-        setQuestions(previous => previous.some(q => q.id === nextQuestion.id) ? previous : [...previous, nextQuestion]);
         setTranscript('');
         setInterimTranscript('');
         setCode('');
         setFeedback(null);
       }
     } catch (error) {
-      if (epoch !== sessionEpoch.current) return;
       console.error('Error skipping question:', error);
-      setLifecycle('failed');
       setSkipError('Failed to skip question. Please try again.');
     } finally {
-      submissionInFlight.current = false;
-      if (epoch === sessionEpoch.current) setIsProcessing(false);
+      setIsProcessing(false);
     }
   };
 
@@ -1061,8 +891,24 @@ const InterviewScreen = (props) => {
     }
   }, [isFullscreenPaused, isFullscreenEntered]);
 
-  // Fullscreen pauses retain React state. Initialization restores authoritative
-  // database state on remount; an older browser snapshot must not roll it back.
+  // Rehydrate state from sessionStorage when resuming from pause
+  useEffect(() => {
+    if (!isFullscreenPaused && isFullscreenEntered) {
+      // We just resumed from pause, rehydrate state from sessionStorage
+      const restored = restoreState(interviewCode);
+      if (restored) {
+        setCurrentQuestion(restored.currentQuestion || null);
+        setQuestions(restored.questions || []);
+        setQuestionIndex(restored.questionIndex || 0);
+        setAnswers(restored.answers || []);
+        setSkippedQuestions(restored.skippedQuestions || []);
+        setIsFollowUpQuestion(restored.isFollowUpQuestion || false);
+        setFollowUpCount(restored.followUpCount || 0);
+      }
+    }
+    // Only run when resuming from pause
+    // eslint-disable-next-line
+  }, [isFullscreenPaused, isFullscreenEntered]);
 
   // Rehydrate suspicious/app switch counts from sessionStorage when resuming from pause
   useEffect(() => {
@@ -1082,20 +928,73 @@ const InterviewScreen = (props) => {
     sessionStorage.setItem('pauseAppSwitchCount', sharedAppSwitchCount.toString());
   }, [sharedAppSwitchCount]);
 
-  // Fullscreen exit locks interactions without submitting or changing questions.
+  // Monitor fullscreen exit
   useEffect(() => {
-    if (!fullscreen.active && isFullscreenEntered && !isComplete) {
-      if (speechRecognitionService.isRecording || speechRecognitionService.running) {
-        const captured = speechRecognitionService.finalTranscript;
-        speechRecognitionService.cancel();
-        if (captured) setTranscript(captured);
+    const handleFullscreenChange = () => {
+      const fullscreenElement = document.fullscreenElement || 
+                               document.webkitFullscreenElement || 
+                               document.mozFullScreenElement || 
+                               document.msFullscreenElement;
+      
+      // Update current fullscreen status
+      setIsCurrentlyFullscreen(!!fullscreenElement);
+      
+      if (!fullscreenElement && isFullscreenEntered) {
+        // Fullscreen was exited during interview
+        console.log('Fullscreen exited during interview');
+        setIsFullscreenPaused(false); // Disabled blocking per user request
+        
+        // Stop recording if active
+        if (isRecording) {
+          speechRecognitionService.stopRecording();
+          setIsRecording(false);
+        }
+      } else if (fullscreenElement && isFullscreenPaused) {
+        // Fullscreen was re-entered
+        console.log('Fullscreen re-entered, resuming interview');
+        setIsFullscreenPaused(false);
+        setIsCurrentlyFullscreen(true);
+        // Don't reset counters - keep accumulated values
+      } else if (fullscreenElement && !isCurrentlyFullscreen) {
+        // Fullscreen was entered but we weren't tracking it
+        console.log('Fullscreen detected but not paused, updating status');
+        setIsCurrentlyFullscreen(true);
+        // Don't reset counters - keep accumulated values
       }
-      setIsRecording(false);
-      setRecordingStatus("idle");
-      setInterimTranscript("");
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, [isFullscreenEntered]);
+
+  // Fallback: Check fullscreen status periodically when paused
+  useEffect(() => {
+    if (isFullscreenPaused) {
+      const interval = setInterval(() => {
+        const fullscreenElement = document.fullscreenElement || 
+                                 document.webkitFullscreenElement || 
+                                 document.mozFullScreenElement || 
+                                 document.msFullscreenElement;
+        
+        if (fullscreenElement && isFullscreenPaused) {
+          console.log('Fallback: Fullscreen detected while paused, resuming interview');
+          setIsFullscreenPaused(false);
+          setIsCurrentlyFullscreen(true);
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
     }
-    if (isComplete) fullscreen.exit().catch(error => console.warn("Unable to exit fullscreen:", error.message));
-  }, [fullscreen.active, fullscreen.exit, isFullscreenEntered, isComplete]);
+  }, [isFullscreenPaused]);
 
   // Handle activity reporting
   const handleActivityReport = async (reportData) => {
@@ -1118,16 +1017,15 @@ const InterviewScreen = (props) => {
   const handleFullscreenEntered = () => {
     console.log('handleFullscreenEntered called');
     setIsFullscreenEntered(true);
-
-    setLifecycle(previous => previous === 'awaiting_fullscreen' ? 'ready' : previous);
+    setIsCurrentlyFullscreen(true);
     console.log('Fullscreen mode entered - states updated');
   };
 
   // Handle fullscreen resume
   const handleFullscreenResumed = () => {
     console.log('handleFullscreenResumed called');
-
-
+    setIsFullscreenPaused(false);
+    setIsCurrentlyFullscreen(true);
     
     // Ensure counters are preserved by re-syncing with sessionStorage
     const storedSuspicious = sessionStorage.getItem('pauseSuspiciousActivityCount');
@@ -1167,19 +1065,51 @@ const InterviewScreen = (props) => {
     }
   };
 
-  // The answer endpoint persists completion before returning the final report.
+  // Save completion for company-driven interviews
+  useEffect(() => {
+    const saveCompletion = async () => {
+      if (isComplete && finalEvaluation && !props.isMock && !hasSavedCompletion) {
+        // Try to get interviewId and candidateCode from props, state, or storage
+        const interviewId = props.interviewId || location.state?.interviewId || sessionStorage.getItem('interviewId');
+        const candidateCode = props.candidateCode || location.state?.candidateCode || sessionStorage.getItem('candidateCode');
+        
+        console.log('Saving interview completion:', { interviewId, candidateCode, answers, finalEvaluation });
+        
+        if (interviewId && candidateCode) {
+          try {
+            // Call the /end endpoint to mark candidate as completed and save results
+            await api.post(`/interviews/end`, { 
+              interviewId, 
+              candidateCode,
+              finalEvaluation,
+              answers,
+              suspiciousActivityLogs,
+              appSwitchCount: sharedAppSwitchCount
+            });
+            setHasSavedCompletion(true);
+          } catch (err) {
+            console.error('Failed to save interview completion:', err);
+            setHasSavedCompletion(true); // Still allow completion message
+          }
+        } else {
+          console.warn('Missing interviewId or candidateCode for completion:', { interviewId, candidateCode });
+          setHasSavedCompletion(true); // Fallback
+        }
+      }
+    };
+    
+    saveCompletion();
+  }, [isComplete, finalEvaluation, props.isMock, hasSavedCompletion, props.interviewData, location.state, answers, suspiciousActivityLogs, sharedAppSwitchCount]);
+
   const [showLogsModal, setShowLogsModal] = useState(false);
 
   // Show fullscreen gate if not yet entered
+  console.log('InterviewScreen render - isFullscreenEntered:', isFullscreenEntered, 'isFullscreenPaused:', isFullscreenPaused);
   
-  if (!isFullscreenEntered && !isComplete) {
+  if (!isFullscreenEntered) {
     console.log('Showing FullscreenGate');
     return (
-      <FullscreenGate onPrepare={requestMediaAccess} onStart={async () => {
-        const stream = mediaStreamRef.current;
-        const bothDevicesReady = stream?.getVideoTracks().some(track => track.readyState === 'live') && stream?.getAudioTracks().some(track => track.readyState === 'live');
-        if (bothDevicesReady && await fullscreen.request()) handleFullscreenEntered();
-      }} ready={!isLoading && !!currentQuestion && !error} requesting={fullscreen.requesting} preparing={mediaPreparing} mediaReady={!!mediaStream && mediaStream.getVideoTracks().some(track => track.readyState === 'live') && mediaStream.getAudioTracks().some(track => track.readyState === 'live')} mediaError={mediaError} error={error || fullscreen.error} />
+      <FullscreenGate onFullscreenEntered={handleFullscreenEntered} />
     );
   }
 
@@ -1188,7 +1118,7 @@ const InterviewScreen = (props) => {
     console.log('Showing FullscreenPause');
     return (
       <FullscreenPause 
-        onRequestFullscreen={async () => { if (await fullscreen.request()) handleFullscreenResumed(); }} fullscreenError={fullscreen.error} requestingFullscreen={fullscreen.requesting}
+        onFullscreenResumed={handleFullscreenResumed}
         currentQuestion={currentQuestion}
         questionIndex={questionIndex}
         totalQuestions={totalQuestions}
@@ -1210,12 +1140,11 @@ const InterviewScreen = (props) => {
       <div className="error-container">
         <h2>Error</h2>
         <p>{error}</p>
-        <button onClick={()=>currentQuestion ? setError(null) : window.location.reload()}>Retry safely</button>
       </div>
     );
   }
 
-  if (isComplete && finalEvaluation?.interviewCode === interviewCode && finalEvaluation?.sessionId === activeSessionId.current) {
+  if (isComplete && finalEvaluation) {
     return (
       <div>
         <FinalEvaluation evaluation={finalEvaluation} answers={answers} />
@@ -1240,13 +1169,13 @@ const InterviewScreen = (props) => {
   }
 
   // Main interview layout
+  console.log('Showing main interview layout');
   const hasQuestion = currentQuestion && (currentQuestion.question || currentQuestion.text);
   const isCodeQuestion = currentQuestion && (
     /sql|query|code|program|function|algorithm|cpp|java|python|javascript/i.test(currentQuestion.question || currentQuestion.text)
   );
   return (
     <div style={{ background: '#f8fafc', minHeight: '100vh' }}>
-      {isProcessing && <div role="status" aria-live="polite" style={{padding:'1rem',textAlign:'center'}}>Saving your answer and evaluating it. Preparing the next question…</div>}
       {/* Background Effects */}
       <div style={{
         position: 'absolute',
@@ -1627,26 +1556,10 @@ const InterviewScreen = (props) => {
                   : 'Warning: More than one person detected. Only one person should be in the frame.'}
               </div>
             )}
-            <WebcamFeed stream={mediaStream} onFaceStatusChange={setFaceStatus} />
+            <WebcamFeed onFaceStatusChange={setFaceStatus} />
             {/* Transcript Area as chat bubble */}
             <div style={{ width: '100%', marginTop: 18, background: 'linear-gradient(135deg,#f8fafc 80%,#e0e7ef 100%)', borderRadius: 14, minHeight: 70, padding: '0.8rem', color: '#334155', fontSize: '1.08rem', boxShadow: '0 2px 8px rgba(30,41,59,0.08)', border: '1.2px solid #c7d2fe', transition: 'box-shadow 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
               <span style={{ fontWeight: 700, fontSize: '1rem', color: '#2563eb', marginBottom: 4 }}>Transcript / Answer:</span>
-              <label htmlFor="speech-language" style={{ fontSize: '0.88rem', color: '#475569', marginTop: 4 }}>
-                Recognition language
-                <select
-                  id="speech-language"
-                  value={speechLanguage}
-                  onChange={event => setSpeechLanguage(event.target.value)}
-                  disabled={isRecording}
-                  style={{ marginLeft: 8, padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: 6, color: '#334155', background: '#fff' }}
-                >
-                  <option value="en-IN">English (India)</option>
-                  <option value="en-US">English (US)</option>
-                </select>
-              </label>
-              {recordingStatus === 'initializing' && <span role="status" aria-live="polite" style={{fontSize:'0.9rem',color:'#475569',marginTop:6}}>Starting speech recognition. Your browser may ask for microphone permission.</span>}
-              {recordingStatus === 'recording' && <span role="status" aria-live="polite" style={{fontSize:'0.9rem',color:'#047857',marginBottom:4}}>Listening… speak now. Your words will appear here.</span>}
-              {recordingStatus === 'processing' && <span role="status" aria-live="polite" style={{fontSize:'0.9rem',color:'#475569',marginBottom:4}}>{isRecording ? 'Speech recognition paused briefly and is reconnecting…' : 'Finishing speech recognition…'}</span>}
               <textarea 
                 style={{ 
                   marginTop: 6, 
@@ -1664,17 +1577,8 @@ const InterviewScreen = (props) => {
                 }} 
                 placeholder="Your spoken answer will appear here, or you can type it."
                 value={transcript + (interimTranscript ? (transcript && !transcript.endsWith(' ') ? ' ' : '') + interimTranscript : '')}
-                onChange={(e) => {
-                  transcriptRef.current = e.target.value;
-                  setTranscript(e.target.value);
-                  setInterimTranscript('');
-                }}
-                readOnly={isRecording}
-                aria-label="Review and edit your answer"
+                onChange={(e) => setTranscript(e.target.value)}
               />
-              <span style={{ fontSize: '0.82rem', color: '#64748b', marginTop: 5 }}>
-                Microphone access is requested only when you start recording. You can always type or edit your answer.
-              </span>
             </div>
             {/* Control Buttons moved below transcript */}
             <div className="control-buttons" style={{
@@ -1718,7 +1622,7 @@ const InterviewScreen = (props) => {
                 aria-label={isRecording ? 'Stop Recording' : 'Start Recording'}
                 title={!isCurrentlyFullscreen ? 'Fullscreen required to record' : ''}
               >
-                {recordingStatus === 'processing' ? 'Finishing…' : isRecording ? 'Stop' : 'Record Audio'}
+                {isRecording ? 'Stop' : 'Record Audio'}
                 {!isCurrentlyFullscreen && !isRecording && <span style={{ marginLeft: '4px', fontSize: '1.1rem' }}>🔒</span>}
               </button>
               <button 
@@ -1746,7 +1650,7 @@ const InterviewScreen = (props) => {
                     skipQuestion();
                   }
                 }} 
-                disabled={isProcessing || recordingStatus === 'processing' || !hasQuestion}
+                disabled={isProcessing || !hasQuestion} 
                 aria-label="Skip this question"
                 title={!isCurrentlyFullscreen ? 'Fullscreen required to skip' : ''}
               >
@@ -1846,7 +1750,7 @@ const InterviewScreen = (props) => {
               </button>
             </div>
             {/* Error messages for recording/skip below buttons */}
-            {recordingError && <div role="alert" className="recording-error">{recordingError}</div>}
+            {recordingError && <div className="recording-error">{recordingError}</div>}
             {skipError && <div className="recording-error" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', marginTop: 8 }}>{skipError}</div>}
             {!isCurrentlyFullscreen && (
               <div className="fullscreen-warning" style={{
@@ -1952,4 +1856,4 @@ const InterviewScreen = (props) => {
   );
 };
 
-export default InterviewScreen;
+export default InterviewScreen; 

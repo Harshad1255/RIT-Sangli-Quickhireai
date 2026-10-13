@@ -1,15 +1,12 @@
-const preparation = require('../services/questionPreparation');
 const geminiService = require('../services/geminiService');
 const Interview = require('../models/Interview');
 const InterviewSession = require('../models/InterviewSession');
-const { completedSession } = require('../services/sessionCompletion');
 
 // Export an empty map for backward compatibility during migration, though we shouldn't need it
 const activeInterviews = new Map();
 
-const publicSession = session => ({sessionId:session._id,interviewCode:session.interviewCode,questions:session.questions,answers:session.answers,skills:session.skills,totalQuestions:session.totalQuestions,status:session.status === 'completed' && !completedSession(session) ? 'failed' : session.status,startTime:session.startTime,finalEvaluation:completedSession(session) ? session.finalEvaluation : null,evaluationStatus:session.status === 'completed' && !completedSession(session) ? 'failed' : session.evaluationStatus,processing:!!session.processingUntil && session.processingUntil > new Date()});
 // Start new interview
-const startInterviewCore = async (req, res) => {
+const startInterview = async (req, res) => {
   try {
     const { interviewCode, skills } = req.body;
     console.log('Starting interview:', { interviewCode, skills });
@@ -25,7 +22,7 @@ const startInterviewCore = async (req, res) => {
     }
 
     if (!isMock) {
-      const interview = await Interview.findOne({ 'candidates.code': interviewCode }, {skills:1});
+      const interview = await Interview.findOne({ interviewCode });
       if (!interview) {
         return res.status(404).json({
           success: false,
@@ -40,13 +37,10 @@ const startInterviewCore = async (req, res) => {
       }
     }
 
-    const existing = await InterviewSession.findOne({interviewCode});
-    if (existing) {
-      preparation.prepare(existing);
-      return res.json({success:true, interview:publicSession(existing), resumed:true});
-    }
+    // Delete any existing session in DB
+    await InterviewSession.deleteOne({ interviewCode });
 
-    if (!skills || !Array.isArray(skills) || !skills.length) {
+    if (!skills || !Array.isArray(skills)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid interview parameters',
@@ -83,7 +77,6 @@ const startInterviewCore = async (req, res) => {
     } catch (error) {
       console.error('Error generating first question:', error);
       const fbQ = geminiService.getFallbackQuestion(skillsArray[0], [], 'fundamentals');
-      fbQ.id ||= require('node:crypto').randomUUID();
       fbQ.questionNumber = 1;
       fbQ.isFollowUp = false;
       interviewSession.questions.push(fbQ);
@@ -91,7 +84,6 @@ const startInterviewCore = async (req, res) => {
 
     try {
       await interviewSession.save();
-      preparation.prepare(interviewSession);
       console.log('Interview session created in DB for code:', interviewCode);
     } catch (saveError) {
       if (saveError.code === 11000) {
@@ -99,7 +91,7 @@ const startInterviewCore = async (req, res) => {
         const existingSession = await InterviewSession.findOne({ interviewCode });
         return res.json({
           success: true,
-          interview: publicSession(existingSession),
+          interview: existingSession,
           message: 'Interview started successfully (reused session)'
         });
       }
@@ -108,7 +100,7 @@ const startInterviewCore = async (req, res) => {
 
     res.json({
       success: true,
-      interview: publicSession(interviewSession),
+      interview: interviewSession,
       message: 'Interview started successfully'
     });
   } catch (error) {
@@ -121,28 +113,10 @@ const startInterviewCore = async (req, res) => {
   }
 };
 
-// Coalesce duplicate initialization requests (including React Strict Mode).
-const startInterview = async (req,res) => {
-  const code = req.body.interviewCode;
-  if (preparation.starts.has(code)) {
-    const result = await preparation.starts.get(code);
-    return res.status(result.status).json(result.body);
-  }
-  let resolve;
-  const task = new Promise(done=>{resolve=done;});
-  preparation.starts.set(code,task);
-  const started = Date.now();
-  const proxy = {statusCode:200,status(value){this.statusCode=value;return this;},json(body){resolve({status:this.statusCode,body});return res.status(this.statusCode).json(body);}};
-  try { await startInterviewCore(req,proxy); }
-  finally { preparation.starts.delete(code); console.info('[interview timing]',{stage:'initialization',durationMs:Date.now()-started}); }
-};
-
 // Get interview session
 const getInterviewSession = async (interviewCode) => {
   console.log('Getting session for code:', interviewCode);
-  const started = Date.now();
   const session = await InterviewSession.findOne({ interviewCode });
-  console.info("[interview timing]",{stage:"session_query",durationMs:Date.now()-started});
   console.log('Session found in DB:', session ? 'yes' : 'no');
   return session;
 };
@@ -171,13 +145,41 @@ const generateQuestions = (req, res) => {
 // Get next question
 const getNextQuestion = async (req, res) => {
   try {
-    const session = await InterviewSession.findOne({interviewCode:req.body.interviewCode});
-    if (!session) return res.status(404).json({success:false,error:"Interview session not found"});
-    if (session.status === "completed") return res.json({success:true,isComplete:true,evaluation:session.finalEvaluation});
-    const question = session.questions[session.questions.length - 1];
-    return res.json({success:true,question,topic:question?.topic});
+    const { interviewId, currentTopic, selectedSkills, questionNumber } = req.body;
+
+    // Convert selectedSkills object to array of skills
+    const skillsArray = Object.entries(selectedSkills)
+      .reduce((acc, [category, skills]) => {
+        return acc.concat(skills);
+      }, []);
+
+    // Filter out current topic
+    const availableSkills = skillsArray.filter(skill => skill !== currentTopic);
+    
+    // If no other skills available, reuse current topic
+    const nextTopic = availableSkills.length > 0 
+      ? availableSkills[Math.floor(Math.random() * availableSkills.length)]
+      : currentTopic;
+
+    // Pass focus area based on questionNumber or default
+    const focuses = ['fundamentals', 'practical application', 'coding', 'debugging', 'trade-offs'];
+    const qIndex = (questionNumber || 1) - 1;
+    const focusArea = focuses[qIndex % focuses.length];
+
+    const nextQuestion = await geminiService.generateQuestion(nextTopic, [], qIndex, focusArea);
+    
+    res.json({
+      success: true,
+      question: nextQuestion,
+      topic: nextTopic
+    });
   } catch (error) {
-    return res.status(500).json({success:false,error:"Unable to restore current question"});
+    console.error('Error getting next question:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to get next question',
+      details: error.message
+    });
   }
 };
 
@@ -188,4 +190,4 @@ module.exports = {
   getNextQuestion,
   getFallbackQuestion,
   activeInterviews
-};
+}; 

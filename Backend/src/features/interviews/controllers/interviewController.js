@@ -1,12 +1,9 @@
-const { serializeAnswer } = require('../services/evaluationUtils');
 // Import separated controllers
 const createInterviewController = require('./createInterviewController');
 const candidateController = require('./candidateController');
 const questionController = require('./questionController');
 const resultController = require('./resultController');
 const Interview = require('../models/Interview');
-const InterviewSession = require('../models/InterviewSession');
-const { completedSession } = require('../services/sessionCompletion');
 
 // Re-export all functions from separated controllers
 module.exports = {
@@ -46,24 +43,30 @@ module.exports = {
   },
 
   endInterview: async (req, res) => {
-    const interviewId = req.params.interviewId || req.body.interviewId;
-    const candidateCode = req.params.candidateCode || req.body.candidateCode;
+    console.log('=== END INTERVIEW CALLED ===');
+    console.log('Request body:', req.body);
+    const { interviewId, candidateCode, finalEvaluation, answers } = req.body;
     if (!interviewId || !candidateCode) {
+      console.log('Missing interviewId or candidateCode:', { interviewId, candidateCode });
       return res.status(400).json({ success: false, error: 'Missing interviewId or candidateCode' });
     }
     try {
-      const session = await InterviewSession.findOne({interviewCode:candidateCode});
-      if (!completedSession(session)) return res.status(409).json({success:false,error:'Interview evaluation is not complete.'});
-      const finalEvaluation = session.finalEvaluation;
-      const answers = session.answers;
+      console.log('Looking for interview:', interviewId);
       const interview = await Interview.findById(interviewId);
       if (!interview) {
+        console.log('Interview not found:', interviewId);
         return res.status(404).json({ success: false, error: 'Interview not found' });
       }
+      console.log('Interview found, looking for candidate:', candidateCode);
       const candidate = interview.candidates.find(c => c.code === candidateCode);
       if (!candidate) {
+        console.log('Candidate not found:', candidateCode);
+        console.log('Available candidates:', interview.candidates.map(c => ({ code: c.code, status: c.status })));
         return res.status(404).json({ success: false, error: 'Candidate not found' });
       }
+      
+      console.log('Candidate found, current status:', candidate.status);
+      console.log('Updating status to completed...');
       
       // Update candidate status and store results
       candidate.status = 'completed';
@@ -71,31 +74,38 @@ module.exports = {
       
       // Store evaluation results if provided
       if (finalEvaluation) {
+        console.log('Storing final evaluation results:', finalEvaluation);
         
         // Process answers to extract question text from question objects
-        const processedAnswers = (answers || []).map(serializeAnswer);
+        const processedAnswers = answers ? answers.map(answer => ({
+          question: typeof answer.question === 'object' ? answer.question.question : answer.question,
+          answer: answer.answer || '',
+          score: answer.evaluation?.score || 0,
+          feedback: answer.evaluation?.feedback || ''
+        })) : [];
+        
         candidate.results = {
-          ...require('../services/fallbackEvaluation').reportTotals(answers),
-          technicalKnowledge: finalEvaluation.skillAssessment?.technicalKnowledge ?? null,
-          codingAbility: finalEvaluation.skillAssessment?.codingAbility ?? null,
-          communicationSkills: finalEvaluation.skillAssessment?.communicationSkills ?? null,
-          problemSolving: finalEvaluation.skillAssessment?.problemSolving ?? null,
-          technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge ?? finalEvaluation.technicalScore ?? null,
-          communicationScore: finalEvaluation.skillAssessment?.communicationSkills ?? finalEvaluation.communicationScore ?? null,
-          problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving ?? finalEvaluation.problemSolvingScore ?? null,
-          confidenceScore: finalEvaluation.confidenceScore ?? null,
-          overallScore: finalEvaluation.overallScore ?? null,
+          technicalScore: finalEvaluation.skillAssessment?.technicalKnowledge || finalEvaluation.technicalScore || 0,
+          communicationScore: finalEvaluation.skillAssessment?.communicationSkills || finalEvaluation.communicationScore || 0,
+          problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving || finalEvaluation.problemSolvingScore || 0,
+          confidenceScore: finalEvaluation.confidenceScore || 0,
+          overallScore: finalEvaluation.overallScore || 0,
           strengths: finalEvaluation.strengths || [],
           weaknesses: finalEvaluation.weaknesses || [],
           feedback: finalEvaluation.overallFeedback || finalEvaluation.feedback || '',
           answers: processedAnswers
         };
+        console.log('Stored candidate results:', candidate.results);
       }
+      
+      console.log('Saving interview...');
       await interview.save();
-      return res.json({success:true});
-    } catch (error) {
-      console.error('Error ending interview:',error);
-      return res.status(500).json({success:false,error:'Server error'});
+      console.log('Interview saved successfully');
+      console.log('Final candidate status:', candidate.status);
+      return res.json({ success: true });
+    } catch (err) {
+      console.error('Error ending interview:', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
     }
   }
-};
+}; 

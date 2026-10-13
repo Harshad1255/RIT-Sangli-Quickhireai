@@ -11,7 +11,6 @@ const CandidateReports = () => {
   const [filter, setFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
-  const [retrying, setRetrying] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -86,15 +85,6 @@ const CandidateReports = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const retryEvaluation = async candidate => {
-    setRetrying(candidate.id); setError('');
-    try {
-      await api.post('/interviews/retry-evaluation/' + encodeURIComponent(candidate.code), {}, {timeout:150000});
-      await fetchCandidates();
-    } catch(err) {setError(err.response?.data?.error || 'Unable to retry evaluation');}
-    finally {setRetrying(null);}
   };
 
   const updateStatus = async (candidateId, status) => {
@@ -266,27 +256,25 @@ const CandidateReports = () => {
                 <div className="score-item">
                   <span className="label">Technical</span>
                   <span className={`value ${getScoreColor(candidate.results?.technicalScore * 10)}`}>
-                    {candidate.results?.technicalKnowledge ?? candidate.results?.technicalScore ?? "N/A"}/10
+                    {Math.round((candidate.results?.technicalScore || 0) * 10) / 10}/10
                   </span>
                 </div>
                 <div className="score-item">
                   <span className="label">Communication</span>
                   <span className={`value ${getScoreColor(candidate.results?.communicationScore * 10)}`}>
-                    {candidate.results?.communicationSkills ?? candidate.results?.communicationScore ?? "N/A"}/10
+                    {Math.round((candidate.results?.communicationScore || 0) * 10) / 10}/10
                   </span>
                 </div>
                 <div className="score-item">
                   <span className="label">Problem Solving</span>
                   <span className={`value ${getScoreColor(candidate.results?.problemSolvingScore * 10)}`}>
-                    {candidate.results?.problemSolving ?? candidate.results?.problemSolvingScore ?? "N/A"}/10
+                    {Math.round((candidate.results?.problemSolvingScore || 0) * 10) / 10}/10
                   </span>
                 </div>
-                <div>{['provisional','partially evaluated'].includes(candidate.results?.evaluationStatus) && candidate.code && !candidate.code.startsWith('mock-') && <button disabled={retrying != null} onClick={()=>retryEvaluation(candidate)}>{retrying === candidate.id ? 'Evaluating…' : 'Retry AI evaluation'}</button>} Evaluation: {candidate.results?.evaluationStatus || 'Status not recorded'} — {candidate.results?.percentage ?? 'N/A'}% ({candidate.results?.marksObtained ?? 'N/A'}/{candidate.results?.totalMarks ?? 'N/A'} marks)</div>
-                <div className="score-item"><span className="label">Coding Ability</span><span>{candidate.results?.codingAbility ?? "N/A"}/10</span></div>
                 <div className="score-item">
                   <span className="label">Overall</span>
                   <span className={`value ${getScoreColor(candidate.results?.overallScore * 10)}`}>
-                    {candidate.results?.overallScore == null ? "N/A" : Number(candidate.results.overallScore).toFixed(1)}/10
+                    {Math.round((candidate.results?.overallScore || 0) * 10) / 10}/10
                   </span>
                 </div>
               </div>

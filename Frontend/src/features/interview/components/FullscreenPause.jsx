@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import '../styles/FullscreenPause.css';
 
-const FullscreenPause = ({ onRequestFullscreen, fullscreenError, requestingFullscreen, currentQuestion, questionIndex, totalQuestions }) => {
-  const isFullscreen = false;
-  const showInstructions = true;
+const FullscreenPause = ({ onFullscreenResumed, currentQuestion, questionIndex, totalQuestions }) => {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(true);
   const [pauseTime, setPauseTime] = useState(0);
   // --- State initialization ---
   const getStoredCount = (key) => {
@@ -335,7 +335,57 @@ const FullscreenPause = ({ onRequestFullscreen, fullscreenError, requestingFulls
     };
   }, [isFullscreen, suspiciousActivityCount, appSwitchCount]);
 
-  const requestFullscreen = () => onRequestFullscreen();
+  useEffect(() => {
+    // Listen for fullscreen changes
+    const handleFullscreenChange = () => {
+      const fullscreenElement = document.fullscreenElement || 
+                               document.webkitFullscreenElement || 
+                               document.mozFullScreenElement || 
+                               document.msFullscreenElement;
+      
+      setIsFullscreen(!!fullscreenElement);
+      
+      if (fullscreenElement) {
+        // Fullscreen re-entered successfully
+        console.log('FullscreenPause: Fullscreen detected, calling onFullscreenResumed');
+        setTimeout(() => {
+          console.log('FullscreenPause: Calling onFullscreenResumed after delay');
+          onFullscreenResumed();
+        }, 500);
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, [onFullscreenResumed]);
+
+  const requestFullscreen = async () => {
+    try {
+      setShowInstructions(false);
+      
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      } else if (document.documentElement.webkitRequestFullscreen) {
+        await document.documentElement.webkitRequestFullscreen();
+      } else if (document.documentElement.mozRequestFullScreen) {
+        await document.documentElement.mozRequestFullScreen();
+      } else if (document.documentElement.msRequestFullscreen) {
+        await document.documentElement.msRequestFullscreen();
+      }
+    } catch (error) {
+      console.error('Error entering fullscreen:', error);
+      setShowInstructions(true);
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -343,7 +393,6 @@ const FullscreenPause = ({ onRequestFullscreen, fullscreenError, requestingFulls
         <div style={{ fontSize: '2.5rem', marginBottom: 18 }}>⏸️</div>
         <h2 style={{ color: '#1e293b', fontWeight: 900, fontSize: '2rem', marginBottom: 10 }}>Interview Paused</h2>
         <p style={{ color: '#334155', fontSize: '1.1rem', marginBottom: 18 }}><strong>Fullscreen mode is REQUIRED</strong> to continue your interview.</p>
-        {fullscreenError && <p role="alert" style={{color:'#b91c1c'}}>{fullscreenError}</p>}
         <div style={{ background: '#fef3c7', color: '#b45309', borderRadius: 10, padding: '0.8rem 1rem', marginBottom: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <span style={{ fontSize: '1.3rem' }}><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /></span>
           <span>You must enter fullscreen mode to proceed with the interview.</span>
@@ -373,9 +422,10 @@ const FullscreenPause = ({ onRequestFullscreen, fullscreenError, requestingFulls
         <div style={{ margin: '1.5rem 0' }}>
           <button
             style={{ background: 'linear-gradient(90deg,#3b82f6,#10b981)', color: 'white', borderRadius: 10, fontWeight: 700, border: 'none', fontSize: '1.1rem', boxShadow: '0 2px 8px rgba(37,99,235,0.10)', padding: '1rem 2rem', cursor: isFullscreen ? 'not-allowed' : 'pointer', opacity: isFullscreen ? 0.7 : 1 }}
-            onClick={requestFullscreen} disabled={requestingFullscreen}
+            onClick={requestFullscreen}
+            disabled={isFullscreen}
           >
-            {requestingFullscreen ? 'Returning to Interview…' : 'Return to Fullscreen'}
+            {isFullscreen ? 'Returning to Interview...' : 'ENTER FULLSCREEN TO CONTINUE'}
           </button>
         </div>
         <div style={{ margin: '1.5rem 0' }}>
@@ -406,6 +456,4 @@ const FullscreenPause = ({ onRequestFullscreen, fullscreenError, requestingFulls
   );
 };
 
-const typedProp = type => (props, name) => props[name] == null || typeof props[name] === type ? null : new Error(`Invalid ${name}`);
-FullscreenPause.propTypes = {onRequestFullscreen:typedProp('function'),fullscreenError:typedProp('string'),requestingFullscreen:typedProp('boolean'),currentQuestion:typedProp('object'),questionIndex:typedProp('number'),totalQuestions:typedProp('number')};
-export default FullscreenPause;
+export default FullscreenPause; 

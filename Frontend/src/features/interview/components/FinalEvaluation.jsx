@@ -13,7 +13,7 @@ const FinalEvaluation = ({ evaluation, answers }) => {
   };
 
   // Calculate the angle for the conic-gradient ring (score out of 10)
-  const score = evaluation.overallScore == null ? "N/A" : Number(evaluation.overallScore).toFixed(1);
+  const score = Number(evaluation.overallScore) || 0;
   const scoreAngle = Math.min(360, (score / 10) * 360);
   const scoreColorClass = getScoreColor(score);
 
@@ -26,8 +26,6 @@ const FinalEvaluation = ({ evaluation, answers }) => {
   return (
     <div className="final-evaluation" style={{ maxWidth: '800px', margin: '2rem auto', background: '#fff', borderRadius: '18px', boxShadow: '0 4px 24px rgba(30,41,59,0.10)', padding: '2.5rem 2rem' }}>
       <h2 style={{ fontWeight: 900, fontSize: '2.2rem', color: '#1e293b', marginBottom: '2rem', textAlign: 'center' }}>Interview Evaluation</h2>
-      <p role="status">Evaluation: {evaluation.evaluationStatus || 'completed'}. {evaluation.evaluationStatus === 'provisional' && 'Some scores use provisional fallback assessment and require review.'}</p>
-      {evaluation.totalMarks != null && <p>Marks: {evaluation.marksObtained}/{evaluation.totalMarks} ({evaluation.percentage}%). Attempted: {evaluation.attemptedQuestions}/{evaluation.totalQuestions}</p>}
       <div className="overall-score-section" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
         <h3 style={{ fontWeight: 700, fontSize: '1.3rem', color: '#334155', marginBottom: '1.2rem' }}>Overall Performance</h3>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -42,9 +40,9 @@ const FinalEvaluation = ({ evaluation, answers }) => {
               <div key={skill} style={{ display: 'flex', alignItems: 'center', gap: '1.2rem' }}>
                 <span style={{ minWidth: 160, textTransform: 'capitalize', color: '#64748b', fontWeight: 600 }}>{skill.replace(/([A-Z])/g, ' $1').trim()}</span>
                 <div style={{ flex: 1, background: '#e5e7eb', borderRadius: 8, height: 16, position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ width: `${(score ?? 0) * 10}%`, height: '100%', background: score >= 7 ? '#22c55e' : score >= 4 ? '#f59e42' : '#ef4444', borderRadius: 8, transition: 'width 0.3s' }}></div>
+                  <div style={{ width: `${score * 10}%`, height: '100%', background: score >= 7 ? '#22c55e' : score >= 4 ? '#f59e42' : '#ef4444', borderRadius: 8, transition: 'width 0.3s' }}></div>
                 </div>
-                <span style={{ minWidth: 40, textAlign: 'right', color: '#64748b', fontWeight: 700 }}>{score ?? 'N/A'}/10</span>
+                <span style={{ minWidth: 40, textAlign: 'right', color: '#64748b', fontWeight: 700 }}>{score}/10</span>
               </div>
             ))
           ) : (
@@ -68,13 +66,12 @@ const FinalEvaluation = ({ evaluation, answers }) => {
                   <pre>{answer.code}</pre>
                 </div>
               )}
-              <p>Evaluation: {answer.evaluation?.evaluationSource || 'ai'} {answer.evaluation?.status === 'provisional' && '(provisional; review required)'} — Marks: {answer.evaluation?.marksObtained ?? 'N/A'}/{answer.evaluation?.maxMarks ?? 10}</p>
               <div className="question-scores">
                 {answer.evaluation && answer.evaluation.evaluationFailed ? (
                   <div className="score-item" style={{ color: '#dc2626', fontWeight: 600 }}>
-                    <span>Evaluation service temporarily unavailable</span>
+                    <span>Evaluation failed for this answer</span>
                   </div>
-                ) : answer.evaluation?.status === "skipped" ? (<span>Question skipped</span>) : (
+                ) : (
                   <>
                     <div className={`score-item ${getScoreColor(answer.evaluation?.technicalKnowledge || answer.evaluation?.technicalAccuracy || 0)}`}>
                       <span>Technical Knowledge:</span>

@@ -36,7 +36,7 @@ const InterviewDetails = () => {
   };
 
   const handleViewReport = (candidate) => {
-    setSelectedCandidate({...candidate, interviewName:interview.title || interview.interviewName, duration:interview.duration, interviewCode:interview.interviewCode});
+    setSelectedCandidate(candidate);
   };
 
   const handleCloseReport = () => {
