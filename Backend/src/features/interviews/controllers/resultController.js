@@ -11,6 +11,7 @@ const persistSession = async (session, stage) => {
     throw error;
   }
 };
+const {fallbackEvaluation,withMarks,reportTotals} = require('../services/fallbackEvaluation');
 const evaluationUtils = require('../services/evaluationUtils');
 const Interview = require('../models/Interview');
 const Candidate = require('../../candidates/models/Candidate');
@@ -38,7 +39,7 @@ const processAnswerCore = async (req, res) => {
     const authoritativeQuestion = interview.questions.find(q => q.id === question.id);
     if (!authoritativeQuestion) return res.status(409).json({success:false,error:'Unknown interview question.'});
     question = authoritativeQuestion;
-    if (completion.completedSession(interview)) return res.json(interview.lastResponse?.isComplete ? interview.lastResponse : {success:true,isComplete:true,status:'completed',evaluationStatus:'completed',sessionId:interview._id,interviewCode,evaluation:interview.finalEvaluation,lastAnswerEvaluation:interview.answers[interview.answers.length-1]?.analysis,finalScore:interview.currentScore});
+    if (completion.completedSession(interview)) return res.json(interview.lastResponse?.isComplete ? interview.lastResponse : {success:true,isComplete:true,status:'completed',evaluationStatus:interview.evaluationStatus,sessionId:interview._id,interviewCode,evaluation:interview.finalEvaluation,lastAnswerEvaluation:interview.answers[interview.answers.length-1]?.analysis,finalScore:interview.currentScore});
     if (interview.status === 'completed') return res.status(409).json({success:false,status:'failed',error:'This saved session has an incomplete evaluation. Start a new mock attempt or contact the interviewer.'});
 
     // Use answers.length to track all answers, but we need to track main questions answered.
@@ -95,9 +96,11 @@ const processAnswerCore = async (req, res) => {
          status: analysisError?.response?.status,
 
       });
-      analysis = evaluationUtils.unavailable();
+      analysis = fallbackEvaluation(transcript || code, question, {code});
     }
 
+    if (analysis.status === 'unavailable') analysis = fallbackEvaluation(transcript || code, question, {code}, analysis);
+    analysis = withMarks(analysis, question);
     // Store answer and analysis with confidence score
     const storedAnswer = {
       question: currentQuestionText,
@@ -138,7 +141,7 @@ const processAnswerCore = async (req, res) => {
     
     // Only generate follow-up if answer quality is poor (score < 8), we haven't reached total questions,
     // this wasn't a skipped question, evaluation didn't fail, and the current question is not already a follow-up.
-    const canFollowUp = !isCurrentFollowUp && !isSkipped && !analysis.evaluationFailed && analysis.score < 8 && newMainQuestionsAnswered < interview.totalQuestions;
+    const canFollowUp = !isCurrentFollowUp && !isSkipped && analysis.status === 'evaluated' && !analysis.evaluationFailed && analysis.score < 8 && newMainQuestionsAnswered < interview.totalQuestions;
 
     if (canFollowUp) {
       try {
@@ -182,6 +185,15 @@ const processAnswerCore = async (req, res) => {
           interview.currentScore = scores.length ? scores.reduce((sum,score)=>sum+score,0)/scores.length : null;
           await persistSession(interview, 'session_persisted');
         }
+        for (const saved of interview.answers) {
+          if (saved.analysis?.status === 'unavailable') {
+            const savedQuestion = interview.questions.find(q=>q.id === saved.questionId);
+            saved.analysis = withMarks(fallbackEvaluation(saved.answer || saved.code, savedQuestion, {code:saved.code}, saved.analysis), savedQuestion);
+            saved.status = saved.analysis.status;
+          }
+        }
+        interview.markModified?.('answers');
+        await persistSession(interview, 'session_persisted');
         if (!completion.answersComplete(interview)) {
           interview.evaluationStatus = 'failed';
           await persistSession(interview, 'session_persisted');
@@ -200,8 +212,12 @@ const processAnswerCore = async (req, res) => {
           await persistSession(interview, 'session_persisted');
           return res.status(503).json({success:false,status:'failed',errorCode:'FINAL_REPORT_INVALID',error:'Final evaluation is unavailable. Your answers are saved; please retry.'});
         }
+        analysis = interview.answers.find(saved=>saved.questionId === question.id)?.analysis || analysis;
         interview.finalEvaluation = finalEvaluation;
-        interview.evaluationStatus = 'completed';
+        Object.assign(finalEvaluation, reportTotals(interview.answers));
+        finalEvaluation.overallScore = finalEvaluation.percentage / 10;
+        interview.currentScore = finalEvaluation.overallScore;
+        interview.evaluationStatus = finalEvaluation.evaluationStatus || 'completed';
         await persistSession(interview, 'session_persisted');
         
         // Store mock interview results in database for company viewing
@@ -225,6 +241,7 @@ const processAnswerCore = async (req, res) => {
                   communicationScore: finalEvaluation.skillAssessment?.communicationSkills ?? finalEvaluation.communicationScore ?? null,
                   problemSolvingScore: finalEvaluation.skillAssessment?.problemSolving ?? finalEvaluation.problemSolvingScore ?? null,
                   confidenceScore: interview.currentScore || 0,
+                  ...reportTotals(interview.answers),
                   overallScore: finalEvaluation.overallScore ?? null,
                   strengths: finalEvaluation.strengths || [],
                   weaknesses: finalEvaluation.weaknesses || [],
@@ -249,7 +266,7 @@ const processAnswerCore = async (req, res) => {
         const responseBody = {
           success: true,
           status: 'completed',
-          evaluationStatus: 'completed',
+          evaluationStatus: interview.evaluationStatus,
           sessionId: interview._id,
           interviewCode,
           answers: interview.answers,
@@ -397,7 +414,8 @@ const storeMockInterviewResults = async (mockCode, interview, finalEvaluation) =
         code: mockCode,
         status: 'completed',
         results: {
-          codingAbility: finalEvaluation.skillAssessment?.codingAbility ?? null,
+        ...reportTotals(interview.answers),
+        codingAbility: finalEvaluation.skillAssessment?.codingAbility ?? null,
                   technicalKnowledge: finalEvaluation.skillAssessment?.technicalKnowledge ?? null,
                   communicationSkills: finalEvaluation.skillAssessment?.communicationSkills ?? null,
                   problemSolving: finalEvaluation.skillAssessment?.problemSolving ?? null,
@@ -559,31 +577,21 @@ const getMockInterviewResults = async (req, res) => {
 const submitInterviewResults = async (req, res) => {
   try {
     const { interviewId, candidateId } = req.user;
-    const results = req.body;
 
     const interview = await Interview.findById(interviewId);
     if (!interview) {
       return res.status(404).json({ success: false, error: 'Interview not found' });
     }
 
-    const candidate = interview.candidates.find(c => c.candidate.toString() === candidateId);
+    const candidate = interview.candidates.find(c => c.candidate?.toString() === candidateId);
     if (!candidate) {
       return res.status(404).json({ success: false, error: 'Candidate not found' });
     }
 
-    // Calculate overall score
-    const overallScore = interview.calculateOverallScore(
-      results.technicalScore,
-      results.communicationScore,
-      results.problemSolvingScore,
-      results.confidenceScore
-    );
-
-    // Update candidate results
-    candidate.results = {
-      ...results,
-      overallScore
-    };
+    const session = await InterviewSession.findOne({interviewCode:candidate.code});
+    if (!completion.completedSession(session)) return res.status(409).json({success:false,error:'Complete the saved interview before submitting its results.'});
+    const report = session.finalEvaluation;
+    candidate.results = {...reportTotals(session.answers),...report.skillAssessment,overallScore:report.overallScore,technicalScore:report.skillAssessment.technicalKnowledge,communicationScore:report.skillAssessment.communicationSkills,problemSolvingScore:report.skillAssessment.problemSolving,strengths:report.strengths,weaknesses:report.weaknesses,feedback:report.overallFeedback,answers:session.answers.map(evaluationUtils.serializeAnswer)};
     candidate.status = 'completed';
     candidate.completedAt = new Date();
     
@@ -771,6 +779,11 @@ const generatePdfReport = async (req, res) => {
 
     if (candidate.results) {
       doc.fontSize(16).text('Scores', { underline: true });
+      doc.fontSize(12).text(`Evaluation: ${candidate.results.evaluationStatus || 'status not recorded'}`);
+      if (candidate.results.totalMarks != null) {
+        doc.text(`Questions attempted: ${candidate.results.attemptedQuestions ?? 'N/A'}/${candidate.results.totalQuestions ?? 'N/A'}`);
+        doc.text(`Marks: ${candidate.results.marksObtained}/${candidate.results.totalMarks} (${candidate.results.percentage}%)`);
+      }
       doc.fontSize(12).text(`Technical Knowledge: ${candidate.results.technicalKnowledge ?? candidate.results.technicalScore ?? "N/A"}/10`);
       doc.text(`Communication Skills: ${candidate.results.communicationSkills ?? candidate.results.communicationScore ?? "N/A"}/10`);
       doc.text(`Problem Solving: ${candidate.results.problemSolving ?? candidate.results.problemSolvingScore ?? "N/A"}/10`);
@@ -818,6 +831,9 @@ const generatePdfReport = async (req, res) => {
             doc.text(`Coding Ability: ${ans.codingAbility !== undefined ? ans.codingAbility : 0}/10`);
             doc.text(`Communication Skills: ${ans.communicationSkills !== undefined ? ans.communicationSkills : (ans.communication ?? ans.score ?? 0)}/10`);
             doc.text(`Problem Solving: ${ans.problemSolving !== undefined ? ans.problemSolving : 0}/10`);
+            doc.text(`Evaluation: ${ans.evaluationSource || 'ai'}${ans.status === 'provisional' ? ' (provisional; review required)' : ''}`);
+            doc.text(`Marks: ${ans.marksObtained ?? 'N/A'}/${ans.maxMarks ?? 10}`);
+            if (ans.status === 'provisional') doc.text(`Fallback reason: ${ans.fallbackReason || 'AI evaluation unavailable'}`);
             doc.text(`Feedback: ${ans.feedback || 'None'}`);
             if (ans.improvements && ans.improvements.length > 0) {
               doc.text(`Areas for Improvement: ${ans.improvements.join(', ')}`);

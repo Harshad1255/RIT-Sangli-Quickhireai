@@ -5,7 +5,7 @@ const answersComplete = session => {
   const questions = session.questions || [];
   const answers = session.answers || [];
   const main = questions.filter(q => !q.isFollowUp);
-  return main.length === session.totalQuestions && new Set(questions.map(q=>q.id)).size === questions.length && questions.every(q => q.id && answers.filter(a=>a.questionId === q.id).length === 1 && ['evaluated','skipped'].includes(answers.find(a=>a.questionId === q.id)?.analysis?.status));
+  return main.length === session.totalQuestions && new Set(questions.map(q=>q.id)).size === questions.length && questions.every(q => q.id && answers.filter(a=>a.questionId === q.id).length === 1 && ['evaluated','skipped','provisional'].includes(answers.find(a=>a.questionId === q.id)?.analysis?.status));
 };
-const completedSession = session => session?.status === 'completed' && session.evaluationStatus === 'completed' && answersComplete(session) && validReport(session.finalEvaluation);
+const completedSession = session => session?.status === 'completed' && ['completed','provisional'].includes(session.evaluationStatus) && answersComplete(session) && validReport(session.finalEvaluation) && (!session.answers.some(a=>a.analysis?.status === 'provisional') || (session.evaluationStatus === 'provisional' && session.finalEvaluation.evaluationStatus === 'provisional'));
 module.exports = { validReport, answersComplete, completedSession };

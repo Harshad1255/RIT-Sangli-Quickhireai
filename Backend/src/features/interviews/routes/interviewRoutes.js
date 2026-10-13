@@ -80,6 +80,7 @@ router.get('/:id/questions', async (req, res) => {
 });
 
 // Results and analysis routes
+router.post('/retry-evaluation/:interviewCode', authenticateToken, authorizeCompany, require('../controllers/retryEvaluationController'));
 router.post('/process-answer', interviewController.processAnswer);
 router.post('/evaluate-answer', async (req, res) => {
   try {

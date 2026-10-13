@@ -26,6 +26,8 @@ const FinalEvaluation = ({ evaluation, answers }) => {
   return (
     <div className="final-evaluation" style={{ maxWidth: '800px', margin: '2rem auto', background: '#fff', borderRadius: '18px', boxShadow: '0 4px 24px rgba(30,41,59,0.10)', padding: '2.5rem 2rem' }}>
       <h2 style={{ fontWeight: 900, fontSize: '2.2rem', color: '#1e293b', marginBottom: '2rem', textAlign: 'center' }}>Interview Evaluation</h2>
+      <p role="status">Evaluation: {evaluation.evaluationStatus || 'completed'}. {evaluation.evaluationStatus === 'provisional' && 'Some scores use provisional fallback assessment and require review.'}</p>
+      {evaluation.totalMarks != null && <p>Marks: {evaluation.marksObtained}/{evaluation.totalMarks} ({evaluation.percentage}%). Attempted: {evaluation.attemptedQuestions}/{evaluation.totalQuestions}</p>}
       <div className="overall-score-section" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
         <h3 style={{ fontWeight: 700, fontSize: '1.3rem', color: '#334155', marginBottom: '1.2rem' }}>Overall Performance</h3>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -66,6 +68,7 @@ const FinalEvaluation = ({ evaluation, answers }) => {
                   <pre>{answer.code}</pre>
                 </div>
               )}
+              <p>Evaluation: {answer.evaluation?.evaluationSource || 'ai'} {answer.evaluation?.status === 'provisional' && '(provisional; review required)'} — Marks: {answer.evaluation?.marksObtained ?? 'N/A'}/{answer.evaluation?.maxMarks ?? 10}</p>
               <div className="question-scores">
                 {answer.evaluation && answer.evaluation.evaluationFailed ? (
                   <div className="score-item" style={{ color: '#dc2626', fontWeight: 600 }}>

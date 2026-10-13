@@ -83,6 +83,45 @@ describe('Interview Flow Rules', () => {
     }
   });
 
+  it('persists question totals and provisional state in mock interview reports', async () => {
+    const Interview = require('../src/features/interviews/models/Interview');
+    geminiService.generateQuestion.mockImplementation(async (skill, previous) => ({
+      question:`Question ${previous.length + 1}`,topic:skill,difficulty:'medium',category:'fundamentals'
+    }));
+    geminiService.analyzeAnswer.mockResolvedValueOnce({
+      status:'provisional',evaluationSource:'fallback',score:4,overallScore:4,technicalKnowledge:4,codingAbility:4,
+      communicationSkills:4,problemSolving:4,feedback:'Provisional related concepts',strengths:[],improvements:[]
+    }).mockResolvedValue({
+      status:'evaluated',score:8,overallScore:8,technicalKnowledge:8,codingAbility:8,
+      communicationSkills:8,problemSolving:8,feedback:'Relevant answer',strengths:[],improvements:[]
+    });
+    geminiService.generateFinalEvaluation.mockResolvedValue({
+      overallScore:8,skillAssessment:{technicalKnowledge:8,codingAbility:8,communicationSkills:8,problemSolving:8},
+      strengths:['Relevant knowledge'],weaknesses:[],overallFeedback:'Provisional report summary',
+      evaluationStatus:'provisional'
+    });
+
+    const startResponse={json:jest.fn(),status:jest.fn().mockReturnThis()};
+    await questionController.startInterview({body:{interviewCode:'mock-report',skills:['JavaScript']}},startResponse);
+    const session=await questionController.getInterviewSession('mock-report');
+
+    for(let i=0;i<5;i++){
+      const question=session.questions[session.questions.length-1];
+      const answerResponse={json:jest.fn(),status:jest.fn().mockReturnThis()};
+      await resultController.processAnswer({body:{interviewCode:'mock-report',answer:'A relevant answer',question}},answerResponse);
+      if(i===4) expect(answerResponse.json.mock.calls[0][0].isComplete).toBe(true);
+    }
+
+    const saved=Interview.updateOne.mock.calls.find(([query])=>query['candidates.code']==='mock-report');
+    const results=saved[1].$set.candidates[0].results;
+    expect(results).toMatchObject({
+      evaluationStatus:'provisional',totalQuestions:5,attemptedQuestions:5,totalMarks:50,
+      marksObtained:36,percentage:72
+    });
+    expect(results.fallbackQuestions).toHaveLength(1);
+    expect(results.answers).toHaveLength(5);
+  });
+
   it('weak answer triggers at most one follow-up per main question', async () => {
     geminiService.generateQuestion.mockResolvedValue({ question: 'Main Q', topic: 'JS' });
     // First answer is weak (score 5)
@@ -120,7 +159,7 @@ describe('Interview Flow Rules', () => {
     expect(resp2.nextQuestion.question).toBe('Main Q');
   });
 
-  it('evaluation failure excludes score from averages and does not generate follow-up', async () => {
+  it('evaluation failure produces provisional partial credit and does not generate follow-up', async () => {
     geminiService.generateQuestion.mockResolvedValue({ question: 'Main Q', topic: 'JS' });
     // Analyze fails -> { evaluationFailed: true, score: null }
     geminiService.analyzeAnswer.mockRejectedValue(new Error('Fail'));
@@ -136,8 +175,8 @@ describe('Interview Flow Rules', () => {
     await resultController.processAnswer(reqAns, resAns);
     
     const resp = resAns.json.mock.calls[0][0];
-    expect(resp.evaluation.evaluationFailed).toBe(true);
-    expect(resp.evaluation.score).toBeNull();
+    expect(resp.evaluation.status).toBe('provisional');expect(resp.evaluation.evaluationSource).toBe('fallback');
+    expect(resp.evaluation.score).toBe(0);
     expect(resp.isFollowUp).toBe(false); // No follow-up on failure
   });
 

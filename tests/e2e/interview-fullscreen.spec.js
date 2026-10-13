@@ -3,6 +3,20 @@ const code = 'mock-fullscreen-test';
 const report = {overallScore:7,skillAssessment:{technicalKnowledge:7,codingAbility:7,communicationSkills:7,problemSolving:7},strengths:[],weaknesses:[],recommendations:[],overallFeedback:'Completed interview'};
 const question = number => ({id:`q-${number}`,question:`Lifecycle question ${number}`,topic:'JavaScript',questionNumber:number,isFollowUp:false});
 
+test('persisted provisional report survives refresh and labels fallback answers',async({page})=>{
+ const questions=Array.from({length:5},(_,i)=>question(i+1));
+ const analysis={status:'provisional',evaluationSource:'fallback',score:3,overallScore:3,technicalKnowledge:3,codingAbility:3,communicationSkills:3,problemSolving:3,maxMarks:10,marksObtained:3,feedback:'Provisional review required'};
+ const answers=questions.map(q=>({questionId:q.id,question:q.question,answer:'Relevant attempt',analysis}));
+ const finalEvaluation={...report,overallScore:3,evaluationStatus:'provisional',marksObtained:15,totalMarks:50,percentage:30,attemptedQuestions:5,totalQuestions:5};
+ const {calls}=await setup(page,{status:'completed',evaluationStatus:'provisional',questions,answers,finalEvaluation,noEntry:true});
+ await expect(page.getByRole('heading',{name:'Interview Evaluation',exact:true})).toBeVisible();
+ await expect(page.getByRole('status')).toContainText('provisional');
+ await page.reload();
+ await expect(page.getByRole('heading',{name:'Interview Evaluation',exact:true})).toBeVisible();
+ await expect(page.getByText('Evaluation: fallback',{exact:false})).toHaveCount(5);
+ expect(calls.evaluate).toBe(0);
+});
+
 async function setup(page, overrides = {}) {
   const session = {sessionId:'session-current',interviewCode:code,status:'active',evaluationStatus:'not_started',skills:['JavaScript'],totalQuestions:5,questions:[question(1)],answers:[],...overrides};
   const calls = {start:0,evaluate:0};

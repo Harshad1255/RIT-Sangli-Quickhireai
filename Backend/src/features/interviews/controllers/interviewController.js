@@ -75,6 +75,7 @@ module.exports = {
         // Process answers to extract question text from question objects
         const processedAnswers = (answers || []).map(serializeAnswer);
         candidate.results = {
+          ...require('../services/fallbackEvaluation').reportTotals(answers),
           technicalKnowledge: finalEvaluation.skillAssessment?.technicalKnowledge ?? null,
           codingAbility: finalEvaluation.skillAssessment?.codingAbility ?? null,
           communicationSkills: finalEvaluation.skillAssessment?.communicationSkills ?? null,
