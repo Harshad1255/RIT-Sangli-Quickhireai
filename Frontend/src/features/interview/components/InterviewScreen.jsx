@@ -4,7 +4,7 @@ import { api } from "../../../shared/services/api";
 import "../styles/InterviewScreen.css";
 import RealTimeFeedback from './RealTimeFeedback';
 import FinalEvaluation from './FinalEvaluation';
-import speechRecognitionService from '../services/speechRecognitionService';
+import { SpeechRecognitionService } from '../services/speechRecognitionService';
 import CodeEditor from './CodeEditor';
 import TechQuestionTypes from './TechQuestionTypes';
 
@@ -67,6 +67,7 @@ const InterviewScreen = (props) => {
   const [questionIndex, setQuestionIndex] = useState(restored?.questionIndex || 0);
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState(restored?.transcript || "");
+  const transcriptRef = useRef(restored?.transcript || "");
   const [currentTopic, setCurrentTopic] = useState("");
   const [lifecycle, setLifecycle] = useState('initializing');
   const isProcessing = lifecycle === 'submitting' || lifecycle === 'evaluating';
@@ -85,6 +86,10 @@ const InterviewScreen = (props) => {
   const [skippedQuestions, setSkippedQuestions] = useState(restored?.skippedQuestions || []);
   const [recordingStatus, setRecordingStatus] = useState('idle'); // 'idle', 'recording', 'processing'
   const [recordingError, setRecordingError] = useState(null);
+  const [speechLanguage, setSpeechLanguage] = useState('en-IN');
+  const speechRecognitionServiceRef = useRef(null);
+  if (!speechRecognitionServiceRef.current) speechRecognitionServiceRef.current = new SpeechRecognitionService();
+  const speechRecognitionService = speechRecognitionServiceRef.current;
   const [skipError, setSkipError] = useState(null);
   const [hasSavedCompletion, setHasSavedCompletion] = useState(false);
   const [isFollowUpQuestion, setIsFollowUpQuestion] = useState(restored?.isFollowUpQuestion || false);
@@ -115,6 +120,10 @@ const InterviewScreen = (props) => {
   const recentlyIncrementedRef = useRef(false);
   const focusLossIncrementedRef = useRef(false);
   const [faceStatus, setFaceStatus] = useState('');
+
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
 
   // Add at the top of the component
   const getStoredLogs = () => {
@@ -269,7 +278,7 @@ const InterviewScreen = (props) => {
 
     // Cleanup function
     return () => { disposed = true; sessionEpoch.current++; speechRecognitionService.cancel(); };
-  }, [interviewCode, initializationSkills, props.isMock]);
+  }, [interviewCode, initializationSkills, props.isMock, speechRecognitionService]);
 
   // Remove the session checking interval as it's causing the redirect issue
   // Instead, check session validity only when needed
@@ -282,17 +291,27 @@ const InterviewScreen = (props) => {
   const startRecording = () => {
     if (!fullscreenActive() || isComplete || isLoading || isProcessing) return;
     try {
-      setRecordingStatus('recording');
+      setRecordingStatus('initializing');
       setRecordingError(null);
       
       speechRecognitionService.startRecording(
-        transcript,
+        transcriptRef.current,
         (interim) => setInterimTranscript(interim),
-        (final) => setTranscript(final),
+        (final) => {
+          transcriptRef.current = final;
+          setTranscript(final);
+        },
         (error) => {
           setRecordingError(error);
           setRecordingStatus('idle');
           setIsRecording(false);
+        },
+        {
+          language: speechLanguage,
+          onStateChange: (state) => {
+            setRecordingStatus(state === 'initializing' || state === 'listening' || state === 'processing' ? state : 'idle');
+            setIsRecording(speechRecognitionService.isRecording);
+          }
         }
       );
       setIsRecording(speechRecognitionService.isRecording);
@@ -317,6 +336,7 @@ const InterviewScreen = (props) => {
       }
 
       // Set the transcript in state (user must click Submit)
+      transcriptRef.current = finalTranscript.trim();
       setTranscript(finalTranscript.trim());
 
     } catch (error) {
@@ -347,6 +367,7 @@ const InterviewScreen = (props) => {
         answerText = await speechRecognitionService.stopRecording();
         setIsRecording(false);
         setInterimTranscript('');
+        transcriptRef.current = answerText;
         setTranscript(answerText);
       }
       let codeText = typeof payload === 'string' ? code : payload.code;
@@ -1541,8 +1562,22 @@ const InterviewScreen = (props) => {
             {/* Transcript Area as chat bubble */}
             <div style={{ width: '100%', marginTop: 18, background: 'linear-gradient(135deg,#f8fafc 80%,#e0e7ef 100%)', borderRadius: 14, minHeight: 70, padding: '0.8rem', color: '#334155', fontSize: '1.08rem', boxShadow: '0 2px 8px rgba(30,41,59,0.08)', border: '1.2px solid #c7d2fe', transition: 'box-shadow 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
               <span style={{ fontWeight: 700, fontSize: '1rem', color: '#2563eb', marginBottom: 4 }}>Transcript / Answer:</span>
+              <label htmlFor="speech-language" style={{ fontSize: '0.88rem', color: '#475569', marginTop: 4 }}>
+                Recognition language
+                <select
+                  id="speech-language"
+                  value={speechLanguage}
+                  onChange={event => setSpeechLanguage(event.target.value)}
+                  disabled={isRecording}
+                  style={{ marginLeft: 8, padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: 6, color: '#334155', background: '#fff' }}
+                >
+                  <option value="en-IN">English (India)</option>
+                  <option value="en-US">English (US)</option>
+                </select>
+              </label>
+              {recordingStatus === 'initializing' && <span role="status" aria-live="polite" style={{fontSize:'0.9rem',color:'#475569',marginTop:6}}>Starting speech recognition. Your browser may ask for microphone permission.</span>}
               {recordingStatus === 'recording' && <span role="status" aria-live="polite" style={{fontSize:'0.9rem',color:'#047857',marginBottom:4}}>Listening… speak now. Your words will appear here.</span>}
-              {recordingStatus === 'processing' && <span role="status" aria-live="polite" style={{fontSize:'0.9rem',color:'#475569',marginBottom:4}}>Finishing speech recognition…</span>}
+              {recordingStatus === 'processing' && <span role="status" aria-live="polite" style={{fontSize:'0.9rem',color:'#475569',marginBottom:4}}>{isRecording ? 'Speech recognition paused briefly and is reconnecting…' : 'Finishing speech recognition…'}</span>}
               <textarea 
                 style={{ 
                   marginTop: 6, 
@@ -1560,8 +1595,17 @@ const InterviewScreen = (props) => {
                 }} 
                 placeholder="Your spoken answer will appear here, or you can type it."
                 value={transcript + (interimTranscript ? (transcript && !transcript.endsWith(' ') ? ' ' : '') + interimTranscript : '')}
-                onChange={(e) => setTranscript(e.target.value)}
+                onChange={(e) => {
+                  transcriptRef.current = e.target.value;
+                  setTranscript(e.target.value);
+                  setInterimTranscript('');
+                }}
+                readOnly={isRecording}
+                aria-label="Review and edit your answer"
               />
+              <span style={{ fontSize: '0.82rem', color: '#64748b', marginTop: 5 }}>
+                Microphone access is requested only when you start recording. You can always type or edit your answer.
+              </span>
             </div>
             {/* Control Buttons moved below transcript */}
             <div className="control-buttons" style={{
@@ -1605,7 +1649,7 @@ const InterviewScreen = (props) => {
                 aria-label={isRecording ? 'Stop Recording' : 'Start Recording'}
                 title={!isCurrentlyFullscreen ? 'Fullscreen required to record' : ''}
               >
-                {isRecording ? 'Stop' : 'Record Audio'}
+                {recordingStatus === 'processing' ? 'Finishing…' : isRecording ? 'Stop' : 'Record Audio'}
                 {!isCurrentlyFullscreen && !isRecording && <span style={{ marginLeft: '4px', fontSize: '1.1rem' }}>🔒</span>}
               </button>
               <button 
@@ -1633,7 +1677,7 @@ const InterviewScreen = (props) => {
                     skipQuestion();
                   }
                 }} 
-                disabled={isProcessing || !hasQuestion} 
+                disabled={isProcessing || recordingStatus === 'processing' || !hasQuestion}
                 aria-label="Skip this question"
                 title={!isCurrentlyFullscreen ? 'Fullscreen required to skip' : ''}
               >

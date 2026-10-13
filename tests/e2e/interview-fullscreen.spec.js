@@ -5,20 +5,28 @@ const question = number => ({id:`q-${number}`,question:`Lifecycle question ${num
 
 test('speech network failure preserves the draft and typed answer can still be submitted',async({page})=>{
  test.setTimeout(90000);
- const {calls}=await setup(page);
- await page.evaluate(async()=>{
-   const {default:speech}=await import('/src/features/interview/services/speechRecognitionService.js');
-   speech.instance=null;window.speechStarts=0;
-   speech.Recognition=class {start(){window.speechStarts++;}stop(){this.onend();}abort(){this.onend();}};
-   window.failSpeech=()=>{speech.recognition.onerror({error:'network'});speech.recognition.onend();};
+ await page.addInitScript(()=>{
+   window.speechStarts=0;window.speechRecognitionMocks=[];
+   window.SpeechRecognition=class{
+     constructor(){window.speechRecognitionMocks.push(this);}
+     start(){window.speechStarts++;}
+     stop(){this.onend?.();}
+     abort(){this.onend?.();}
+   };
+   window.failSpeech=()=>{
+     const recognition=window.speechRecognitionMocks.at(-1);
+     recognition.onerror({error:'network'});
+     recognition.onend();
+   };
  });
+ const {calls}=await setup(page);
  const draft=page.getByPlaceholder('Your spoken answer will appear here, or you can type it.');
  await draft.fill('My typed answer about JavaScript');
  await page.getByRole('button',{name:'Start Recording',exact:true}).click();
  await page.evaluate(()=>window.failSpeech());
  await expect.poll(()=>page.evaluate(()=>window.speechStarts)).toBe(2);
  await page.evaluate(()=>window.failSpeech());
- await expect(page.getByRole('alert')).toContainText('Speech-to-text could not connect');
+ await expect(page.getByRole('alert')).toContainText('Speech recognition could not connect');
  await expect(draft).toHaveValue('My typed answer about JavaScript');
  await expect(page.getByRole('button',{name:'Start Recording',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Submit Answer',exact:true}).click();
@@ -170,13 +178,13 @@ test('fullscreen exit blocks controls and re-entry preserves question, draft and
 });
 
 test('handlers reject recording, skip and submit when live fullscreen ends before React updates',async({page})=>{
+ await page.addInitScript(()=>{
+   window.recordRequests=0;
+   window.SpeechRecognition=class{start(){window.recordRequests++;}stop(){}abort(){}};
+ });
  const {calls}=await setup(page);
  await page.getByPlaceholder('Your spoken answer will appear here, or you can type it.').fill('Draft');
- await page.evaluate(async()=>{
-   const {default: speech}=await import('/src/features/interview/services/speechRecognitionService.js');
-   window.recordRequests=0;speech.startRecording=()=>window.recordRequests++;
-   window.setTestFullscreen(false,false);
- });
+ await page.evaluate(()=>window.setTestFullscreen(false,false));
  await page.getByRole('button',{name:'Start Recording',exact:true}).click();
  await page.getByRole('button',{name:'Skip this question',exact:true}).click();
  await page.getByRole('button',{name:'Submit Answer',exact:true}).click();

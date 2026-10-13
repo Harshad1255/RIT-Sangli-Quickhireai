@@ -57,3 +57,31 @@ test('synchronous microphone start failure does not leave recording active',()=>
  s.startRecording('Draft',jest.fn(),jest.fn(),fail);
  expect(s.isRecording).toBe(false);expect(s.running).toBe(false);expect(fail).toHaveBeenCalledWith(expect.stringContaining('Microphone access was denied'));
 });
+
+test('automatic restarts after empty recognition endings are bounded',()=>{
+ const s=createService(),r=s.recognition,fail=jest.fn();s.startRecording('',jest.fn(),jest.fn(),fail);
+ for(let restart=0;restart<3;restart++){
+  r.onend();
+  jest.runOnlyPendingTimers();
+ }
+ expect(r.start).toHaveBeenCalledTimes(4);
+ r.onend();
+ expect(s.isRecording).toBe(false);
+ expect(fail).toHaveBeenCalledWith(expect.stringContaining('stopped after repeated interruptions'));
+ jest.runOnlyPendingTimers();
+ expect(r.start).toHaveBeenCalledTimes(4);
+});
+
+test('recognition locale is selectable and service instances keep independent transcripts',async()=>{
+ const first=createService(),second=createService(),firstRecognition=first.recognition,secondRecognition=second.recognition;
+ first.startRecording('',jest.fn(),jest.fn(),jest.fn(),{language:'en-US'});
+ second.startRecording('',jest.fn(),jest.fn(),jest.fn(),{language:'en-IN'});
+ expect(firstRecognition.lang).toBe('en-US');
+ expect(secondRecognition.lang).toBe('en-IN');
+ firstRecognition.onresult({resultIndex:0,results:[result('first answer')]});
+ secondRecognition.onresult({resultIndex:0,results:[result('second answer')]});
+ expect(first.finalTranscript).toBe('first answer');
+ expect(second.finalTranscript).toBe('second answer');
+ first.cancel();
+ expect(second.isRecording).toBe(true);
+});
