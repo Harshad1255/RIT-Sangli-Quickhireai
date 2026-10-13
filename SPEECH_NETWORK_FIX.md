@@ -8,6 +8,7 @@ Changes:
 - Bound automatic restarts after repeated empty/early recognition endings; keep a manual retry path.
 - Give each mounted interview its own recognition service and allow English (India) or English (US) selection.
 - Keep the answer editable after capture, and submit the reviewed transcript through the existing evaluation endpoint.
+- Request camera and microphone access from an explicit pre-interview action; require both live devices before entering the interview.
 - Show actionable network, microphone permission, capture, language and unsupported-service messages.
 - Allow retry or typed submission after failure. Do not award marks or submit automatically.
 - Keep recording UI idle after synchronous startup errors; cancel delayed restarts when stopping or pausing fullscreen.
@@ -23,10 +24,10 @@ Reference: https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognitionErr
 
 ## Manual microphone verification
 
-1. In a supported browser (for example, current Chrome), start a new interview and choose English (India); allow microphone access when prompted.
+1. In a supported browser (for example, current Chrome), choose **Allow Camera and Microphone** before starting; allow both permissions when prompted. Confirm the preview is available after entering fullscreen.
 2. Speak several sentences with a pause, confirm the live interim preview updates, then stop and verify the text remains editable and complete.
 3. Edit the captured answer and submit once; verify the edited wording is the answer in the saved evaluation/report.
-4. Deny microphone access (or disable/disconnect the microphone) and retry; verify an actionable error appears, the text box remains usable, and typed submission still works.
+4. Deny camera or microphone access (or disconnect either device); verify the app does not start the interview, gives a clear retry message, and never leaves fullscreen or recording in a stuck state.
 5. Leave the browser without SpeechRecognition support or simulate a network failure; verify recognition does not loop indefinitely and captured text is retained.
 6. Refresh mid-question and verify the candidate can restore the active question and saved draft without submitting automatically.
 

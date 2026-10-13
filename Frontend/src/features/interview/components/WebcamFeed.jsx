@@ -1,18 +1,30 @@
-import React, { useRef, useEffect, useState } from 'react';
-import Webcam from 'react-webcam';
+import { useRef, useEffect, useState } from 'react';
 import { FaceMesh } from '@mediapipe/face_mesh';
 import { Camera } from '@mediapipe/camera_utils';
 import '../styles/WebcamFeed.css';
 
-const WebcamFeed = ({ onConfidenceScore, onFaceStatusChange }) => {
+const WebcamFeed = ({ stream, onConfidenceScore, onFaceStatusChange }) => {
   const webcamRef = useRef(null);
   const canvasRef = useRef(null);
-  const [confidence, setConfidence] = useState(0);
-  const [faceStatus, setFaceStatus] = useState('Loading...');
+  const [faceStatus, setFaceStatus] = useState('Camera starting…');
 
   useEffect(() => {
+    const video = webcamRef.current;
+    if (!video || !stream) return undefined;
+    video.srcObject = stream;
+    video.play().catch(error => {
+      setFaceStatus(error.name === 'NotAllowedError' ? 'Camera playback is blocked' : 'Camera preview unavailable');
+    });
+    return () => {
+      if (video.srcObject === stream) video.srcObject = null;
+    };
+  }, [stream]);
+
+  useEffect(() => {
+    if (!stream) return undefined;
     let camera = null;
     let faceMesh = null;
+    let initializationTimer = null;
 
     const setupFaceMesh = async () => {
       faceMesh = new FaceMesh({
@@ -27,8 +39,8 @@ const WebcamFeed = ({ onConfidenceScore, onFaceStatusChange }) => {
 
       faceMesh.onResults((results) => {
         const ctx = canvasRef.current?.getContext('2d');
-        if (ctx && webcamRef.current && webcamRef.current.video) {
-          const video = webcamRef.current.video;
+        if (ctx && webcamRef.current) {
+          const video = webcamRef.current;
           canvasRef.current.width = video.videoWidth;
           canvasRef.current.height = video.videoHeight;
           ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -40,8 +52,8 @@ const WebcamFeed = ({ onConfidenceScore, onFaceStatusChange }) => {
         }
         let newFaceStatus = 'No face detected';
         if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          if (ctx && webcamRef.current && webcamRef.current.video) {
-            const video = webcamRef.current.video;
+          if (ctx && webcamRef.current) {
+            const video = webcamRef.current;
             results.multiFaceLandmarks.forEach(landmarks => {
               let minX = 1, minY = 1, maxX = 0, maxY = 0;
               landmarks.forEach(pt => {
@@ -70,7 +82,7 @@ const WebcamFeed = ({ onConfidenceScore, onFaceStatusChange }) => {
             newFaceStatus = 'Face detected';
             const landmarks = results.multiFaceLandmarks[0];
             const nose = landmarks[1];
-            const video = webcamRef.current.video;
+            const video = webcamRef.current;
             const frameCenter = { x: video.videoWidth / 2, y: video.videoHeight / 2 };
             const dx = (nose.x * video.videoWidth) - frameCenter.x;
             const dy = (nose.y * video.videoHeight) - frameCenter.y;
@@ -78,19 +90,16 @@ const WebcamFeed = ({ onConfidenceScore, onFaceStatusChange }) => {
             const maxDist = Math.sqrt(Math.pow(frameCenter.x, 2) + Math.pow(frameCenter.y, 2));
             const centerScore = 1 - Math.min(dist / maxDist, 1);
             const score = Math.round(centerScore * 100);
-            setConfidence(score);
             if (onConfidenceScore) onConfidenceScore(score);
             // Debug log
             console.log('Face detected. Confidence:', score);
           } else {
             newFaceStatus = 'More than 1 person detected';
-            setConfidence(0);
             if (onConfidenceScore) onConfidenceScore(0);
             // Debug log
             console.log('More than 1 person detected');
           }
         } else {
-          setConfidence(0);
           if (onConfidenceScore) onConfidenceScore(0);
           // Debug log
           console.log('No face detected');
@@ -99,11 +108,11 @@ const WebcamFeed = ({ onConfidenceScore, onFaceStatusChange }) => {
         if (onFaceStatusChange) onFaceStatusChange(newFaceStatus);
       });
 
-      if (webcamRef.current && webcamRef.current.video) {
-        camera = new Camera(webcamRef.current.video, {
+      if (webcamRef.current) {
+        camera = new Camera(webcamRef.current, {
           onFrame: async () => {
-            if (webcamRef.current && webcamRef.current.video) {
-              await faceMesh.send({ image: webcamRef.current.video });
+            if (webcamRef.current) {
+              await faceMesh.send({ image: webcamRef.current });
             }
           },
           width: 400,
@@ -111,32 +120,35 @@ const WebcamFeed = ({ onConfidenceScore, onFaceStatusChange }) => {
         });
         camera.start();
       } else {
-        console.warn('Webcam video element not ready yet');
+        setFaceStatus('Camera preview unavailable');
       }
     };
 
     const initializeFaceDetection = () => {
-      if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.readyState === 4) {
+      if (webcamRef.current && webcamRef.current.readyState === 4) {
         setupFaceMesh();
       } else {
-        setTimeout(initializeFaceDetection, 100);
+        initializationTimer = setTimeout(initializeFaceDetection, 100);
       }
     };
 
     initializeFaceDetection();
 
     return () => {
+      clearTimeout(initializationTimer);
       if (camera) camera.stop();
+      faceMesh?.close?.();
     };
-  }, [onConfidenceScore, onFaceStatusChange]);
+  }, [stream, onConfidenceScore, onFaceStatusChange]);
 
   return (
     <div className="webcam-container">
       <div className="video-wrapper" style={{ position: 'relative', width: 400, height: 300 }}>
-        <Webcam
+        <video
           ref={webcamRef}
-          audio={false}
-          videoConstraints={{ width: 400, height: 300, facingMode: "user" }}
+          autoPlay
+          playsInline
+          muted
           className="webcam-feed"
           style={{
             objectFit: 'cover',
@@ -193,6 +205,13 @@ const WebcamFeed = ({ onConfidenceScore, onFaceStatusChange }) => {
       </div>
     </div>
   );
+};
+
+const typedProp = type => (props, name) => props[name] == null || typeof props[name] === type ? null : new Error(`Invalid ${name}`);
+WebcamFeed.propTypes = {
+  stream: typedProp('object'),
+  onConfidenceScore: typedProp('function'),
+  onFaceStatusChange: typedProp('function')
 };
 
 export default WebcamFeed; 

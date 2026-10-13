@@ -26,7 +26,7 @@ test('speech network failure preserves the draft and typed answer can still be s
  await page.evaluate(()=>window.failSpeech());
  await expect.poll(()=>page.evaluate(()=>window.speechStarts)).toBe(2);
  await page.evaluate(()=>window.failSpeech());
- await expect(page.getByRole('alert')).toContainText('Speech recognition could not connect');
+ await expect(page.getByRole('alert')).toContainText('browser speech service could not connect');
  await expect(draft).toHaveValue('My typed answer about JavaScript');
  await expect(page.getByRole('button',{name:'Start Recording',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Submit Answer',exact:true}).click();
@@ -50,9 +50,27 @@ test('persisted provisional report survives refresh and labels fallback answers'
 async function setup(page, overrides = {}) {
   const session = {sessionId:'session-current',interviewCode:code,status:'active',evaluationStatus:'not_started',skills:['JavaScript'],totalQuestions:5,questions:[question(1)],answers:[],...overrides};
   const calls = {start:0,evaluate:0};
-  await page.addInitScript(() => {
+  await page.addInitScript((mediaError) => {
     localStorage.setItem('token','test-student');localStorage.setItem('user',JSON.stringify({userType:'student'}));
     sessionStorage.setItem('selectedSkills',JSON.stringify(['JavaScript']));
+    window.mediaAccessCalls=0;
+    Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{
+      getUserMedia:async constraints=>{
+        window.mediaAccessCalls++;
+        if(mediaError) throw Object.assign(new Error('Mock media permission failure'),{name:mediaError});
+        const stream=new MediaStream();
+        if(constraints.video){
+          const canvas=document.createElement('canvas');
+          stream.addTrack(canvas.captureStream(1).getVideoTracks()[0]);
+        }
+        if(constraints.audio){
+          const audioContext=new AudioContext();
+          const destination=audioContext.createMediaStreamDestination();
+          stream.addTrack(destination.stream.getAudioTracks()[0]);
+        }
+        return stream;
+      }
+    }});
     let fullscreen = false;
     Object.defineProperty(document,'fullscreenEnabled',{get:()=>true,configurable:true});
     Object.defineProperty(document,'fullscreenElement',{get:()=>fullscreen ? document.documentElement : null,configurable:true});
@@ -60,7 +78,7 @@ async function setup(page, overrides = {}) {
     Element.prototype.requestFullscreen = async()=>{window.fullscreenRequests++;if(window.rejectFullscreen) throw new Error('Fullscreen permission denied');fullscreen=true;document.dispatchEvent(new Event('fullscreenchange'));};
     document.exitFullscreen = async()=>{fullscreen=false;document.dispatchEvent(new Event('fullscreenchange'));};
     window.setTestFullscreen = (value, notify=true)=>{fullscreen=value;if(notify) document.dispatchEvent(new Event('fullscreenchange'));};
-  });
+  }, overrides.mediaError || null);
   await page.route('**/interviews/**',async route=>{
     const pathname=new URL(route.request().url()).pathname;
     if(pathname.endsWith('/start')) {calls.start++;return route.fulfill({json:{success:true,interview:session,resumed:true}});}
@@ -80,7 +98,11 @@ async function setup(page, overrides = {}) {
     return route.fulfill({json:{success:true}});
   });
   await page.goto(`/interview/mock/session/${code}`);
-  if (!overrides.noEntry) await page.getByRole('button',{name:'Start Interview in Fullscreen',exact:true}).click();
+  if (!overrides.noEntry) {
+    await page.getByRole('button',{name:'Allow Camera and Microphone',exact:true}).click();
+    await expect(page.getByText('Camera and microphone are ready.',{exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Start Interview in Fullscreen',exact:true}).click();
+  }
   return {session,calls};
 }
 
@@ -97,7 +119,10 @@ test('remount restores active session without a report',async({page})=>{
  const {session,calls}=await setup(page);
  await expect(page.getByText('Lifecycle question 1',{exact:true})).toBeVisible();
  session.answers.push({questionId:'q-1',answer:'Saved',analysis:{status:'evaluated'},isFollowUp:false});session.questions.push(question(2));
- await page.reload();await page.getByRole('button',{name:'Start Interview in Fullscreen',exact:true}).click();
+ await page.reload();
+ await page.getByRole('button',{name:'Allow Camera and Microphone',exact:true}).click();
+ await expect(page.getByText('Camera and microphone are ready.',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Start Interview in Fullscreen',exact:true}).click();
  await expect(page.getByText('Lifecycle question 2',{exact:true})).toBeVisible();expect(calls.evaluate).toBe(0);
  await expect(page.getByRole('heading',{name:'Interview Evaluation',exact:true})).toHaveCount(0);
 });
@@ -145,6 +170,9 @@ test('entry waits for a user click and actual fullscreen confirmation',async({pa
  await expect(page.getByRole('heading',{name:'Ready for your interview?'})).toBeVisible();
  expect(await page.evaluate(()=>window.fullscreenRequests)).toBe(0);
  await expect(page.getByText('Lifecycle question 1',{exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Allow Camera and Microphone',exact:true}).click();
+ await expect(page.getByText('Camera and microphone are ready.',{exact:true})).toBeVisible();
+ expect(await page.evaluate(()=>window.mediaAccessCalls)).toBe(1);
  await page.evaluate(()=>{document.documentElement.requestFullscreen=()=>new Promise(resolve=>{window.confirmTestEntry=()=>{window.setTestFullscreen(true);resolve();};});});
  await page.getByRole('button',{name:'Start Interview in Fullscreen'}).click();
  await expect(page.getByText('Lifecycle question 1',{exact:true})).toHaveCount(0);
@@ -153,12 +181,24 @@ test('entry waits for a user click and actual fullscreen confirmation',async({pa
 });
 
 test('rejected fullscreen request stays on entry screen and can be retried',async({page})=>{
- const {calls}=await setup(page,{noEntry:true});await page.evaluate(()=>window.rejectFullscreen=true);
+ const {calls}=await setup(page,{noEntry:true});
+ await page.getByRole('button',{name:'Allow Camera and Microphone',exact:true}).click();
+ await expect(page.getByText('Camera and microphone are ready.',{exact:true})).toBeVisible();
+ await page.evaluate(()=>window.rejectFullscreen=true);
  await page.getByRole('button',{name:'Start Interview in Fullscreen'}).click();
  await expect(page.getByRole('alert')).toHaveText('Fullscreen permission denied');
  await expect(page.getByText('Lifecycle question 1',{exact:true})).toHaveCount(0);
  await page.evaluate(()=>window.rejectFullscreen=false);await page.getByRole('button',{name:'Start Interview in Fullscreen'}).click();
  await expect(page.getByText('Lifecycle question 1',{exact:true})).toBeVisible();expect(calls.evaluate).toBe(0);
+});
+
+test('denied camera or microphone access blocks starting and can be retried',async({page})=>{
+ await setup(page,{noEntry:true,mediaError:'NotAllowedError'});
+ expect(await page.evaluate(()=>window.fullscreenRequests)).toBe(0);
+ await page.getByRole('button',{name:'Allow Camera and Microphone',exact:true}).click();
+ await expect(page.getByRole('alert')).toContainText('access was denied');
+ await expect(page.getByRole('button',{name:'Start Interview in Fullscreen'})).toBeDisabled();
+ await expect(page.getByText('Lifecycle question 1',{exact:true})).toHaveCount(0);
 });
 
 test('fullscreen exit blocks controls and re-entry preserves question, draft and saved answers',async({page})=>{

@@ -87,6 +87,10 @@ const InterviewScreen = (props) => {
   const [recordingStatus, setRecordingStatus] = useState('idle'); // 'idle', 'recording', 'processing'
   const [recordingError, setRecordingError] = useState(null);
   const [speechLanguage, setSpeechLanguage] = useState('en-IN');
+  const [mediaStream, setMediaStream] = useState(null);
+  const [mediaPreparing, setMediaPreparing] = useState(false);
+  const [mediaError, setMediaError] = useState(null);
+  const mediaStreamRef = useRef(null);
   const speechRecognitionServiceRef = useRef(null);
   if (!speechRecognitionServiceRef.current) speechRecognitionServiceRef.current = new SpeechRecognitionService();
   const speechRecognitionService = speechRecognitionServiceRef.current;
@@ -124,6 +128,67 @@ const InterviewScreen = (props) => {
   useEffect(() => {
     transcriptRef.current = transcript;
   }, [transcript]);
+
+  useEffect(() => () => {
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+    mediaStreamRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!mediaStream) return undefined;
+    const handleTrackEnded = () => {
+      mediaStream.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+      setMediaStream(null);
+      setMediaError('The camera or microphone disconnected. Reconnect both devices and allow access again.');
+    };
+    const tracks = mediaStream.getTracks();
+    tracks.forEach(track => track.addEventListener('ended', handleTrackEnded, {once: true}));
+    return () => tracks.forEach(track => track.removeEventListener('ended', handleTrackEnded));
+  }, [mediaStream]);
+
+  useEffect(() => {
+    if (!isComplete) return;
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+    mediaStreamRef.current = null;
+    setMediaStream(null);
+  }, [isComplete]);
+
+  const requestMediaAccess = async () => {
+    if (mediaStreamRef.current?.getTracks().some(track => track.readyState === 'live')) return;
+    setMediaPreparing(true);
+    setMediaError(null);
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Camera and microphone access requires a supported browser on HTTPS or localhost.');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: {width: {ideal: 640}, height: {ideal: 480}, facingMode: 'user'}
+      });
+      const hasCamera = stream.getVideoTracks().some(track => track.readyState === 'live');
+      const hasMicrophone = stream.getAudioTracks().some(track => track.readyState === 'live');
+      if (!hasCamera || !hasMicrophone) {
+        stream.getTracks().forEach(track => track.stop());
+        throw new Error('A live camera and microphone are both required. Check your connected devices and retry.');
+      }
+      mediaStreamRef.current = stream;
+      setMediaStream(stream);
+    } catch (failure) {
+      const messages = {
+        NotAllowedError: 'Camera or microphone access was denied. Allow both in your browser site settings, then retry.',
+        PermissionDeniedError: 'Camera or microphone access was denied. Allow both in your browser site settings, then retry.',
+        NotFoundError: 'A camera or microphone was not found. Connect both devices and retry.',
+        DevicesNotFoundError: 'A camera or microphone was not found. Connect both devices and retry.',
+        NotReadableError: 'The camera or microphone is already in use by another app. Close that app and retry.',
+        TrackStartError: 'The camera or microphone could not start. Close other apps using them and retry.',
+        SecurityError: 'Camera and microphone access requires HTTPS or localhost.'
+      };
+      setMediaError(messages[failure.name] || failure.message || 'Could not access the camera and microphone. Check browser permissions and retry.');
+    } finally {
+      setMediaPreparing(false);
+    }
+  };
 
   // Add at the top of the component
   const getStoredLogs = () => {
@@ -1110,7 +1175,11 @@ const InterviewScreen = (props) => {
   if (!isFullscreenEntered && !isComplete) {
     console.log('Showing FullscreenGate');
     return (
-      <FullscreenGate onStart={async () => { if (await fullscreen.request()) handleFullscreenEntered(); }} ready={!isLoading && !!currentQuestion && !error} requesting={fullscreen.requesting} error={error || fullscreen.error} />
+      <FullscreenGate onPrepare={requestMediaAccess} onStart={async () => {
+        const stream = mediaStreamRef.current;
+        const bothDevicesReady = stream?.getVideoTracks().some(track => track.readyState === 'live') && stream?.getAudioTracks().some(track => track.readyState === 'live');
+        if (bothDevicesReady && await fullscreen.request()) handleFullscreenEntered();
+      }} ready={!isLoading && !!currentQuestion && !error} requesting={fullscreen.requesting} preparing={mediaPreparing} mediaReady={!!mediaStream && mediaStream.getVideoTracks().some(track => track.readyState === 'live') && mediaStream.getAudioTracks().some(track => track.readyState === 'live')} mediaError={mediaError} error={error || fullscreen.error} />
     );
   }
 
@@ -1558,7 +1627,7 @@ const InterviewScreen = (props) => {
                   : 'Warning: More than one person detected. Only one person should be in the frame.'}
               </div>
             )}
-            <WebcamFeed onFaceStatusChange={setFaceStatus} />
+            <WebcamFeed stream={mediaStream} onFaceStatusChange={setFaceStatus} />
             {/* Transcript Area as chat bubble */}
             <div style={{ width: '100%', marginTop: 18, background: 'linear-gradient(135deg,#f8fafc 80%,#e0e7ef 100%)', borderRadius: 14, minHeight: 70, padding: '0.8rem', color: '#334155', fontSize: '1.08rem', boxShadow: '0 2px 8px rgba(30,41,59,0.08)', border: '1.2px solid #c7d2fe', transition: 'box-shadow 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
               <span style={{ fontWeight: 700, fontSize: '1rem', color: '#2563eb', marginBottom: 4 }}>Transcript / Answer:</span>
