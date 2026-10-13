@@ -22,10 +22,9 @@ const rateLimit = require('express-rate-limit');
 
 console.log('[CodeExecution]', {
   enabled: process.env.CODE_EXECUTION_ENABLED === 'true',
-  provider: process.env.CODE_EXECUTION_PROVIDER || 'judge0',
-  baseUrlConfigured: Boolean(process.env.ONECOMPILER_API_URL || process.env.JUDGE0_API_URL || process.env.JUDGE0_BASE_URL),
-  apiKeyConfigured: Boolean(process.env.ONECOMPILER_API_KEY || process.env.JUDGE0_API_KEY),
-  hostConfigured: Boolean(process.env.JUDGE0_HOST)
+  provider: process.env.CODE_EXECUTION_PROVIDER || 'piston',
+  fallbackProvider: process.env.CODE_EXECUTION_FALLBACK_PROVIDER || 'local',
+  pistonUrl: process.env.PISTON_API_URL || 'https://emkc.org/api/v2/piston/execute'
 });
 
 // Now load other modules

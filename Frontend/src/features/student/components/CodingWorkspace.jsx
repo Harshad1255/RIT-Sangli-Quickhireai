@@ -254,6 +254,7 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
                 onChange={(e) => setLanguage(e.target.value)}
               >
                 <option value="python">Python 3</option>
+                <option value="javascript">JavaScript (Node.js)</option>
                 <option value="java">Java</option>
                 <option value="cpp">C++17</option>
               </select>

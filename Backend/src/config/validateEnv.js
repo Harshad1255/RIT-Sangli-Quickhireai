@@ -18,12 +18,12 @@ function validateEnv(env = process.env) {
   }
 
   if (env.CODE_EXECUTION_ENABLED === 'true') {
-    const provider = (env.CODE_EXECUTION_PROVIDER || 'judge0').trim().toLowerCase();
+    const provider = (env.CODE_EXECUTION_PROVIDER || 'piston').trim().toLowerCase();
     const missingProviderSetting = provider === 'judge0'
       ? (!(env.JUDGE0_API_URL || env.JUDGE0_BASE_URL) ? 'JUDGE0_API_URL' : '')
       : provider === 'onecompiler'
         ? (!env.ONECOMPILER_API_KEY ? 'ONECOMPILER_API_KEY' : '')
-        : 'CODE_EXECUTION_PROVIDER';
+        : (['piston', 'local'].includes(provider) ? '' : 'CODE_EXECUTION_PROVIDER');
     if (missingProviderSetting) {
       warnings.push(`CODE_EXECUTION_ENABLED requires ${missingProviderSetting} for ${provider}`);
     }

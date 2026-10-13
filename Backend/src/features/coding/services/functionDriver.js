@@ -2,7 +2,7 @@ const { randomBytes } = require('crypto');
 
 const getTopLevelFunctionNames = (language, code) => {
   if (language === 'python' || language === 'py') {
-    return [...code.matchAll(/^def\s+([A-Za-z_]\w*)\s*\(/gm)].map(match => match[1]);
+    return [...code.matchAll(/^\s*def\s+([A-Za-z_]\w*)\s*\(/gm)].map(match => match[1]);
   }
 
   const declarations = [
@@ -15,11 +15,11 @@ const getTopLevelFunctionNames = (language, code) => {
 const getEntryFunction = (language, code, requestedName) => {
   const functions = [...new Set(getTopLevelFunctionNames(language, code))];
   const validRequestedName = requestedName && /^[A-Za-z_$][\w$]*$/.test(requestedName);
-  if (validRequestedName && requestedName !== 'solve') return requestedName;
   if (validRequestedName && functions.includes(requestedName)) return requestedName;
   if (functions.includes('solve')) return 'solve';
   if (functions.length === 1) return functions[0];
-  return validRequestedName ? requestedName : null;
+  // If the function is not defined in user code, do NOT wrap so script runs directly against stdin
+  return null;
 };
 
 const javascriptDriver = (code, entryFunction, marker) => {
@@ -126,6 +126,13 @@ def __qh_split_arguments(text):
 __qh_namespace = {'__name__': '__main__'}
 exec(compile(__qh_source, '<solution>', 'exec'), __qh_namespace)
 __qh_entry = __qh_namespace.get('${entryFunction}')
+if not callable(__qh_entry):
+    __qh_sol = __qh_namespace.get('Solution')
+    if __qh_sol and hasattr(__qh_sol, '${entryFunction}'):
+        try:
+            __qh_entry = getattr(__qh_sol(), '${entryFunction}')
+        except Exception:
+            pass
 if not callable(__qh_entry):
     raise RuntimeError('Entry function was not found.')
 __qh_result = __qh_entry(*__qh_split_arguments(__qh_read_input()))

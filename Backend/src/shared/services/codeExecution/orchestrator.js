@@ -2,8 +2,10 @@ const { normalizeLanguage, LANGUAGE_IDS } = require('./languageMap');
 const { VERDICTS, getWorstVerdict } = require('./verdicts');
 const { normalizeOutput } = require('./normalizeOutput');
 const { unwrapDriverOutput } = require('../../../features/coding/services/functionDriver');
+const pistonProvider = require('./providers/pistonProvider');
 const judge0Provider = require('./providers/judge0Provider');
 const oneCompilerProvider = require('./providers/oneCompilerProvider');
+const localProvider = require('./providers/localProvider');
 
 const CODE_EXECUTION_ENABLED = process.env.CODE_EXECUTION_ENABLED === 'true';
 const MAX_SOURCE_CODE_LENGTH = Number(process.env.CODE_MAX_SOURCE_LENGTH || 50000);
@@ -43,54 +45,48 @@ const executionServiceFailure = (serviceReason) => ({
 
 const executeSingleRun = async (params) => {
   const deadline = Date.now() + (params.requestTimeoutMs || 90000);
-  const primaryProviderName = (process.env.CODE_EXECUTION_PROVIDER || 'judge0').trim().toLowerCase();
-  const fallbackProviderName = (process.env.CODE_EXECUTION_FALLBACK_PROVIDER || 'onecompiler').trim().toLowerCase();
+  const primaryProviderName = (process.env.CODE_EXECUTION_PROVIDER || 'piston').trim().toLowerCase();
+  const fallbackProviderName = (process.env.CODE_EXECUTION_FALLBACK_PROVIDER || 'local').trim().toLowerCase();
   
   const providers = {
+    piston: pistonProvider.execute,
+    local: localProvider.execute,
     judge0: judge0Provider.execute,
     onecompiler: oneCompilerProvider.execute
   };
 
-  const primaryExecute = providers[primaryProviderName];
-  const fallbackExecute = providers[fallbackProviderName];
+  // Build provider chain: primary -> fallback -> piston -> local (deduplicated)
+  const providerChain = [...new Set([
+    primaryProviderName,
+    fallbackProviderName,
+    'piston',
+    'local'
+  ])].filter(name => typeof providers[name] === 'function');
 
-  if (!primaryExecute) {
-    return executionServiceFailure('misconfigured');
-  }
+  let lastFailure = null;
 
-  try {
-    const result = await primaryExecute({ ...params, requestTimeoutMs: Math.max(1, deadline - Date.now()) });
-    if (result?.verdict === VERDICTS.EXECUTION_SERVICE_ERROR) {
-      throw Object.assign(new Error('Provider returned an unavailable status.'), {
-        serviceReason: result.serviceReason || 'provider_unavailable'
+  for (const providerName of providerChain) {
+    if (Date.now() >= deadline) break;
+    const executeFn = providers[providerName];
+    try {
+      const result = await executeFn({
+        ...params,
+        requestTimeoutMs: Math.max(1, deadline - Date.now())
       });
-    }
-    return result;
-  } catch (primaryError) {
-    let failure = primaryError;
-    const primaryFailureReason = getProviderFailureReason(primaryError);
-    if (!primaryFailureReason) throw primaryError;
-    console.error(`Primary provider (${primaryProviderName}) failed (${primaryFailureReason}).`);
-    if (fallbackExecute && primaryProviderName !== fallbackProviderName && Date.now() < deadline) {
-      console.log(`Failing over to ${fallbackProviderName}.`);
-      try {
-        const result = await fallbackExecute({ ...params, requestTimeoutMs: Math.max(1, deadline - Date.now()) });
-        if (result?.verdict === VERDICTS.EXECUTION_SERVICE_ERROR) {
-          throw Object.assign(new Error('Fallback provider returned an unavailable status.'), {
-            serviceReason: result.serviceReason || 'provider_unavailable'
-          });
-        }
+      if (result && result.verdict !== VERDICTS.EXECUTION_SERVICE_ERROR) {
         return result;
-      } catch (fallbackErr) {
-        const fallbackFailureReason = getProviderFailureReason(fallbackErr);
-        if (!fallbackFailureReason) throw fallbackErr;
-        failure = fallbackErr;
-        console.error(`Fallback provider (${fallbackProviderName}) failed (${fallbackFailureReason}).`);
       }
+      throw Object.assign(new Error(`Provider ${providerName} returned service error`), {
+        serviceReason: result?.serviceReason || 'provider_unavailable'
+      });
+    } catch (err) {
+      lastFailure = err;
+      const reason = getProviderFailureReason(err);
+      console.warn(`[CodeExecution] Provider '${providerName}' failed (${reason || err.message}). Trying next provider...`);
     }
-
-    return executionServiceFailure(getProviderFailureReason(failure));
   }
+
+  return executionServiceFailure(getProviderFailureReason(lastFailure) || 'provider_unavailable');
 };
 
 const executeCode = async ({ requestTimeoutMs, language, code, stdin = '', timeLimitMs = DEFAULT_TIME_LIMIT, memoryLimitMb = DEFAULT_MEMORY_LIMIT }) => {

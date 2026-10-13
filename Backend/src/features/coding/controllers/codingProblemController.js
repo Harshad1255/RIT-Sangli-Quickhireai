@@ -60,8 +60,8 @@ const applyViolationSummary = (record, violations) => {
 const codingProblemController = {
   getExecutionHealth: async (req, res) => {
     try {
-      const primaryProvider = (process.env.CODE_EXECUTION_PROVIDER || 'judge0').trim().toLowerCase();
-      const fallbackProvider = (process.env.CODE_EXECUTION_FALLBACK_PROVIDER || 'onecompiler').trim().toLowerCase();
+      const primaryProvider = (process.env.CODE_EXECUTION_PROVIDER || 'piston').trim().toLowerCase();
+      const fallbackProvider = (process.env.CODE_EXECUTION_FALLBACK_PROVIDER || 'local').trim().toLowerCase();
       const probe = await executeCode({ language: 'python', code: 'print(1)', stdin: '' });
 
       return res.status(200).json({
@@ -71,6 +71,13 @@ const codingProblemController = {
           primaryProvider,
           fallbackProvider,
           providerConfig: {
+            piston: {
+              apiUrl: process.env.PISTON_API_URL || 'https://emkc.org/api/v2/piston/execute',
+              configured: true
+            },
+            local: {
+              configured: true
+            },
             judge0: {
               apiUrlConfigured: Boolean(process.env.JUDGE0_API_URL || process.env.JUDGE0_BASE_URL),
               apiKeyConfigured: Boolean(process.env.JUDGE0_API_KEY)
