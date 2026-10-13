@@ -41,9 +41,21 @@ test('network outage retries once, preserves interim text and allows manual retr
  r.onerror({error:'network'});r.onend();jest.advanceTimersByTime(5000);
  expect(r.start).toHaveBeenCalledTimes(2);expect(s.isRecording).toBe(false);
  expect(s.finalTranscript).toBe('Typed draft captured answer');
- expect(fail).toHaveBeenCalledWith(expect.stringContaining('alternate English language setting'));
+ expect(fail).toHaveBeenCalledWith(expect.stringContaining('either English language setting'));
  expect(fail).toHaveBeenCalledWith(expect.stringContaining('type your answer'));
  s.startRecording(s.finalTranscript,jest.fn(),jest.fn(),fail);expect(r.start).toHaveBeenCalledTimes(3);
+});
+
+test('network retry switches from English US to English India when US was selected',()=>{
+ const s=createService(),r=s.recognition,fail=jest.fn();
+ s.startRecording('',jest.fn(),jest.fn(),fail,{language:'en-US'});
+ expect(r.lang).toBe('en-US');
+ r.onerror({error:'network'});
+ expect(r.lang).toBe('en-IN');
+ r.onend();jest.advanceTimersByTime(1000);
+ expect(r.start).toHaveBeenCalledTimes(2);
+ r.onerror({error:'network'});r.onend();
+ expect(fail).toHaveBeenCalledWith(expect.stringContaining('either English language setting'));
 });
 
 test('stopping during network backoff cancels automatic restart',async()=>{

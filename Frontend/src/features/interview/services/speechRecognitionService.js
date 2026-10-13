@@ -49,14 +49,15 @@ export class SpeechRecognitionService {
       this.lastInterim = this.interimTranscript;
     };
     r.onerror = event => {
-      if (event.error === 'language-not-supported' && r.lang === 'en-IN') {
-        r.lang = 'en-US';
+      if (event.error === 'language-not-supported' && this.languageFallbacks < 1) {
+        this.languageFallbacks++;
+        r.lang = r.lang === 'en-IN' ? 'en-US' : 'en-IN';
         return;
       }
       if (event.error === 'no-speech') return;
       this.commit();
       if (event.error === 'network' && this.isRecording && this.networkRetries < 1 && window.navigator?.onLine !== false) {
-        if (r.lang === 'en-IN') r.lang = 'en-US';
+        r.lang = r.lang === 'en-IN' ? 'en-US' : 'en-IN';
         this.networkRetries++;
         this.restartDelay = 1000;
         this.setState('processing');
@@ -99,7 +100,7 @@ export class SpeechRecognitionService {
   }
   errorMessage(code) {
     const messages = {
-      network: 'Speech recognition could not connect, even after retrying with the alternate English language setting. Check your internet connection and microphone permission, then retry or type your answer below.',
+      network: 'The browser speech service could not connect using either English language setting. Check your internet connection, then retry or type your answer below.',
       'not-allowed': 'Microphone access was denied. Allow the microphone in your browser site settings and retry, or type your answer.',
       'service-not-allowed': 'This browser cannot use its speech recognition service. Try Chrome, or type your answer.',
       'audio-capture': 'The microphone could not be accessed. Check your selected microphone and retry, or type your answer.',
@@ -141,6 +142,7 @@ export class SpeechRecognitionService {
     this.lastFinal = null;
     this.lastInterim = null;
     this.networkRetries = 0;
+    this.languageFallbacks = 0;
     this.restartCount = 0;
     this.restartDelay = 250;
     this.confidences = [];
