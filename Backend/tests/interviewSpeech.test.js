@@ -32,3 +32,28 @@ test('language fallback and fatal permission errors control restart',()=>{
 test('missing confidence is null; cancellation clears the next question',()=>{
  const s=createService(),r=s.recognition;s.startRecording('',jest.fn(),jest.fn(),jest.fn());r.onresult({resultIndex:0,results:[result('answer',true,0)]});r.onend();expect(s.speechConfidence).toBeNull();s.cancel();jest.advanceTimersByTime(1000);expect(r.start).toHaveBeenCalledTimes(1);expect(s.finalTranscript).toBe('');
 });
+
+test('network outage retries once, preserves interim text and allows manual retry',()=>{
+ const s=createService(),r=s.recognition,fail=jest.fn();s.startRecording('Typed draft',jest.fn(),jest.fn(),fail);
+ r.onresult({resultIndex:0,results:[result('captured answer',false)]});
+ r.onerror({error:'network'});expect(r.lang).toBe('en-US');r.onend();jest.advanceTimersByTime(1000);
+ expect(r.start).toHaveBeenCalledTimes(2);expect(fail).not.toHaveBeenCalled();
+ r.onerror({error:'network'});r.onend();jest.advanceTimersByTime(5000);
+ expect(r.start).toHaveBeenCalledTimes(2);expect(s.isRecording).toBe(false);
+ expect(s.finalTranscript).toBe('Typed draft captured answer');
+ expect(fail).toHaveBeenCalledWith(expect.stringContaining('alternate English language setting'));
+ expect(fail).toHaveBeenCalledWith(expect.stringContaining('type your answer'));
+ s.startRecording(s.finalTranscript,jest.fn(),jest.fn(),fail);expect(r.start).toHaveBeenCalledTimes(3);
+});
+
+test('stopping during network backoff cancels automatic restart',async()=>{
+ const s=createService(),r=s.recognition;s.startRecording('Draft',jest.fn(),jest.fn(),jest.fn());
+ r.onerror({error:'network'});r.onend();expect(await s.stopRecording()).toBe('Draft');
+ jest.advanceTimersByTime(5000);expect(r.start).toHaveBeenCalledTimes(1);
+});
+
+test('synchronous microphone start failure does not leave recording active',()=>{
+ const s=createService(),r=s.recognition,fail=jest.fn();r.start.mockImplementation(()=>{throw {name:'NotAllowedError'};});
+ s.startRecording('Draft',jest.fn(),jest.fn(),fail);
+ expect(s.isRecording).toBe(false);expect(s.running).toBe(false);expect(fail).toHaveBeenCalledWith(expect.stringContaining('Microphone access was denied'));
+});

@@ -295,9 +295,11 @@ const InterviewScreen = (props) => {
           setIsRecording(false);
         }
       );
-      setIsRecording(true);
+      setIsRecording(speechRecognitionService.isRecording);
+      if (!speechRecognitionService.isRecording) setRecordingStatus('idle');
     } catch (error) {
-      setRecordingError('Failed to start recording');
+      setRecordingError(error.message || 'Failed to start recording. You can type your answer.');
+      setIsRecording(false);
       setRecordingStatus('idle');
     }
   };
@@ -1539,6 +1541,8 @@ const InterviewScreen = (props) => {
             {/* Transcript Area as chat bubble */}
             <div style={{ width: '100%', marginTop: 18, background: 'linear-gradient(135deg,#f8fafc 80%,#e0e7ef 100%)', borderRadius: 14, minHeight: 70, padding: '0.8rem', color: '#334155', fontSize: '1.08rem', boxShadow: '0 2px 8px rgba(30,41,59,0.08)', border: '1.2px solid #c7d2fe', transition: 'box-shadow 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
               <span style={{ fontWeight: 700, fontSize: '1rem', color: '#2563eb', marginBottom: 4 }}>Transcript / Answer:</span>
+              {recordingStatus === 'recording' && <span role="status" aria-live="polite" style={{fontSize:'0.9rem',color:'#047857',marginBottom:4}}>Listening… speak now. Your words will appear here.</span>}
+              {recordingStatus === 'processing' && <span role="status" aria-live="polite" style={{fontSize:'0.9rem',color:'#475569',marginBottom:4}}>Finishing speech recognition…</span>}
               <textarea 
                 style={{ 
                   marginTop: 6, 
@@ -1729,7 +1733,7 @@ const InterviewScreen = (props) => {
               </button>
             </div>
             {/* Error messages for recording/skip below buttons */}
-            {recordingError && <div className="recording-error">{recordingError}</div>}
+            {recordingError && <div role="alert" className="recording-error">{recordingError}</div>}
             {skipError && <div className="recording-error" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', marginTop: 8 }}>{skipError}</div>}
             {!isCurrentlyFullscreen && (
               <div className="fullscreen-warning" style={{

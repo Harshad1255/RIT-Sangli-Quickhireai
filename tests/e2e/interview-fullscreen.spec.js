@@ -3,6 +3,28 @@ const code = 'mock-fullscreen-test';
 const report = {overallScore:7,skillAssessment:{technicalKnowledge:7,codingAbility:7,communicationSkills:7,problemSolving:7},strengths:[],weaknesses:[],recommendations:[],overallFeedback:'Completed interview'};
 const question = number => ({id:`q-${number}`,question:`Lifecycle question ${number}`,topic:'JavaScript',questionNumber:number,isFollowUp:false});
 
+test('speech network failure preserves the draft and typed answer can still be submitted',async({page})=>{
+ test.setTimeout(90000);
+ const {calls}=await setup(page);
+ await page.evaluate(async()=>{
+   const {default:speech}=await import('/src/features/interview/services/speechRecognitionService.js');
+   speech.instance=null;window.speechStarts=0;
+   speech.Recognition=class {start(){window.speechStarts++;}stop(){this.onend();}abort(){this.onend();}};
+   window.failSpeech=()=>{speech.recognition.onerror({error:'network'});speech.recognition.onend();};
+ });
+ const draft=page.getByPlaceholder('Your spoken answer will appear here, or you can type it.');
+ await draft.fill('My typed answer about JavaScript');
+ await page.getByRole('button',{name:'Start Recording',exact:true}).click();
+ await page.evaluate(()=>window.failSpeech());
+ await expect.poll(()=>page.evaluate(()=>window.speechStarts)).toBe(2);
+ await page.evaluate(()=>window.failSpeech());
+ await expect(page.getByRole('alert')).toContainText('Speech-to-text could not connect');
+ await expect(draft).toHaveValue('My typed answer about JavaScript');
+ await expect(page.getByRole('button',{name:'Start Recording',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Submit Answer',exact:true}).click();
+ await expect(page.getByText('Lifecycle question 2',{exact:true})).toBeVisible();expect(calls.evaluate).toBe(1);
+});
+
 test('persisted provisional report survives refresh and labels fallback answers',async({page})=>{
  const questions=Array.from({length:5},(_,i)=>question(i+1));
  const analysis={status:'provisional',evaluationSource:'fallback',score:3,overallScore:3,technicalKnowledge:3,codingAbility:3,communicationSkills:3,problemSolving:3,maxMarks:10,marksObtained:3,feedback:'Provisional review required'};

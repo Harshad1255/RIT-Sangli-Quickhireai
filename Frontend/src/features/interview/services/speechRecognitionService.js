@@ -8,6 +8,8 @@ export class SpeechRecognitionService {
     this.finalTranscript = '';
     this.interimTranscript = '';
     this.confidences = [];
+    this.networkRetries = 0;
+    this.restartDelay = 250;
 
   }
   get recognition() {
@@ -44,8 +46,16 @@ export class SpeechRecognitionService {
         return;
       }
       if (event.error === 'no-speech') return;
+      this.commit();
+      if (event.error === 'network' && this.isRecording && this.networkRetries < 1 && window.navigator?.onLine !== false) {
+        if (r.lang === 'en-IN') r.lang = 'en-US';
+        this.networkRetries++;
+        this.restartDelay = 1000;
+        return;
+      }
       this.isRecording = false;
-      this.onError?.(event.error);
+      clearTimeout(this.restartTimer);
+      this.onError?.(this.errorMessage(event.error));
     };
     r.onend = () => {
       this.running = false;
@@ -56,9 +66,20 @@ export class SpeechRecognitionService {
         this.stopResolve = null;
         resolve(this.finalTranscript);
       } else if (this.isRecording) {
-        this.restartTimer = setTimeout(() => { if (this.isRecording) this.startSession(); }, 250);
+        this.restartTimer = setTimeout(() => { if (this.isRecording) this.startSession(); }, this.restartDelay);
       }
     };
+  }
+  errorMessage(code) {
+    const messages = {
+      network: 'Speech recognition could not connect, even after retrying with the alternate English language setting. Check your internet connection and microphone permission, then retry or type your answer below.',
+      'not-allowed': 'Microphone access was denied. Allow the microphone in your browser site settings and retry, or type your answer.',
+      'service-not-allowed': 'This browser cannot use its speech recognition service. Try Chrome, or type your answer.',
+      'audio-capture': 'The microphone could not be accessed. Check your selected microphone and retry, or type your answer.',
+      'language-not-supported': 'Speech recognition does not support the selected language. Please type your answer.',
+      aborted: 'Recording stopped. Your captured text is preserved; retry or type your answer.'
+    };
+    return messages[code] || 'Speech recognition could not start. Retry recording or type your answer.';
   }
   commit() {
     this.finalTranscript = [this.finalTranscript, this.interimTranscript].filter(Boolean).join(' ').trim();
@@ -76,7 +97,7 @@ export class SpeechRecognitionService {
     this.segments = new Map();
     this.baseTranscript = this.finalTranscript;
     try { this.recognition.start(); this.running = true; }
-    catch (error) { this.isRecording = false; this.running = false; this.onError?.(error.message); }
+    catch (error) { this.isRecording = false; this.running = false; this.onError?.(this.errorMessage(error.name === 'NotAllowedError' ? 'not-allowed' : error.name)); }
   }
   startRecording(initialTranscript, onInterimResult, onFinalResult, onError) {
     if (!this.recognition) throw new Error('Speech recognition not supported. Please type your answer.');
@@ -84,11 +105,18 @@ export class SpeechRecognitionService {
     clearTimeout(this.restartTimer);
     this.lastFinal = null;
     this.lastInterim = null;
+    this.networkRetries = 0;
+    this.restartDelay = 250;
+    this.confidences = [];
     this.finalTranscript = (initialTranscript || '').trim();
     this.interimTranscript = '';
     this.onInterimResult = onInterimResult;
     this.onFinalResult = onFinalResult;
     this.onError = onError;
+    if (window.navigator?.onLine === false) {
+      this.onError(this.errorMessage('network'));
+      return;
+    }
     this.isRecording = true;
     this.startSession();
   }
@@ -101,6 +129,7 @@ export class SpeechRecognitionService {
     this.stopPromise = new Promise(resolve => {
       this.stopResolve = resolve;
       this.stopTimer = setTimeout(() => {
+        this.running = false;
         this.commit();
         this.stopResolve = null;
         this.recognition.abort();
@@ -117,6 +146,7 @@ export class SpeechRecognitionService {
     clearTimeout(this.stopTimer);
     this.onFinalResult = null;
     this.onInterimResult = null;
+    this.onError = null;
     this.stopResolve?.(this.finalTranscript);
     this.stopResolve = null;
     this.finalTranscript = '';
