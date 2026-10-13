@@ -52,8 +52,12 @@ console.log('Final Environment Check:', {
   PWD: process.cwd()
 });
 
-const geminiConfiguration = require("./src/shared/services/geminiClient").config();
-require("./src/shared/services/evaluationDiagnostics").log("startup_configuration", geminiConfiguration);
+const configuredModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+if (configuredModel.includes('2.5-flash')) {
+  console.error('[GeminiConfig] FATAL: Model gemini-2.5-flash is no longer supported by Google API! Please change GEMINI_MODEL in your environment variables to gemini-3.8-flash or gemini-flash-latest.');
+} else {
+  console.log(`[GeminiConfig] Model: ${configuredModel}\n[GeminiConfig] Status: READY`);
+}
 
 const app = express();
 app.set('trust proxy', 1);
