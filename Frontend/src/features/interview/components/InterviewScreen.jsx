@@ -209,11 +209,9 @@ const InterviewScreen = (props) => {
 
     initializeInterview();
 
-    // Cleanup function
+    // Cleanup speech recognition on unmount
     return () => {
-      if (isRecording) {
-        speechRecognitionService.cancel();
-      }
+      speechRecognitionService.cleanup();
     };
   }, [interviewCode, location.state, navigate, props.interviewData, props.selectedSkills, props.isMock]);
 
@@ -283,7 +281,7 @@ const InterviewScreen = (props) => {
 
     // 4. Start speech recognition with full callbacks
     try {
-      speechRecognitionService.startRecording(
+      await speechRecognitionService.startRecording(
         transcript,
         {
           onStart: () => {
@@ -1841,7 +1839,30 @@ const InterviewScreen = (props) => {
               </button>
             </div>
             {/* Error messages for recording/skip below buttons */}
-            {recordingError && <div className="recording-error">{recordingError}</div>}
+            {recordingError && (
+              <div 
+                className="recording-error" 
+                style={{ 
+                  backgroundColor: '#fef2f2', 
+                  border: '1.5px solid #f87171', 
+                  color: '#991b1b', 
+                  padding: '0.85rem 1rem', 
+                  borderRadius: '10px', 
+                  marginTop: '12px', 
+                  fontSize: '0.9rem', 
+                  lineHeight: '1.45', 
+                  textAlign: 'left', 
+                  maxWidth: '420px', 
+                  width: '100%', 
+                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.12)' 
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <span style={{ fontSize: '1.1rem', lineHeight: '1' }}>⚠️</span>
+                  <div>{recordingError}</div>
+                </div>
+              </div>
+            )}
             {skipError && <div className="recording-error" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', marginTop: 8 }}>{skipError}</div>}
             {!isCurrentlyFullscreen && (
               <div className="fullscreen-warning" style={{
