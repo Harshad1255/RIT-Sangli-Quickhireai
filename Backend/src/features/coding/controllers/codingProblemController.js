@@ -826,13 +826,27 @@ const codingProblemController = {
   // POST /api/coding/problems/generate - generate AI problem
   generateProblem: async (req, res) => {
     try {
-      const { topic, difficulty, languages } = req.body;
+      const { topic, difficulty, languages, excludeTitles } = req.body;
       
       if (!topic || !difficulty) {
         return res.status(400).json({ success: false, error: 'Topic and difficulty are required' });
       }
 
-      const generatedProblem = await generateCodingProblem(topic, difficulty, languages);
+      // Collect existing titles for company to avoid duplicate questions
+      const companyId = req.user ? (req.user.id || req.user._id) : null;
+      let existingCompanyTitles = [];
+      if (companyId) {
+        try {
+          const existing = await CodingProblem.find({
+            isActive: true,
+            $or: [{ companyId }, { createdBy: companyId }]
+          }).select('title').lean();
+          existingCompanyTitles = existing.map(p => p.title);
+        } catch (_) {}
+      }
+
+      const allExcluded = [...(Array.isArray(excludeTitles) ? excludeTitles : []), ...existingCompanyTitles];
+      const generatedProblem = await generateCodingProblem(topic, difficulty, languages, allExcluded);
 
       // Validate reference solution if provided
       if (generatedProblem.referenceSolution && generatedProblem.referenceSolution.javascript) {

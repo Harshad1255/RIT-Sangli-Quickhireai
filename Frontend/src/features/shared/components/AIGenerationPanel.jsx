@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../../shared/services/api';
+import MarkdownRenderer from '../../../shared/components/MarkdownRenderer';
 import './AIGenerationPanel.css';
 
 const AIGenerationPanel = ({ contentType = 'aptitude', onClose, onSave, isSaving = false, saveError = '' }) => {
@@ -9,8 +10,8 @@ const AIGenerationPanel = ({ contentType = 'aptitude', onClose, onSave, isSaving
   
   // Form State
   const [formData, setFormData] = useState({
-    topic: contentType === 'aptitude' ? 'Quantitative Aptitude' : 'Arrays',
-    difficulty: 'Medium',
+    topic: contentType === 'aptitude' ? 'Quantitative Aptitude' : 'Strings',
+    difficulty: 'Easy',
     count: 5,
     jobContext: '',
     languages: ['javascript']
@@ -47,7 +48,8 @@ const AIGenerationPanel = ({ contentType = 'aptitude', onClose, onSave, isSaving
         const res = await api.post('/coding/problems/generate', {
           topic: formData.topic,
           difficulty: formData.difficulty,
-          languages: formData.languages
+          languages: formData.languages,
+          excludeTitles: generatedData?.title ? [generatedData.title] : []
         });
         if (res.data && res.data.success) {
           setGeneratedData(res.data.data);
@@ -172,10 +174,47 @@ const AIGenerationPanel = ({ contentType = 'aptitude', onClose, onSave, isSaving
                 <input
                   type="text"
                   required
+                  list="coding-topics-datalist"
                   value={formData.topic}
                   onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
-                  placeholder={isCoding ? "e.g. Arrays, Dynamic Programming" : "e.g. Quantitative Aptitude, Logical Reasoning"}
+                  placeholder={isCoding ? "e.g. Strings, Arrays, Dynamic Programming" : "e.g. Quantitative Aptitude, Logical Reasoning"}
                 />
+                {isCoding && (
+                  <>
+                    <datalist id="coding-topics-datalist">
+                      <option value="Strings" />
+                      <option value="Arrays & Hashing" />
+                      <option value="Linked Lists" />
+                      <option value="Stack & Queue" />
+                      <option value="Trees" />
+                      <option value="Dynamic Programming" />
+                      <option value="Binary Search" />
+                      <option value="Two Pointers" />
+                      <option value="Math & Bit Manipulation" />
+                    </datalist>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                      {['Strings', 'Arrays', 'Stack', 'Dynamic Programming', 'Binary Search', 'Math'].map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, topic: t })}
+                          style={{
+                            background: formData.topic.toLowerCase().startsWith(t.toLowerCase().slice(0, 3)) ? '#1e3a8a' : '#f1f5f9',
+                            color: formData.topic.toLowerCase().startsWith(t.toLowerCase().slice(0, 3)) ? '#ffffff' : '#334155',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '14px',
+                            padding: '3px 10px',
+                            fontSize: '0.78rem',
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
               <div className="ai-form-group">
                 <label>Difficulty</label>
@@ -344,20 +383,45 @@ const AIGenerationPanel = ({ contentType = 'aptitude', onClose, onSave, isSaving
                 <div className="ai-result-card" style={{ animationDelay: '0.1s' }}>
                    <div className="ai-sequence-numeral">I.</div>
                    <div className="ai-result-content">
-                     <h4>{generatedData.title}</h4>
-                     <span className={`ai-tag ${generatedData.difficulty.toLowerCase()}`}>{generatedData.difficulty}</span>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+                       <div>
+                         <h4 style={{ margin: '0 0 6px 0', fontSize: '1.25rem' }}>{generatedData.title}</h4>
+                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                           <span className={`ai-tag ${generatedData.difficulty.toLowerCase()}`}>{generatedData.difficulty}</span>
+                           <span className="ai-tag" style={{ background: '#e0e7ff', color: '#3730a3' }}>
+                             {generatedData.category || formData.topic}
+                           </span>
+                         </div>
+                       </div>
+                       <button
+                         type="button"
+                         className="ai-btn ai-btn-cancel"
+                         style={{ padding: '6px 12px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}
+                         onClick={(e) => handleGenerate(e)}
+                         title="Regenerate another question for this topic"
+                       >
+                         <i className="fas fa-sync-alt"></i> Regenerate Different Problem
+                       </button>
+                     </div>
                      
-                     <h5 style={{ marginTop: '15px' }}>Problem Statement</h5>
-                     <p>{generatedData.statementMarkdown}</p>
+                     <h5 style={{ marginTop: '15px', color: '#1e293b' }}>Problem Statement</h5>
+                     <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #e2e8f0', margin: '8px 0 16px' }}>
+                       <MarkdownRenderer content={generatedData.statementMarkdown} />
+                     </div>
                      
-                     <h5 style={{ marginTop: '15px' }}>Constraints</h5>
-                     <p>{generatedData.constraints}</p>
+                     <h5 style={{ marginTop: '15px', color: '#1e293b' }}>Constraints</h5>
+                     <p style={{ color: '#475569', fontSize: '0.9rem', whiteSpace: 'pre-line' }}>{generatedData.constraints}</p>
 
-                     <h5 style={{ marginTop: '15px' }}>Sample Test Cases ({generatedData.sampleTestCases?.length || 0})</h5>
+                     <h5 style={{ marginTop: '15px', color: '#1e293b' }}>Sample Test Cases ({generatedData.sampleTestCases?.length || 0})</h5>
                      {generatedData.sampleTestCases?.map((tc, idx) => (
-                       <div key={idx} style={{ marginBottom: '10px', fontSize: '0.9rem' }}>
-                         <strong>Input:</strong> {tc.input} <br/>
-                         <strong>Output:</strong> {tc.expectedOutput}
+                       <div key={idx} style={{ marginBottom: '10px', fontSize: '0.9rem', background: '#f1f5f9', padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                         <div><strong>Input:</strong> <code>{tc.input}</code></div>
+                         <div><strong>Output:</strong> <code>{tc.expectedOutput}</code></div>
+                         {tc.explanation && (
+                           <div style={{ color: '#64748b', fontSize: '0.82rem', marginTop: 4 }}>
+                             <em>Note: {tc.explanation}</em>
+                           </div>
+                         )}
                        </div>
                      ))}
                    </div>
