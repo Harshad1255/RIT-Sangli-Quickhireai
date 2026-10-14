@@ -109,8 +109,8 @@ const AIGenerationPanel = ({ contentType = 'aptitude', onClose, onSave, isSaving
   };
 
   const handleAccept = () => {
-    // Pass true to flag that it should be published immediately
-    onSave(generatedData, true);
+    // Pass true to flag that it should be published immediately, along with chosen topic
+    onSave(generatedData, true, formData.topic);
   };
 
   const handleUpdateQuestion = (idx, field, value) => {

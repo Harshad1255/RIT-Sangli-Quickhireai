@@ -365,9 +365,21 @@ const CompanyAptitudeTests = () => {
 
         <div className="aptitude-header">
           <h2>Company Aptitude Test Management</h2>
-          <button className="btn-primary" onClick={() => handleOpenCreateModal()}>
-            <i className="fas fa-plus"></i> Create New Test
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button 
+              className="btn-secondary" 
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#e0e7ff', color: '#3730a3', borderColor: '#c7d2fe', fontWeight: 600 }}
+              onClick={() => {
+                setSelectedTest(null);
+                setShowAIGenerateModal(true);
+              }}
+            >
+              <i className="fas fa-robot"></i> Generate with AI
+            </button>
+            <button className="btn-primary" onClick={() => handleOpenCreateModal()}>
+              <i className="fas fa-plus"></i> Create New Test
+            </button>
+          </div>
         </div>
 
         {error && <div className="error-message" style={{ color: 'red', marginBottom: 16 }}>{error}</div>}
@@ -700,28 +712,73 @@ const CompanyAptitudeTests = () => {
             onClose={() => setShowAIGenerateModal(false)}
             isSaving={isSaving}
             saveError={saveError}
-            onSave={(generatedData, publishNow = false) => {
-              // Only merge the dummy question if it actually has content, otherwise just use AI questions
-              let existingQuestions = formData.questions;
-              if (existingQuestions.length === 1 && !existingQuestions[0].text.trim() && !existingQuestions[0].options.some(o => o.trim())) {
-                existingQuestions = [];
+            onSave={(generatedData, publishNow = false, generatedTopic = '') => {
+              // Safely extract existing valid questions, removing blank starter template
+              const hasValidContent = (q) => {
+                if (!q) return false;
+                if (q.text && q.text.trim()) return true;
+                if (Array.isArray(q.options)) {
+                  return q.options.some(opt => {
+                    const text = typeof opt === 'string' ? opt : (opt?.text || '');
+                    return text.trim() !== '';
+                  });
+                }
+                return false;
+              };
+
+              const existingQuestions = (formData.questions || []).filter(hasValidContent);
+
+              // Map generated questions to backend schema
+              const rawGeneratedList = Array.isArray(generatedData) ? generatedData : [generatedData];
+              const formattedGeneratedData = rawGeneratedList.map((q, idx) => {
+                const options = Array.isArray(q.options)
+                  ? q.options.map((opt, i) => ({
+                      originalIndex: i,
+                      text: typeof opt === 'string' ? opt : (opt?.text || '')
+                    }))
+                  : [];
+
+                const correct = typeof q.correctAnswer === 'number'
+                  ? q.correctAnswer
+                  : (typeof q.correctIndex === 'number' ? q.correctIndex : 0);
+
+                const rawDiff = String(q.difficulty || 'Medium').toLowerCase();
+                const difficulty = rawDiff === 'hard' ? 'Hard' : rawDiff === 'easy' ? 'Easy' : 'Medium';
+
+                return {
+                  sectionName: q.sectionName || q.subtopic || q.topic || generatedTopic || 'Quantitative Aptitude',
+                  text: q.text || q.question || `Question ${idx + 1}`,
+                  imageUrl: q.imageUrl || '',
+                  options,
+                  correctAnswer: correct,
+                  marks: Number(q.marks) || (difficulty === 'Hard' ? 2 : 1),
+                  negativeMarks: q.negativeMarks !== undefined ? Number(q.negativeMarks) : (difficulty === 'Hard' ? 0.5 : 0.25),
+                  difficulty
+                };
+              });
+
+              // Extract unique section names from questions
+              const uniqueSections = [
+                ...new Set(formattedGeneratedData.map(q => q.sectionName).filter(Boolean))
+              ];
+              const updatedSections = uniqueSections.length > 0
+                ? uniqueSections.map(name => ({ name, timeLimitMinutes: 0 }))
+                : [{ name: 'General', timeLimitMinutes: 0 }];
+
+              // Ensure title is present for immediate publishing
+              let finalTitle = (formData.title && formData.title.trim()) || '';
+              if (!finalTitle) {
+                const topicName = generatedTopic || formattedGeneratedData[0]?.sectionName || 'Aptitude';
+                finalTitle = `${topicName} Assessment - ${new Date().toLocaleDateString()}`;
               }
-              // Map the generated questions to backend schema
-              const formattedGeneratedData = generatedData.map(q => ({
-                ...q,
-                options: q.options.map((opt, i) => ({ originalIndex: i, text: opt })),
-                correctAnswer: q.correctIndex
-              }));
 
               const updatedFormData = {
                 ...formData,
+                title: finalTitle,
+                isPublished: true,
+                sections: updatedSections,
                 questions: [...existingQuestions, ...formattedGeneratedData]
               };
-              
-              // Ensure a title exists if we are publishing immediately
-              if (publishNow && (!updatedFormData.title || updatedFormData.title.trim() === '')) {
-                updatedFormData.title = `AI Assessment - ${new Date().toLocaleDateString()}`;
-              }
 
               setFormData(updatedFormData);
               if (publishNow) {
