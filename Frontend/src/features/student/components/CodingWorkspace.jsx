@@ -52,18 +52,22 @@ public:
 };
 
 const sanitizeStarterCode = (rawStarter, lang) => {
-  if (!rawStarter || typeof rawStarter !== 'string') return DEFAULT_STARTERS[lang] || '';
-  let starter = rawStarter.trimStart();
+  if (!rawStarter || typeof rawStarter !== 'string') return (DEFAULT_STARTERS[lang] || '').trim();
+  let starter = rawStarter.trim();
   if (lang === 'cpp') {
     if (!starter.includes('<iostream>')) {
-      starter = `#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n\nusing namespace std;\n\n` + starter.replace(/^#include\s*<vector>\s*/m, '').replace(/^using\s+namespace\s+std;\s*/m, '').trimStart();
+      starter = `#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n\nusing namespace std;\n\n` + starter.replace(/^#include\s*<vector>\s*/m, '').replace(/^using\s+namespace\s+std;\s*/m, '').trim();
     }
   } else if (lang === 'java') {
     if (!starter.includes('import java.util')) {
-      starter = `import java.util.*;\nimport java.io.*;\n\n` + starter.trimStart();
+      starter = `import java.util.*;\nimport java.io.*;\n\n` + starter.trim();
+    }
+  } else if (lang === 'python') {
+    if (!starter.includes('# Complete the') && !starter.startsWith('#')) {
+      starter = `# Complete the 'solve' function below.\n` + starter.trim();
     }
   }
-  return starter;
+  return starter.trim();
 };
 
 const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
@@ -72,7 +76,10 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
   const [consoleTab, setConsoleTab] = useState('testcases'); // 'testcases', 'customInput', 'result'
   const [selectedCaseIdx, setSelectedCaseIdx] = useState(0);
   const [language, setLanguage] = useState('python');
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(() => {
+    const raw = problem?.starterCode?.python || DEFAULT_STARTERS.python || '';
+    return sanitizeStarterCode(raw, 'python');
+  });
   const [customStdin, setCustomStdin] = useState('');
   const [loadingAction, setLoadingAction] = useState(''); // 'run' or 'submit'
   const [executionResult, setExecutionResult] = useState(null);
@@ -119,14 +126,28 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
 
       // Explicitly scroll editor back to top line on problem load or language switch
       if (editorRef.current) {
-        setTimeout(() => {
+        const resetEditorScroll = () => {
           try {
+            const dom = editorRef.current.getDomNode();
+            let c = dom;
+            while (c && c !== document.body) {
+              if (c.scrollTop !== 0) c.scrollTop = 0;
+              if (c.scrollLeft !== 0) c.scrollLeft = 0;
+              c = c.parentElement;
+            }
             editorRef.current.setScrollTop(0);
             editorRef.current.setScrollLeft(0);
             editorRef.current.setPosition({ lineNumber: 1, column: 1 });
-            editorRef.current.revealLine(1);
+            if (typeof editorRef.current.revealLineNearTop === 'function') {
+              editorRef.current.revealLineNearTop(1);
+            } else {
+              editorRef.current.revealLine(1);
+            }
           } catch (e) {}
-        }, 50);
+        };
+        setTimeout(resetEditorScroll, 30);
+        setTimeout(resetEditorScroll, 100);
+        setTimeout(resetEditorScroll, 300);
       }
     }
   }, [currentProblem, language]);
@@ -171,13 +192,62 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
   const handleEditorMount = (editor) => {
     editorRef.current = editor;
 
-    // Immediately ensure line 1 is visible and scrolled to top
-    try {
-      editor.setScrollTop(0);
-      editor.setScrollLeft(0);
-      editor.setPosition({ lineNumber: 1, column: 1 });
-      editor.revealLine(1);
-    } catch (e) {}
+    let isInitialMount = true;
+    setTimeout(() => { isInitialMount = false; }, 2000);
+
+    const forceScrollToTop = () => {
+      try {
+        const domNode = editor.getDomNode();
+        let curr = domNode;
+        while (curr && curr !== document.body) {
+          if (curr.scrollTop !== 0) curr.scrollTop = 0;
+          if (curr.scrollLeft !== 0) curr.scrollLeft = 0;
+          curr = curr.parentElement;
+        }
+        window.scrollTo(0, 0);
+
+        editor.setScrollTop(0);
+        editor.setScrollLeft(0);
+        editor.setPosition({ lineNumber: 1, column: 1 });
+        editor.setSelection({
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 1
+        });
+        if (typeof editor.revealLineNearTop === 'function') {
+          editor.revealLineNearTop(1);
+        } else {
+          editor.revealLine(1);
+        }
+      } catch (e) {}
+    };
+
+    forceScrollToTop();
+    requestAnimationFrame(forceScrollToTop);
+    [20, 50, 100, 200, 400, 800].forEach(ms => setTimeout(forceScrollToTop, ms));
+
+    // Prevent any browser or layout focus auto-scrolling down during initial render
+    editor.onDidScrollChange((e) => {
+      if (isInitialMount && e.scrollTop > 0) {
+        editor.setScrollTop(0);
+      }
+    });
+
+    editor.onDidFocusEditorText(forceScrollToTop);
+    editor.onDidFocusEditorWidget(forceScrollToTop);
+
+    const domNode = editor.getDomNode();
+    if (domNode) {
+      let p = domNode.parentElement;
+      while (p && p !== document.body) {
+        p.addEventListener('scroll', () => {
+          if (p.scrollTop > 0) p.scrollTop = 0;
+          if (p.scrollLeft > 0) p.scrollLeft = 0;
+        }, { passive: true });
+        p = p.parentElement;
+      }
+    }
 
     const handleEditorKeyDown = (event) => {
       const isModifier = event.ctrlKey || event.metaKey;
@@ -200,7 +270,11 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
             editorRef.current.setScrollTop(0);
             editorRef.current.setScrollLeft(0);
             editorRef.current.setPosition({ lineNumber: 1, column: 1 });
-            editorRef.current.revealLine(1);
+            if (typeof editorRef.current.revealLineNearTop === 'function') {
+              editorRef.current.revealLineNearTop(1);
+            } else {
+              editorRef.current.revealLine(1);
+            }
           } catch (e) {}
         }, 50);
       }
@@ -339,7 +413,28 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
             className="language-select"
             value={language}
             disabled={!!loadingAction}
-            onChange={(e) => setLanguage(e.target.value)}
+            onChange={(e) => {
+              const newLang = e.target.value;
+              setLanguage(newLang);
+              const rawStarter = currentProblem?.starterCode?.[newLang] || DEFAULT_STARTERS[newLang] || '';
+              const starter = sanitizeStarterCode(rawStarter, newLang);
+              setCode(starter);
+              if (editorRef.current) {
+                const reset = () => {
+                  try {
+                    editorRef.current.setScrollTop(0);
+                    editorRef.current.setScrollLeft(0);
+                    editorRef.current.setPosition({ lineNumber: 1, column: 1 });
+                    editorRef.current.revealLine(1);
+                  } catch (err) {}
+                };
+                reset();
+                requestAnimationFrame(reset);
+                setTimeout(reset, 20);
+                setTimeout(reset, 100);
+                setTimeout(reset, 300);
+              }
+            }}
           >
             <option value="python">Python 3</option>
             <option value="javascript">JavaScript (Node.js)</option>
@@ -572,6 +667,11 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
                   readOnly: false,
                   padding: { top: 12, bottom: 12 },
                   overviewRulerBorder: false,
+                  smoothScrolling: false,
+                  cursorSurroundingLines: 0,
+                  cursorSurroundingLinesStyle: 'default',
+                  fixedOverflowWidgets: true,
+                  renderValidationDecorations: 'off',
                   scrollbar: {
                     vertical: 'visible',
                     horizontal: 'visible',

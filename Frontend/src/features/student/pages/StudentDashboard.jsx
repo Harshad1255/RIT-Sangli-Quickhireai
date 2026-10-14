@@ -114,10 +114,10 @@ const StudentDashboard = () => {
   const isAssessmentActive = Boolean(selectedAptitudeTest || selectedCodingProblem);
 
   if (isAssessmentActive) {
-    return (
-      <div className="dashboard-container assessment-active">
-        <main className="main-content full-width-assessment">
-          {selectedAptitudeTest && selectedAptitudeTest._id ? (
+    if (selectedAptitudeTest && selectedAptitudeTest._id) {
+      return (
+        <div className="dashboard-container assessment-active">
+          <main className="main-content full-width-assessment">
             <AptitudeTestAttempt
               test={selectedAptitudeTest}
               mode={aptitudeMode}
@@ -125,16 +125,17 @@ const StudentDashboard = () => {
                 setSelectedAptitudeTest(null);
               }}
             />
-          ) : (
-            <CodingWorkspace
-              problem={selectedCodingProblem}
-              onExit={() => {
-                setSelectedCodingProblem(null);
-              }}
-            />
-          )}
-        </main>
-      </div>
+          </main>
+        </div>
+      );
+    }
+    return (
+      <CodingWorkspace
+        problem={selectedCodingProblem}
+        onExit={() => {
+          setSelectedCodingProblem(null);
+        }}
+      />
     );
   }
 
