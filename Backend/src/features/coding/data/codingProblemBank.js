@@ -23,9 +23,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(s) {\n  // Return true if s is a palindrome, false otherwise\n  return false;\n}`,
-      python: `def solve(s: str) -> bool:\n    # Return True if s is a palindrome, False otherwise\n    return False`,
-      java: `class Solution {\n    public boolean solve(String s) {\n        // Write your solution here\n        return false;\n    }\n}`,
-      cpp: `#include <iostream>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    bool solve(string s) {\n        // Write your solution here\n        return false;\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(s: str) -> bool:\n    # Write your solution here\n    return False`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public boolean solve(String s) {\n        // Write your solution here\n        return false;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <string>\n#include <vector>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    bool solve(string s) {\n        // Write your solution here\n        return false;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(s) {\n  const clean = String(s).toLowerCase().replace(/[^a-z0-9]/g, '');\n  return clean === clean.split('').reverse().join('');\n}`
@@ -51,9 +51,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(s, t) {\n  // Return true if t is an anagram of s\n  return false;\n}`,
-      python: `def solve(s: str, t: str) -> bool:\n    # Return True if t is an anagram of s\n    return False`,
-      java: `class Solution {\n    public boolean solve(String s, String t) {\n        return false;\n    }\n}`,
-      cpp: `#include <iostream>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    bool solve(string s, string t) {\n        return false;\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(s: str, t: str) -> bool:\n    # Write your solution here\n    return False`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public boolean solve(String s, String t) {\n        // Write your solution here\n        return false;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <string>\n#include <vector>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    bool solve(string s, string t) {\n        // Write your solution here\n        return false;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(s, t) {\n  if (s.length !== t.length) return false;\n  const sortedS = s.split('').sort().join('');\n  const sortedT = t.split('').sort().join('');\n  return sortedS === sortedT;\n}`
@@ -78,9 +78,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(s) {\n  // Return the string with reversed vowels\n  return "";\n}`,
-      python: `def solve(s: str) -> str:\n    # Return string with vowels reversed\n    return ""`,
-      java: `class Solution {\n    public String solve(String s) {\n        return "";\n    }\n}`,
-      cpp: `#include <iostream>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    string solve(string s) {\n        return "";\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(s: str) -> str:\n    # Write your solution here\n    return ""`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public String solve(String s) {\n        // Write your solution here\n        return "";\n    }\n}`,
+      cpp: `#include <iostream>\n#include <string>\n#include <vector>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    string solve(string s) {\n        // Write your solution here\n        return "";\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(s) {\n  const vowels = new Set(['a','e','i','o','u','A','E','I','O','U']);\n  const arr = s.split('');\n  let i = 0, j = arr.length - 1;\n  while (i < j) {\n    while (i < j && !vowels.has(arr[i])) i++;\n    while (i < j && !vowels.has(arr[j])) j--;\n    if (i < j) {\n      const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;\n      i++; j--;\n    }\n  }\n  return arr.join('');\n}`
@@ -105,9 +105,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(s) {\n  // Return length of last word\n  return 0;\n}`,
-      python: `def solve(s: str) -> int:\n    # Return length of last word\n    return 0`,
-      java: `class Solution {\n    public int solve(String s) {\n        return 0;\n    }\n}`,
-      cpp: `#include <iostream>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(string s) {\n        return 0;\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(s: str) -> int:\n    # Write your solution here\n    return 0`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public int solve(String s) {\n        // Write your solution here\n        return 0;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <string>\n#include <vector>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(string s) {\n        // Write your solution here\n        return 0;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(s) {\n  const words = s.trim().split(/\\s+/);\n  return words[words.length - 1].length;\n}`
@@ -132,9 +132,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(s) {\n  // Return length of longest substring without duplicates\n  return 0;\n}`,
-      python: `def solve(s: str) -> int:\n    return 0`,
-      java: `class Solution {\n    public int solve(String s) {\n        return 0;\n    }\n}`,
-      cpp: `#include <iostream>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(string s) {\n        return 0;\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(s: str) -> int:\n    # Write your solution here\n    return 0`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public int solve(String s) {\n        // Write your solution here\n        return 0;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <string>\n#include <vector>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(string s) {\n        // Write your solution here\n        return 0;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(s) {\n  let maxLen = 0, start = 0;\n  const map = new Map();\n  for (let i = 0; i < s.length; i++) {\n    if (map.has(s[i]) && map.get(s[i]) >= start) {\n      start = map.get(s[i]) + 1;\n    }\n    map.set(s[i], i);\n    maxLen = Math.max(maxLen, i - start + 1);\n  }\n  return maxLen;\n}`
@@ -159,9 +159,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(s) {\n  // Return compressed string if shorter, otherwise original\n  return "";\n}`,
-      python: `def solve(s: str) -> str:\n    return ""`,
-      java: `class Solution {\n    public String solve(String s) {\n        return "";\n    }\n}`,
-      cpp: `#include <iostream>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    string solve(string s) {\n        return "";\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(s: str) -> str:\n    # Write your solution here\n    return ""`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public String solve(String s) {\n        // Write your solution here\n        return "";\n    }\n}`,
+      cpp: `#include <iostream>\n#include <string>\n#include <vector>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    string solve(string s) {\n        // Write your solution here\n        return "";\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(s) {\n  if (!s) return "";\n  let compressed = "";\n  let count = 1;\n  for (let i = 0; i < s.length; i++) {\n    if (s[i] === s[i + 1]) {\n      count++;\n    } else {\n      compressed += s[i] + count;\n      count = 1;\n    }\n  }\n  return compressed.length < s.length ? compressed : s;\n}`
@@ -188,9 +188,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(nums, target) {\n  // Return indices of the two numbers adding up to target\n  return [];\n}`,
-      python: `def solve(nums, target):\n    # Return [i, j]\n    return []`,
-      java: `import java.util.*;\n\nclass Solution {\n    public int[] solve(int[] nums, int target) {\n        return new int[]{};\n    }\n}`,
-      cpp: `#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    vector<int> solve(vector<int>& nums, int target) {\n        return {};\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(nums, target):\n    # Write your solution here\n    return []`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public int[] solve(int[] nums, int target) {\n        // Write your solution here\n        return new int[]{};\n    }\n}`,
+      cpp: `#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    vector<int> solve(vector<int>& nums, int target) {\n        // Write your solution here\n        return {};\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(nums, target) {\n  const map = new Map();\n  for (let i = 0; i < nums.length; i++) {\n    const comp = target - nums[i];\n    if (map.has(comp)) return [map.get(comp), i];\n    map.set(nums[i], i);\n  }\n  return [];\n}`
@@ -214,10 +214,10 @@ const CODING_PROBLEM_BANK = [
       { input: '[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]', expectedOutput: 'false' }
     ],
     starterCode: {
-      javascript: `function solve(nums) {\n  return false;\n}`,
-      python: `def solve(nums):\n    return False`,
-      java: `class Solution {\n    public boolean solve(int[] nums) {\n        return false;\n    }\n}`,
-      cpp: `#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    bool solve(vector<int>& nums) {\n        return false;\n    }\n};`
+      javascript: `function solve(nums) {\n  // Return true if any value appears at least twice\n  return false;\n}`,
+      python: `# Complete the 'solve' function below.\ndef solve(nums):\n    # Write your solution here\n    return False`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public boolean solve(int[] nums) {\n        // Write your solution here\n        return false;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    bool solve(vector<int>& nums) {\n        // Write your solution here\n        return false;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(nums) {\n  return new Set(nums).size !== nums.length;\n}`
@@ -242,9 +242,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(nums) {\n  // Return max contiguous subarray sum\n  return 0;\n}`,
-      python: `def solve(nums):\n    return 0`,
-      java: `class Solution {\n    public int solve(int[] nums) {\n        return 0;\n    }\n}`,
-      cpp: `#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(vector<int>& nums) {\n        return 0;\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(nums):\n    # Write your solution here\n    return 0`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public int solve(int[] nums) {\n        // Write your solution here\n        return 0;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(vector<int>& nums) {\n        // Write your solution here\n        return 0;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(nums) {\n  let maxSoFar = nums[0];\n  let currMax = nums[0];\n  for (let i = 1; i < nums.length; i++) {\n    currMax = Math.max(nums[i], currMax + nums[i]);\n    maxSoFar = Math.max(maxSoFar, currMax);\n  }\n  return maxSoFar;\n}`
@@ -272,9 +272,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(s) {\n  // Return true if parentheses match properly\n  return false;\n}`,
-      python: `def solve(s: str) -> bool:\n    return False`,
-      java: `class Solution {\n    public boolean solve(String s) {\n        return false;\n    }\n}`,
-      cpp: `#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    bool solve(string s) {\n        return false;\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(s: str) -> bool:\n    # Write your solution here\n    return False`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public boolean solve(String s) {\n        // Write your solution here\n        return false;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <string>\n#include <vector>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    bool solve(string s) {\n        // Write your solution here\n        return false;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(s) {\n  const stack = [];\n  const map = { ')': '(', '}': '{', ']': '[' };\n  for (let ch of s) {\n    if (ch === '(' || ch === '{' || ch === '[') {\n      stack.push(ch);\n    } else {\n      if (!stack.length || stack.pop() !== map[ch]) return false;\n    }\n  }\n  return stack.length === 0;\n}`
@@ -302,9 +302,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(n) {\n  // Return number of ways to climb n stairs\n  return 0;\n}`,
-      python: `def solve(n: int) -> int:\n    return 0`,
-      java: `class Solution {\n    public int solve(int n) {\n        return 0;\n    }\n}`,
-      cpp: `class Solution {\npublic:\n    int solve(int n) {\n        return 0;\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(n: int) -> int:\n    # Write your solution here\n    return 0`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public int solve(int n) {\n        // Write your solution here\n        return 0;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(int n) {\n        // Write your solution here\n        return 0;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(n) {\n  n = Number(n);\n  if (n <= 2) return n;\n  let a = 1, b = 2;\n  for (let i = 3; i <= n; i++) {\n    const next = a + b;\n    a = b;\n    b = next;\n  }\n  return b;\n}`
@@ -331,9 +331,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(nums, target) {\n  // Return index of target in sorted nums, or -1\n  return -1;\n}`,
-      python: `def solve(nums, target):\n    return -1`,
-      java: `class Solution {\n    public int solve(int[] nums, int target) {\n        return -1;\n    }\n}`,
-      cpp: `#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(vector<int>& nums, int target) {\n        return -1;\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(nums, target):\n    # Write your solution here\n    return -1`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public int solve(int[] nums, int target) {\n        // Write your solution here\n        return -1;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(vector<int>& nums, int target) {\n        // Write your solution here\n        return -1;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(nums, target) {\n  let left = 0, right = nums.length - 1;\n  while (left <= right) {\n    const mid = Math.floor((left + right) / 2);\n    if (nums[mid] === target) return mid;\n    if (nums[mid] < target) left = mid + 1;\n    else right = mid - 1;\n  }\n  return -1;\n}`
@@ -360,9 +360,9 @@ const CODING_PROBLEM_BANK = [
     ],
     starterCode: {
       javascript: `function solve(nums) {\n  // Find and return the single number\n  return 0;\n}`,
-      python: `def solve(nums):\n    return 0`,
-      java: `class Solution {\n    public int solve(int[] nums) {\n        return 0;\n    }\n}`,
-      cpp: `#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(vector<int>& nums) {\n        return 0;\n    }\n};`
+      python: `# Complete the 'solve' function below.\ndef solve(nums):\n    # Write your solution here\n    return 0`,
+      java: `import java.util.*;\nimport java.io.*;\n\nclass Solution {\n    public int solve(int[] nums) {\n        // Write your solution here\n        return 0;\n    }\n}`,
+      cpp: `#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve(vector<int>& nums) {\n        // Write your solution here\n        return 0;\n    }\n};`
     },
     referenceSolution: {
       javascript: `function solve(nums) {\n  return nums.reduce((acc, curr) => acc ^ curr, 0);\n}`

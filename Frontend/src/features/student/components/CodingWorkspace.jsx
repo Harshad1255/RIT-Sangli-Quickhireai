@@ -7,37 +7,63 @@ import CodingReportModal from './CodingReportModal';
 import '../styles/CodingWorkspace.css';
 
 const DEFAULT_STARTERS = {
-  javascript: `// Write your solution here
+  javascript: `/**
+ * Complete the 'solve' function below.
+ * 
+ * @param {number[]} nums
+ * @param {number} target
+ * @return {number}
+ */
 function solve(nums, target) {
-  // TODO
-  return [];
+  // Write your solution here
+  return -1;
 }
 `,
-  python: `# Write your solution here
+  python: `# Complete the 'solve' function below.
 def solve(nums, target):
-    # TODO
-    return []
+    # Write your solution here
+    return -1
 `,
-  java: `// Write your Java solution here
-import java.util.*;
+  java: `import java.util.*;
+import java.io.*;
 
-public class Main {
-    public static void main(String[] args) {
-        Scanner sc = new Scanner(System.in);
-        // TODO: Read input and print solution
+class Solution {
+    public int solve(int[] nums, int target) {
+        // Write your solution here
+        return -1;
     }
 }
 `,
-  cpp: `// Write your C++ solution here
-#include <iostream>
+  cpp: `#include <iostream>
 #include <vector>
+#include <string>
+#include <algorithm>
+
 using namespace std;
 
-int main() {
-    // TODO: Read input and print solution
-    return 0;
-}
+class Solution {
+public:
+    int solve(vector<int>& nums, int target) {
+        // Write your solution here
+        return -1;
+    }
+};
 `
+};
+
+const sanitizeStarterCode = (rawStarter, lang) => {
+  if (!rawStarter || typeof rawStarter !== 'string') return DEFAULT_STARTERS[lang] || '';
+  let starter = rawStarter.trimStart();
+  if (lang === 'cpp') {
+    if (!starter.includes('<iostream>')) {
+      starter = `#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n\nusing namespace std;\n\n` + starter.replace(/^#include\s*<vector>\s*/m, '').replace(/^using\s+namespace\s+std;\s*/m, '').trimStart();
+    }
+  } else if (lang === 'java') {
+    if (!starter.includes('import java.util')) {
+      starter = `import java.util.*;\nimport java.io.*;\n\n` + starter.trimStart();
+    }
+  }
+  return starter;
 };
 
 const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
@@ -83,11 +109,24 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
 
   useEffect(() => {
     if (currentProblem) {
-      const starter = currentProblem.starterCode?.[language] || DEFAULT_STARTERS[language] || '';
+      const rawStarter = currentProblem.starterCode?.[language] || DEFAULT_STARTERS[language] || '';
+      const starter = sanitizeStarterCode(rawStarter, language);
       setCode(starter);
       const sampleCases = (currentProblem.testCases || []).filter(t => t.isSample || !t.isHidden);
       if (sampleCases.length > 0) {
         setCustomStdin(sampleCases[0].input || '');
+      }
+
+      // Explicitly scroll editor back to top line on problem load or language switch
+      if (editorRef.current) {
+        setTimeout(() => {
+          try {
+            editorRef.current.setScrollTop(0);
+            editorRef.current.setScrollLeft(0);
+            editorRef.current.setPosition({ lineNumber: 1, column: 1 });
+            editorRef.current.revealLine(1);
+          } catch (e) {}
+        }, 50);
       }
     }
   }, [currentProblem, language]);
@@ -131,6 +170,15 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
 
   const handleEditorMount = (editor) => {
     editorRef.current = editor;
+
+    // Immediately ensure line 1 is visible and scrolled to top
+    try {
+      editor.setScrollTop(0);
+      editor.setScrollLeft(0);
+      editor.setPosition({ lineNumber: 1, column: 1 });
+      editor.revealLine(1);
+    } catch (e) {}
+
     const handleEditorKeyDown = (event) => {
       const isModifier = event.ctrlKey || event.metaKey;
       if (!isModifier) return;
@@ -143,8 +191,19 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
 
   const handleResetCode = () => {
     if (window.confirm('Reset code to initial template? Your current edits will be replaced.')) {
-      const starter = currentProblem?.starterCode?.[language] || DEFAULT_STARTERS[language] || '';
+      const rawStarter = currentProblem?.starterCode?.[language] || DEFAULT_STARTERS[language] || '';
+      const starter = sanitizeStarterCode(rawStarter, language);
       setCode(starter);
+      if (editorRef.current) {
+        setTimeout(() => {
+          try {
+            editorRef.current.setScrollTop(0);
+            editorRef.current.setScrollLeft(0);
+            editorRef.current.setPosition({ lineNumber: 1, column: 1 });
+            editorRef.current.revealLine(1);
+          } catch (e) {}
+        }, 50);
+      }
     }
   };
 
@@ -501,6 +560,7 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
                   minimap: { enabled: false },
                   fontSize: 14,
                   lineNumbers: 'on',
+                  lineNumbersMinChars: 3,
                   scrollBeyondLastLine: false,
                   automaticLayout: true,
                   quickSuggestions: true,
@@ -509,7 +569,15 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
                   tabSize: 4,
                   formatOnPaste: false,
                   formatOnType: false,
-                  readOnly: false
+                  readOnly: false,
+                  padding: { top: 12, bottom: 12 },
+                  overviewRulerBorder: false,
+                  scrollbar: {
+                    vertical: 'visible',
+                    horizontal: 'visible',
+                    verticalScrollbarSize: 8,
+                    horizontalScrollbarSize: 8
+                  }
                 }}
               />
             </div>
