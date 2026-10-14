@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import scholasticApi from '../services/scholasticApi';
-import CodingIDEModal from './CodingIDEModal';
+import CodingWorkspace from '../../student/components/CodingWorkspace';
 import '../styles/CodingPractice.css';
 
 const CodingPractice = () => {
@@ -230,9 +230,17 @@ const CodingPractice = () => {
         </div>
       )}
 
-      {/* IDE Modal */}
+      {/* Full-Screen LeetCode-style Coding Workspace */}
       {activeProblem && (
-        <CodingIDEModal problem={activeProblem} onClose={closeIDE} />
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#090d16' }}>
+          <CodingWorkspace
+            problem={activeProblem}
+            onExit={() => {
+              closeIDE();
+              setRefreshVersion(v => v + 1);
+            }}
+          />
+        </div>
       )}
       {openingProblem && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'grid', placeItems: 'center', background: 'rgba(15, 23, 42, 0.35)', color: '#fff' }}>

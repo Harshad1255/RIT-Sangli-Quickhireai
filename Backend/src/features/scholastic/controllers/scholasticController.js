@@ -85,18 +85,81 @@ const scholasticController = {
         Achievement.find({})
       ]);
 
+      let userProgress = progress;
+      if (!userProgress) {
+        userProgress = new Progress({ userId });
+      }
+
+      if (!userProgress.questionsSolved) userProgress.questionsSolved = {};
+      if (!userProgress.questionsSolved.aptitude) {
+        userProgress.questionsSolved.aptitude = { easy: 0, medium: 0, hard: 0, total: 0 };
+      }
+      if (!userProgress.questionsSolved.coding) {
+        userProgress.questionsSolved.coding = { easy: 0, medium: 0, hard: 0, total: 0 };
+      }
+
+      // Dynamically calculate unique solved coding problems
+      try {
+        const CodingSubmission = require('../../coding/models/CodingSubmission');
+        const CodingProblem = require('../../coding/models/CodingProblem');
+        const { CodingQuestion, CodingSubmission: ScholasticCodingSubmission } = require('../models');
+
+        const [acceptedMainSubs, acceptedScholasticSubs] = await Promise.all([
+          CodingSubmission.find({
+            $or: [{ userId }, { studentId: userId }],
+            verdict: 'Accepted',
+            isRunOnly: false
+          }).select('problemId').lean(),
+          ScholasticCodingSubmission.find({
+            userId,
+            status: 'Accepted'
+          }).select('questionId').lean()
+        ]);
+
+        const uniqueMainProblemIds = [...new Set(acceptedMainSubs.map(s => s.problemId?.toString()).filter(Boolean))];
+        const uniqueScholasticQuestionIds = [...new Set(acceptedScholasticSubs.map(s => s.questionId?.toString()).filter(Boolean))];
+
+        const [mainProblems, scholasticQuestions] = await Promise.all([
+          uniqueMainProblemIds.length > 0 ? CodingProblem.find({ _id: { $in: uniqueMainProblemIds } }).select('difficulty').lean() : [],
+          uniqueScholasticQuestionIds.length > 0 ? CodingQuestion.find({ _id: { $in: uniqueScholasticQuestionIds } }).select('difficulty').lean() : []
+        ]);
+
+        let codingEasy = 0;
+        let codingMedium = 0;
+        let codingHard = 0;
+
+        mainProblems.forEach(p => {
+          const diff = (p.difficulty || 'Easy').toLowerCase();
+          if (diff === 'easy') codingEasy++;
+          else if (diff === 'medium') codingMedium++;
+          else if (diff === 'hard') codingHard++;
+          else codingEasy++;
+        });
+
+        scholasticQuestions.forEach(q => {
+          const diff = (q.difficulty || 'Easy').toLowerCase();
+          if (diff === 'easy') codingEasy++;
+          else if (diff === 'medium') codingMedium++;
+          else if (diff === 'hard') codingHard++;
+          else codingEasy++;
+        });
+
+        const codingTotal = codingEasy + codingMedium + codingHard;
+        userProgress.questionsSolved.coding = {
+          easy: codingEasy,
+          medium: codingMedium,
+          hard: codingHard,
+          total: codingTotal
+        };
+        userProgress.markModified('questionsSolved.coding');
+        await userProgress.save();
+      } catch (countErr) {
+        console.warn('Non-fatal error aggregating unique coding solved count:', countErr.message);
+      }
+
       res.status(200).json({
         success: true,
-        progress: progress || {
-          dailyStreak: 0,
-          questionsSolved: {
-            aptitude: { easy: 0, medium: 0, hard: 0, total: 0 },
-            coding: { easy: 0, medium: 0, hard: 0, total: 0 }
-          },
-          overallAccuracy: 0,
-          topicProficiency: [],
-          heatmap: []
-        },
+        progress: userProgress,
         stats: stats || { xp: 0, coins: 100, level: 1, badgesEarned: [], achievementsUnlocked: [] },
         leaderboard: leaderboard || { totalXP: 0, contestRating: 1200, streakDays: 0 },
         allBadges: badges,

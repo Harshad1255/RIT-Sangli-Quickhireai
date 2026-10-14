@@ -544,6 +544,28 @@ const codingProblemController = {
       if (!infrastructureFailure) problem.totalSubmissions += 1;
       if (evaluation.verdict === 'Accepted') {
         problem.totalAccepted += 1;
+        try {
+          const priorAccepted = await CodingSubmission.findOne({
+            $or: [{ userId }, { studentId: userId }],
+            problemId: id,
+            verdict: 'Accepted',
+            isRunOnly: false
+          });
+          const isFirstSolve = !priorAccepted;
+
+          const xpCalculator = require('../../scholastic/utils/xpCalculator');
+          await xpCalculator.updateAfterSolution({
+            userId,
+            userName: req.user?.name || req.user?.email || 'Student',
+            questionType: 'coding',
+            difficulty: problem.difficulty || 'Easy',
+            isCorrect: true,
+            timeTakenSeconds: Math.round((evaluation.runtime || 0) / 1000) || 60,
+            isFirstSolve
+          });
+        } catch (xpErr) {
+          console.warn('[coding] Failed to update XP/progress:', xpErr.message);
+        }
       }
       if (problem.totalSubmissions > 0) {
         problem.acceptanceRate = Number(((problem.totalAccepted / problem.totalSubmissions) * 100).toFixed(1));
@@ -714,6 +736,45 @@ const codingProblemController = {
     } catch (error) {
       console.error('Error in getMySubmissions:', error);
       return res.status(500).json({ success: false, error: error.message || 'Server error fetching submission history' });
+    }
+  },
+
+  // GET /api/coding/submissions/:submissionId/report - get full assessment report for a submission
+  getSubmissionReport: async (req, res) => {
+    try {
+      const { submissionId } = req.params;
+      const userId = req.user.id || req.user._id;
+      const isCompany = req.user && req.user.userType === 'company';
+
+      const submission = await CodingSubmission.findById(submissionId)
+        .populate('problemId', 'title slug difficulty category description statementMarkdown constraints')
+        .populate('userId', 'name email university');
+
+      if (!submission) {
+        return res.status(404).json({ success: false, error: 'Submission not found' });
+      }
+
+      const isOwner = (submission.userId?._id || submission.userId || '').toString() === userId.toString() ||
+                      (submission.studentId || '').toString() === userId.toString();
+      if (!isOwner && !isCompany) {
+        return res.status(403).json({ success: false, error: 'Unauthorized to view this report' });
+      }
+
+      const reportData = submission.toObject();
+      reportData.testResults = (reportData.testResults || []).map((tr) => ({
+        ...tr,
+        input: tr.isHidden ? 'Hidden Test Case' : tr.input,
+        expectedOutput: tr.isHidden ? 'Hidden Expected Output' : tr.expectedOutput,
+        actualOutput: tr.isHidden ? (tr.passed ? 'Passed' : 'Failed') : tr.actualOutput,
+        stderr: tr.isHidden ? '' : tr.stderr
+      }));
+
+      return res.status(200).json({
+        success: true,
+        data: reportData
+      });
+    } catch (error) {
+      return sendInternalError(req, res, 'getSubmissionReport', error);
     }
   },
 

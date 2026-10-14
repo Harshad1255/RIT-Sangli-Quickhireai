@@ -2,17 +2,49 @@ import { useState, useEffect, useRef } from 'react';
 import { Editor } from '@monaco-editor/react';
 import { api } from '../../../shared/services/api';
 import { getExecutionRequestError, getExecutionServiceMessage } from '../../../shared/services/codingExecutionMessages';
+import MarkdownRenderer from '../../../shared/components/MarkdownRenderer';
+import CodingReportModal from './CodingReportModal';
 import '../styles/CodingWorkspace.css';
 
 const DEFAULT_STARTERS = {
-  javascript: 'function solve(nums, target) {\n  return [];\n}\n',
-  python: 'def solve(nums, target):\n    return []\n',
-  java: '// Write Java solution here\nimport java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n    }\n}\n',
-  cpp: '// Write C++ solution here\n#include <iostream>\nusing namespace std;\n\nint main() {\n    return 0;\n}\n'
+  javascript: `// Write your solution here
+function solve(nums, target) {
+  // TODO
+  return [];
+}
+`,
+  python: `# Write your solution here
+def solve(nums, target):
+    # TODO
+    return []
+`,
+  java: `// Write your Java solution here
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        // TODO: Read input and print solution
+    }
+}
+`,
+  cpp: `// Write your C++ solution here
+#include <iostream>
+#include <vector>
+using namespace std;
+
+int main() {
+    // TODO: Read input and print solution
+    return 0;
+}
+`
 };
 
 const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
-  const [activeTab, setActiveTab] = useState('description');
+  const [currentProblem, setCurrentProblem] = useState(problem);
+  const [leftTab, setLeftTab] = useState('description'); // 'description', 'editorial', 'submissions'
+  const [consoleTab, setConsoleTab] = useState('testcases'); // 'testcases', 'customInput', 'result'
+  const [selectedCaseIdx, setSelectedCaseIdx] = useState(0);
   const [language, setLanguage] = useState('python');
   const [code, setCode] = useState('');
   const [customStdin, setCustomStdin] = useState('');
@@ -20,24 +52,52 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
   const [executionResult, setExecutionResult] = useState(null);
   const [submissionsHistory, setSubmissionsHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  
+  // Assessment Report Modal
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [activeReport, setActiveReport] = useState(null);
+
+  // Mobile View Switcher: 'problem', 'code', 'console'
+  const [mobileView, setMobileView] = useState('code');
+
   const editorRef = useRef(null);
   const requestInFlight = useRef(false);
 
   useEffect(() => {
-    if (problem) {
-      const starter = problem.starterCode?.[language] || DEFAULT_STARTERS[language];
+    setCurrentProblem(problem);
+  }, [problem]);
+
+  useEffect(() => {
+    if (problem?._id && (!problem.testCases || problem.testCases.length === 0)) {
+      api.get(`/coding/problems/${problem._id}`)
+        .then(res => {
+          if (res.data?.success && res.data.data) {
+            setCurrentProblem(res.data.data);
+          }
+        })
+        .catch(err => {
+          console.error('Error fetching full problem details:', err);
+        });
+    }
+  }, [problem?._id]);
+
+  useEffect(() => {
+    if (currentProblem) {
+      const starter = currentProblem.starterCode?.[language] || DEFAULT_STARTERS[language] || '';
       setCode(starter);
-      if (problem.testCases && problem.testCases.length > 0) {
-        setCustomStdin(problem.testCases[0].input || '');
+      const sampleCases = (currentProblem.testCases || []).filter(t => t.isSample || !t.isHidden);
+      if (sampleCases.length > 0) {
+        setCustomStdin(sampleCases[0].input || '');
       }
     }
-  }, [problem, language]);
+  }, [currentProblem, language]);
 
   const fetchSubmissionsHistory = async () => {
+    if (!currentProblem?._id) return;
     try {
       setLoadingHistory(true);
       const res = await api.get('/coding/submissions/mine', {
-        params: { problemId: problem._id }
+        params: { problemId: currentProblem._id }
       });
       if (res.data && res.data.success) {
         setSubmissionsHistory(res.data.data);
@@ -50,11 +110,12 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
   };
 
   useEffect(() => {
-    if (activeTab === 'submissions') {
+    if (leftTab === 'submissions') {
       fetchSubmissionsHistory();
     }
-  }, [activeTab]);
+  }, [leftTab]);
 
+  // Anti-cheat clipboard restriction
   useEffect(() => {
     const handleClipboardKeys = (event) => {
       const isModifier = event.ctrlKey || event.metaKey;
@@ -80,13 +141,23 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
     editor.onKeyDown(handleEditorKeyDown);
   };
 
+  const handleResetCode = () => {
+    if (window.confirm('Reset code to initial template? Your current edits will be replaced.')) {
+      const starter = currentProblem?.starterCode?.[language] || DEFAULT_STARTERS[language] || '';
+      setCode(starter);
+    }
+  };
+
   const handleRunCode = async () => {
-    if (requestInFlight.current) return;
+    if (requestInFlight.current || !currentProblem?._id) return;
     requestInFlight.current = true;
     try {
       setLoadingAction('run');
       setExecutionResult(null);
-      const res = await api.post(`/coding/problems/${problem._id}/run`, {
+      setConsoleTab('result');
+      setMobileView('console');
+
+      const res = await api.post(`/coding/problems/${currentProblem._id}/run`, {
         code,
         language,
         stdin: customStdin
@@ -106,20 +177,29 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
   };
 
   const handleSubmitSolution = async () => {
-    if (requestInFlight.current) return;
+    if (requestInFlight.current || !currentProblem?._id) return;
     requestInFlight.current = true;
     try {
       setLoadingAction('submit');
       setExecutionResult(null);
-      const res = await api.post(`/coding/problems/${problem._id}/submit`, {
+      setConsoleTab('result');
+
+      const res = await api.post(`/coding/problems/${currentProblem._id}/submit`, {
         code,
         language,
         testId,
         violations
       });
       if (res.data && res.data.success) {
-        setExecutionResult(res.data.data);
-        if (activeTab === 'submissions') {
+        const submissionData = res.data.data;
+        setExecutionResult(submissionData);
+        setActiveReport({
+          ...submissionData,
+          language
+        });
+        setShowReportModal(true);
+
+        if (leftTab === 'submissions') {
           fetchSubmissionsHistory();
         }
       }
@@ -129,283 +209,271 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
         errorMessage: getExecutionRequestError(err, 'submit')
       });
     } finally {
+      requestInFlight.current = false;
       setLoadingAction('');
     }
   };
 
+  const handleViewHistoricalReport = (submission) => {
+    setActiveReport({
+      ...submission,
+      submissionId: submission._id
+    });
+    setShowReportModal(true);
+  };
+
   const getVerdictClass = (verdict) => {
     if (!verdict) return '';
-    return `verdict-${verdict.replace(/\s+/g, '-')}`;
+    return `verdict-${String(verdict).replace(/\s+/g, '-')}`;
   };
+
+  const sampleCases = (currentProblem?.testCases || []).filter(t => t.isSample || !t.isHidden);
 
   return (
     <div className="coding-workspace-container">
-      <div className="workspace-topbar">
-        <h2>
-          <button
-            onClick={onExit}
-            style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem' }}
-          >
+      {/* Top Navbar */}
+      <header className="workspace-topbar">
+        <div className="topbar-left">
+          <button onClick={onExit} className="btn-back-nav" title="Exit to Practice">
             <i className="fas fa-arrow-left"></i>
           </button>
-          <span>{problem?.title}</span>
-          <span className={`badge-difficulty difficulty-${problem?.difficulty}`}>
-            {problem?.difficulty}
-          </span>
-        </h2>
-        <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-          Category: <strong>{problem?.category}</strong>
-        </div>
-      </div>
-
-      <div className="workspace-body">
-        {/* LEFT PANEL */}
-        <div className="workspace-left">
-          <div className="problem-tabs">
-            <button
-              className={`problem-tab-btn ${activeTab === 'description' ? 'active' : ''}`}
-              onClick={() => setActiveTab('description')}
-            >
-              Description
-            </button>
-            <button
-              className={`problem-tab-btn ${activeTab === 'submissions' ? 'active' : ''}`}
-              onClick={() => setActiveTab('submissions')}
-            >
-              My Submissions
-            </button>
+          <div className="brand-logo-tag">
+            <i className="fas fa-terminal"></i>
+            <span>QuickHire AI</span>
           </div>
-
-          {activeTab === 'description' ? (
-            <div>
-              <div style={{ lineHeight: 1.7, whiteSpace: 'pre-wrap', marginBottom: 20 }}>
-                {problem?.statementMarkdown || problem?.description}
-              </div>
-
-              {problem?.testCases && problem.testCases.filter(t => t.isSample).length > 0 && (
-                <div style={{ marginTop: 20 }}>
-                  <h4 style={{ color: '#cbd5e1', marginBottom: 12 }}>Sample Test Cases</h4>
-                  {problem.testCases.filter(t => t.isSample).map((tc, idx) => (
-                    <div key={idx} style={{ background: '#334155', padding: 14, borderRadius: 8, marginBottom: 12 }}>
-                      <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: 6 }}>Sample #{idx + 1}</div>
-                      <div><strong>Input:</strong> <pre style={{ margin: '4px 0', background: '#0f172a', padding: 8, borderRadius: 4 }}>{tc.input}</pre></div>
-                      <div><strong>Expected Output:</strong> <pre style={{ margin: '4px 0', background: '#0f172a', padding: 8, borderRadius: 4 }}>{tc.expectedOutput}</pre></div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {problem?.constraints && problem.constraints.length > 0 && (
-                <div style={{ marginTop: 20 }}>
-                  <h4 style={{ color: '#cbd5e1', marginBottom: 10 }}>Constraints</h4>
-                  <ul style={{ paddingLeft: 20, color: '#94a3b8' }}>
-                    {problem.constraints.map((c, i) => (
-                      <li key={i}>{c}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div>
-              <h4 style={{ marginBottom: 16 }}>Your Past Submissions</h4>
-              {loadingHistory ? (
-                <div>Loading submissions...</div>
-              ) : submissionsHistory.length === 0 ? (
-                <p style={{ color: '#94a3b8' }}>You have no submissions for this problem yet.</p>
-              ) : (
-                <table className="test-results-table">
-                  <thead>
-                    <tr>
-                      <th>Status</th>
-                      <th>Language</th>
-                      <th>Runtime</th>
-                      <th>Submitted At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {submissionsHistory.map(sub => (
-                      <tr key={sub._id}>
-                        <td>
-                          <span className={`verdict-badge ${getVerdictClass(sub.verdict)}`}>
-                            {sub.verdict}
-                          </span>
-                        </td>
-                        <td>{sub.language}</td>
-                        <td>{sub.runtimeMs ?? "N/A"} ms</td>
-                        <td>{new Date(sub.submittedAt).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+          <span className="divider-slash">/</span>
+          <h2 className="problem-nav-title">{currentProblem?.title}</h2>
+          <span className={`badge-difficulty difficulty-${currentProblem?.difficulty}`}>
+            {currentProblem?.difficulty}
+          </span>
+          {currentProblem?.category && (
+            <span className="problem-category-pill">{currentProblem.category}</span>
           )}
         </div>
 
-        {/* RIGHT PANEL */}
-        <div className="workspace-right">
-          <div className="editor-panel">
-            <div className="editor-toolbar">
-              <select
-                className="language-select"
-                value={language}
-                disabled={!!loadingAction}
-                onChange={(e) => setLanguage(e.target.value)}
-              >
-                <option value="python">Python 3</option>
-                <option value="javascript">JavaScript (Node.js)</option>
-                <option value="java">Java</option>
-                <option value="cpp">C++17</option>
-              </select>
+        <div className="topbar-center">
+          {/* Mobile responsive view switcher */}
+          <div className="mobile-view-tabs">
+            <button
+              className={`view-tab ${mobileView === 'problem' ? 'active' : ''}`}
+              onClick={() => setMobileView('problem')}
+            >
+              <i className="fas fa-file-alt"></i> Problem
+            </button>
+            <button
+              className={`view-tab ${mobileView === 'code' ? 'active' : ''}`}
+              onClick={() => setMobileView('code')}
+            >
+              <i className="fas fa-code"></i> Code
+            </button>
+            <button
+              className={`view-tab ${mobileView === 'console' ? 'active' : ''}`}
+              onClick={() => setMobileView('console')}
+            >
+              <i className="fas fa-terminal"></i> Output
+            </button>
+          </div>
+        </div>
 
-              <div className="editor-actions">
-                <button
-                  className="btn-run"
-                  disabled={!!loadingAction}
-                  onClick={handleRunCode}
-                >
-                  <i className="fas fa-play"></i> {loadingAction === 'run' ? 'Running...' : 'Run Code'}
-                </button>
-                <button
-                  className="btn-submit"
-                  disabled={!!loadingAction}
-                  onClick={handleSubmitSolution}
-                >
-                  <i className="fas fa-check"></i> {loadingAction === 'submit' ? 'Submitting...' : 'Submit Solution'}
-                </button>
-              </div>
-            </div>
+        <div className="topbar-right">
+          <select
+            className="language-select"
+            value={language}
+            disabled={!!loadingAction}
+            onChange={(e) => setLanguage(e.target.value)}
+          >
+            <option value="python">Python 3</option>
+            <option value="javascript">JavaScript (Node.js)</option>
+            <option value="java">Java (OpenJDK)</option>
+            <option value="cpp">C++17 (GCC)</option>
+          </select>
 
-            <div style={{ flex: 1, minHeight: 300 }}>
-              <Editor
-                height="100%"
-                theme="vs-dark"
-                language={language}
-                value={code}
-                onMount={handleEditorMount}
-                onChange={(val) => setCode(val || '')}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  scrollBeyondLastLine: false,
-                  automaticLayout: true,
-                  quickSuggestions: true,
-                  bracketPairColorization: { enabled: true },
-                  formatOnPaste: false,
-                  formatOnType: false,
-                  contextmenu: false,
-                  readOnly: false
-                }}
-              />
-            </div>
+          <button
+            className="btn-toolbar-icon"
+            onClick={handleResetCode}
+            disabled={!!loadingAction}
+            title="Reset code template"
+          >
+            <i className="fas fa-undo"></i>
+          </button>
 
-            <div style={{ marginTop: 12 }}>
-              <label style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: 4 }}>
-                Custom Stdin Input (for Run Code)
-              </label>
-              <textarea
-                rows={2}
-                value={customStdin}
-                onChange={(e) => setCustomStdin(e.target.value)}
-                style={{
-                  width: '100%',
-                  background: '#0f172a',
-                  color: 'white',
-                  border: '1px solid #334155',
-                  borderRadius: 6,
-                  padding: 8,
-                  fontFamily: 'monospace'
-                }}
-                placeholder="Enter custom input for testing..."
-              />
-            </div>
+          <button
+            className="btn-run"
+            disabled={!!loadingAction}
+            onClick={handleRunCode}
+          >
+            <i className="fas fa-play"></i>
+            <span>{loadingAction === 'run' ? 'Running...' : 'Run Code'}</span>
+          </button>
+
+          <button
+            className="btn-submit"
+            disabled={!!loadingAction}
+            onClick={handleSubmitSolution}
+          >
+            <i className="fas fa-check"></i>
+            <span>{loadingAction === 'submit' ? 'Submitting...' : 'Submit'}</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Main Split Body */}
+      <div className="workspace-body">
+        {/* LEFT PANEL: Problem Details / Editorial / Submissions */}
+        <div className={`workspace-left ${mobileView === 'problem' ? 'mobile-visible' : 'mobile-hidden'}`}>
+          <div className="panel-tab-bar">
+            <button
+              className={`panel-tab-btn ${leftTab === 'description' ? 'active' : ''}`}
+              onClick={() => setLeftTab('description')}
+            >
+              <i className="fas fa-file-alt"></i> Description
+            </button>
+            <button
+              className={`panel-tab-btn ${leftTab === 'editorial' ? 'active' : ''}`}
+              onClick={() => setLeftTab('editorial')}
+            >
+              <i className="fas fa-lightbulb"></i> Hints & Editorial
+            </button>
+            <button
+              className={`panel-tab-btn ${leftTab === 'submissions' ? 'active' : ''}`}
+              onClick={() => setLeftTab('submissions')}
+            >
+              <i className="fas fa-history"></i> My Submissions
+            </button>
           </div>
 
-          {/* CONSOLE / RESULT PANEL */}
-          <div className="console-panel">
-            <div className="console-header">
-              <span>Execution Output</span>
-              {executionResult && (
-                <span className={`verdict-badge ${getVerdictClass(executionResult.verdict)}`}>
-                  {executionResult.verdict}
-                </span>
-              )}
-            </div>
+          <div className="panel-scroll-content">
+            {leftTab === 'description' && (
+              <div className="problem-description-content">
+                <div className="problem-title-header">
+                  <h3>{currentProblem?.title}</h3>
+                  <div className="problem-meta-chips">
+                    <span className={`diff-tag ${currentProblem?.difficulty}`}>{currentProblem?.difficulty}</span>
+                    {currentProblem?.tags && currentProblem.tags.map((t, idx) => (
+                      <span key={idx} className="topic-chip">{t}</span>
+                    ))}
+                  </div>
+                </div>
 
-            {executionResult && ['Execution Service Error', 'Server Error'].includes(executionResult.verdict) && (
-              <div style={{ background: '#7f1d1d', color: '#fecaca', padding: 15, borderRadius: 8, margin: '15px 0', border: '1px solid #ef4444' }}>
-                <div style={{ fontWeight: 'bold', marginBottom: 5 }}><i className="fas fa-exclamation-triangle"></i> {executionResult.verdict === 'Server Error' ? 'Server Error' : 'Execution Service Unavailable'}</div>
-                <div style={{ fontSize: '0.9rem' }}>{executionResult.verdict === 'Server Error' ? executionResult.errorMessage : getExecutionServiceMessage(executionResult.serviceReason)}</div>
+                {/* Markdown-rendered problem statement */}
+                <div className="statement-markdown-container">
+                  <MarkdownRenderer content={currentProblem?.statementMarkdown || currentProblem?.description} />
+                </div>
+
+                {/* Formatted Sample Test Cases */}
+                {sampleCases.length > 0 && (
+                  <div className="sample-testcases-section">
+                    <h4 className="section-subheading">Examples</h4>
+                    {sampleCases.map((tc, idx) => (
+                      <div key={idx} className="sample-card">
+                        <div className="sample-header">Example {idx + 1}:</div>
+                        <div className="sample-block">
+                          <span className="block-label">Input:</span>
+                          <pre className="block-code">{tc.input}</pre>
+                        </div>
+                        <div className="sample-block">
+                          <span className="block-label">Output:</span>
+                          <pre className="block-code">{tc.expectedOutput}</pre>
+                        </div>
+                        {tc.explanation && (
+                          <div className="sample-block explanation">
+                            <span className="block-label">Explanation:</span>
+                            <span className="explanation-text">{tc.explanation}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Constraints */}
+                {currentProblem?.constraints && currentProblem.constraints.length > 0 && (
+                  <div className="constraints-section">
+                    <h4 className="section-subheading">Constraints</h4>
+                    <ul className="constraints-list">
+                      {currentProblem.constraints.map((c, i) => (
+                        <li key={i}><code>{c}</code></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
 
-            {!executionResult && !loadingAction ? (
-              <div style={{ color: '#64748b', textAlign: 'center', padding: 20 }}>
-                Click "Run Code" to test with custom input or "Submit Solution" to run against all test cases.
-              </div>
-            ) : loadingAction ? (
-              <div style={{ color: '#94a3b8', textAlign: 'center', padding: 20 }}>
-                <i className="fas fa-spinner fa-spin" style={{ marginRight: 8 }}></i>
-                {loadingAction === 'run' ? 'Executing your code...' : 'Evaluating against test cases...'}
-              </div>
-            ) : (
-              <div>
-                <div style={{ display: 'flex', gap: 20, marginBottom: 12, fontSize: '0.9rem', color: '#cbd5e1' }}>
-                  <div><strong>Runtime:</strong> {executionResult.runtime ?? executionResult.runtimeMs ?? "N/A"} ms</div>
-                  <div><strong>Memory:</strong> {executionResult.memory ?? executionResult.memoryKb ?? "N/A"} KB</div>
-                  {executionResult.isRunOnly || executionResult.totalTests === 0 ? (
-                    <div><strong>Mode:</strong> Custom Run</div>
-                  ) : (
-                    <div>
-                      <strong>Score:</strong> {executionResult.score ?? "N/A"} / 100 ({executionResult.passedTests || executionResult.passedTestCases || 0} / {executionResult.totalTests || executionResult.totalTestCases || 0} passed)
+            {leftTab === 'editorial' && (
+              <div className="editorial-content">
+                <h4 className="section-subheading"><i className="fas fa-lightbulb"></i> Hints & Guidance</h4>
+                {currentProblem?.hints && currentProblem.hints.length > 0 ? (
+                  currentProblem.hints.map((hint, idx) => (
+                    <div key={idx} className="hint-card">
+                      <strong>Hint {idx + 1}:</strong>
+                      <p>{hint}</p>
                     </div>
-                  )}
+                  ))
+                ) : (
+                  <p className="empty-state-text">No specific hints provided for this challenge.</p>
+                )}
+
+                <h4 className="section-subheading" style={{ marginTop: '1.5rem' }}>
+                  <i className="fas fa-book-open"></i> Editorial Solution Approach
+                </h4>
+                <div className="editorial-text-box">
+                  <MarkdownRenderer
+                    content={currentProblem?.editorial || 'Approach: Analyze time and space complexity. Look for opportunities to optimize from $O(N^2)$ to $O(N)$ using hash tables, two pointers, or dynamic programming.'}
+                  />
+                </div>
+              </div>
+            )}
+
+            {leftTab === 'submissions' && (
+              <div className="submissions-history-content">
+                <div className="history-header-row">
+                  <h4>Past Submissions</h4>
+                  <button className="btn-refresh-history" onClick={fetchSubmissionsHistory}>
+                    <i className="fas fa-sync-alt"></i>
+                  </button>
                 </div>
 
-                {(executionResult.output || executionResult.stdout) && (
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: 4 }}>Stdout:</div>
-                    <pre style={{ background: '#0f172a', padding: 10, borderRadius: 6, margin: 0 }}>{executionResult.output || executionResult.stdout}</pre>
-                  </div>
-                )}
-
-                {executionResult.stderr && executionResult.verdict !== 'Execution Service Error' && (
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: '0.85rem', color: '#f87171', marginBottom: 4 }}>Stderr / Error:</div>
-                    <pre style={{ background: '#450a0a', color: '#fecaca', padding: 10, borderRadius: 6, margin: 0 }}>{executionResult.stderr}</pre>
-                  </div>
-                )}
-
-                {/* Test case table for submissions */}
-                {!executionResult.isRunOnly && (executionResult.testResults || executionResult.testCaseResults) && (
-                  <div>
-                    <div style={{ fontSize: '0.88rem', color: '#94a3b8', marginTop: 12 }}>Test Case Breakdown:</div>
-                    <table className="test-results-table">
+                {loadingHistory ? (
+                  <div className="history-loading"><i className="fas fa-spinner fa-spin"></i> Loading submissions...</div>
+                ) : submissionsHistory.length === 0 ? (
+                  <div className="empty-state-text">No submissions yet for this problem. Click "Submit" to record one!</div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="submissions-table">
                       <thead>
                         <tr>
-                          <th>Test #</th>
                           <th>Status</th>
-                          <th>Input</th>
-                          <th>Expected</th>
-                          <th>Actual</th>
+                          <th>Language</th>
+                          <th>Runtime</th>
+                          <th>Score</th>
+                          <th>Submitted</th>
+                          <th>Report</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {(executionResult.testResults || executionResult.testCaseResults).map((tc, idx) => (
-                          <tr key={idx}>
-                            <td>#{tc.testCaseNumber || (idx + 1)}</td>
+                        {submissionsHistory.map(sub => (
+                          <tr key={sub._id}>
                             <td>
-                              <span style={{
-                                fontWeight: 700,
-                                color: tc.passed ? '#34d399' : '#f87171'
-                              }}>
-                                {tc.passed ? 'PASS' : 'FAIL'}
+                              <span className={`verdict-badge ${getVerdictClass(sub.verdict)}`}>
+                                {sub.verdict}
                               </span>
                             </td>
-                            <td><code>{tc.input || 'Hidden'}</code></td>
-                            <td><code>{tc.expectedOutput || 'Hidden'}</code></td>
-                            <td><code>{tc.actualOutput || (tc.error ? 'Error' : 'Hidden')}</code></td>
+                            <td>{sub.language}</td>
+                            <td>{sub.runtimeMs ?? sub.runtime ?? 0} ms</td>
+                            <td>
+                              <strong>{sub.score != null ? `${sub.score}%` : 'N/A'}</strong>
+                            </td>
+                            <td className="date-cell">{new Date(sub.submittedAt).toLocaleDateString()}</td>
+                            <td>
+                              <button
+                                className="btn-view-report"
+                                onClick={() => handleViewHistoricalReport(sub)}
+                                title="View Assessment Report"
+                              >
+                                <i className="fas fa-file-invoice"></i> Report
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -416,7 +484,249 @@ const CodingWorkspace = ({ problem, testId, onExit, violations = [] }) => {
             )}
           </div>
         </div>
+
+        {/* RIGHT PANEL: Editor + Bottom Console Panel */}
+        <div className={`workspace-right ${mobileView !== 'problem' ? 'mobile-visible' : 'mobile-hidden'}`}>
+          {/* Top: Monaco Code Editor */}
+          <div className="editor-panel-box">
+            <div className="editor-container-wrapper">
+              <Editor
+                height="100%"
+                theme="vs-dark"
+                language={language}
+                value={code}
+                onMount={handleEditorMount}
+                onChange={(val) => setCode(val || '')}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  quickSuggestions: true,
+                  bracketPairColorization: { enabled: true },
+                  fontFamily: "'JetBrains Mono', 'Fira Code', 'Menlo', monospace",
+                  tabSize: 4,
+                  formatOnPaste: false,
+                  formatOnType: false,
+                  readOnly: false
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Bottom: Tabbed Testcase & Output Console */}
+          <div className="console-panel-box">
+            <div className="console-tabs-bar">
+              <div className="console-tabs-left">
+                <button
+                  className={`console-tab-btn ${consoleTab === 'testcases' ? 'active' : ''}`}
+                  onClick={() => setConsoleTab('testcases')}
+                >
+                  <i className="fas fa-vial"></i> Testcases
+                </button>
+                <button
+                  className={`console-tab-btn ${consoleTab === 'customInput' ? 'active' : ''}`}
+                  onClick={() => setConsoleTab('customInput')}
+                >
+                  <i className="fas fa-keyboard"></i> Custom Input
+                </button>
+                <button
+                  className={`console-tab-btn ${consoleTab === 'result' ? 'active' : ''}`}
+                  onClick={() => setConsoleTab('result')}
+                >
+                  <i className="fas fa-poll"></i> Execution Output
+                </button>
+              </div>
+
+              {executionResult && (
+                <div className="console-status-pill">
+                  <span className={`verdict-badge ${getVerdictClass(executionResult.verdict)}`}>
+                    {executionResult.verdict}
+                  </span>
+                  {activeReport && (
+                    <button
+                      className="btn-open-report-pill"
+                      onClick={() => setShowReportModal(true)}
+                    >
+                      <i className="fas fa-file-invoice"></i> View Report
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="console-body">
+              {/* TAB 1: Sample Test Cases Selection */}
+              {consoleTab === 'testcases' && (
+                <div className="testcase-tab-content">
+                  {sampleCases.length === 0 ? (
+                    <div className="empty-state-text">No sample testcases provided. Use Custom Input tab to test.</div>
+                  ) : (
+                    <div>
+                      <div className="case-selector-buttons">
+                        {sampleCases.map((tc, idx) => (
+                          <button
+                            key={idx}
+                            className={`btn-case-selector ${selectedCaseIdx === idx ? 'active' : ''}`}
+                            onClick={() => {
+                              setSelectedCaseIdx(idx);
+                              setCustomStdin(tc.input || '');
+                            }}
+                          >
+                            Case {idx + 1}
+                          </button>
+                        ))}
+                      </div>
+
+                      {sampleCases[selectedCaseIdx] && (
+                        <div className="case-preview-box">
+                          <div className="case-preview-group">
+                            <label>Input:</label>
+                            <pre>{sampleCases[selectedCaseIdx].input}</pre>
+                          </div>
+                          <div className="case-preview-group">
+                            <label>Expected Output:</label>
+                            <pre>{sampleCases[selectedCaseIdx].expectedOutput}</pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 2: Custom Stdin */}
+              {consoleTab === 'customInput' && (
+                <div className="custom-stdin-content">
+                  <label className="console-label">Standard Input (stdin):</label>
+                  <textarea
+                    rows={4}
+                    value={customStdin}
+                    onChange={(e) => setCustomStdin(e.target.value)}
+                    className="custom-stdin-textarea"
+                    placeholder="Enter arguments or inputs to pass to your program..."
+                  />
+                </div>
+              )}
+
+              {/* TAB 3: Execution Result */}
+              {consoleTab === 'result' && (
+                <div className="execution-result-content">
+                  {loadingAction ? (
+                    <div className="console-loading-state">
+                      <i className="fas fa-spinner fa-spin"></i>
+                      <span>{loadingAction === 'run' ? 'Compiling and executing your code...' : 'Evaluating against all test cases...'}</span>
+                    </div>
+                  ) : !executionResult ? (
+                    <div className="empty-state-text">
+                      Click <strong>"Run Code"</strong> to test custom inputs or <strong>"Submit"</strong> to evaluate against all test cases.
+                    </div>
+                  ) : (
+                    <div>
+                      {/* Metric summary banner */}
+                      <div className="result-stats-strip">
+                        <div>
+                          <span className="strip-lbl">Verdict:</span>
+                          <span className={`verdict-badge ${getVerdictClass(executionResult.verdict)}`}>
+                            {executionResult.verdict}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="strip-lbl">Runtime:</span>
+                          <strong>{executionResult.runtime ?? executionResult.runtimeMs ?? 0} ms</strong>
+                        </div>
+                        <div>
+                          <span className="strip-lbl">Memory:</span>
+                          <strong>{executionResult.memory ?? executionResult.memoryKb ?? 0} KB</strong>
+                        </div>
+                        {!executionResult.isRunOnly && executionResult.totalTests > 0 && (
+                          <div>
+                            <span className="strip-lbl">Score:</span>
+                            <strong style={{ color: '#34d399' }}>
+                              {executionResult.score ?? 0} / 100 ({executionResult.passedTests || executionResult.passedTestCases || 0}/{executionResult.totalTests || executionResult.totalTestCases || 0} passed)
+                            </strong>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Error details if provider service error */}
+                      {['Execution Service Error', 'Server Error'].includes(executionResult.verdict) && (
+                        <div className="service-error-alert">
+                          <i className="fas fa-exclamation-triangle"></i>
+                          <div>
+                            <strong>Execution Provider Unavailable</strong>
+                            <p>{getExecutionServiceMessage(executionResult.serviceReason)}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Stdout */}
+                      {(executionResult.output || executionResult.stdout) && (
+                        <div className="output-section-block">
+                          <label className="console-label">Standard Output:</label>
+                          <pre className="stdout-terminal">{executionResult.output || executionResult.stdout}</pre>
+                        </div>
+                      )}
+
+                      {/* Stderr / Errors */}
+                      {executionResult.stderr && executionResult.verdict !== 'Execution Service Error' && (
+                        <div className="output-section-block error-block">
+                          <label className="console-label error-label">Standard Error / Stack Trace:</label>
+                          <pre className="stderr-terminal">{executionResult.stderr}</pre>
+                        </div>
+                      )}
+
+                      {/* Test case breakdown table */}
+                      {!executionResult.isRunOnly && (executionResult.testResults || executionResult.testCaseResults) && (
+                        <div className="output-section-block">
+                          <label className="console-label">Test Case Results:</label>
+                          <div className="table-responsive">
+                            <table className="mini-test-table">
+                              <thead>
+                                <tr>
+                                  <th>Case #</th>
+                                  <th>Result</th>
+                                  <th>Expected</th>
+                                  <th>Actual</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(executionResult.testResults || executionResult.testCaseResults).map((tc, idx) => (
+                                  <tr key={idx}>
+                                    <td>#{idx + 1}</td>
+                                    <td>
+                                      <span className={tc.passed ? 'tag-pass' : 'tag-fail'}>
+                                        {tc.passed ? 'PASS' : 'FAIL'}
+                                      </span>
+                                    </td>
+                                    <td><code>{tc.expectedOutput || 'Hidden'}</code></td>
+                                    <td><code>{tc.actualOutput || (tc.passed ? 'Passed' : 'Failed')}</code></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Automatic Assessment Report Modal */}
+      {showReportModal && activeReport && (
+        <CodingReportModal
+          report={activeReport}
+          problem={currentProblem || problem}
+          onClose={() => setShowReportModal(false)}
+          onReturnToPractice={onExit}
+        />
+      )}
     </div>
   );
 };

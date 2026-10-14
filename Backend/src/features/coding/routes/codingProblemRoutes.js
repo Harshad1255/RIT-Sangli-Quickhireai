@@ -146,4 +146,10 @@ router.get(
   codingProblemController.getMySubmissions
 );
 
+router.get(
+  '/submissions/:submissionId/report',
+  authenticateToken,
+  codingProblemController.getSubmissionReport
+);
+
 module.exports = router;
