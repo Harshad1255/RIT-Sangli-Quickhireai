@@ -187,52 +187,63 @@
 }
 
 .btn-run {
-  background: #1e293b;
-  color: #e2e8f0;
-  border: 1px solid #334155;
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 0.82rem;
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  color: #ffffff;
+  border: 1px solid #38bdf8;
+  padding: 7px 16px;
+  border-radius: 9px;
+  font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
-  transition: all 0.2s;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
 }
 
 .btn-run i {
-  color: #38bdf8;
+  color: #ffffff;
 }
 
 .btn-run:hover:not(:disabled) {
-  background: #334155;
-  color: #ffffff;
+  background: linear-gradient(135deg, #0369a1, #075985);
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.45);
+  transform: translateY(-1px);
 }
 
 .btn-submit {
-  background: #059669;
+  background: linear-gradient(135deg, #059669, #047857);
   color: #ffffff;
-  border: 1px solid #10b981;
-  padding: 6px 16px;
-  border-radius: 8px;
-  font-size: 0.82rem;
+  border: 1px solid #34d399;
+  padding: 7px 18px;
+  border-radius: 9px;
+  font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
-  transition: all 0.2s;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
 }
 
 .btn-submit:hover:not(:disabled) {
-  background: #10b981;
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.45);
+  transform: translateY(-1px);
 }
 
 .btn-run:disabled,
 .btn-submit:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  opacity: 0.82 !important;
+  cursor: default !important;
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: none !important;
 }
 
 /* --- Main Split Workspace Body --- */

@@ -1823,30 +1823,43 @@ const InterviewScreen = (props) => {
                   fontSize: '1.18rem',
                   borderRadius: 22,
                   marginBottom: 14,
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  background: (transcript.trim() || code.trim())
+                    ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                    : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
                   color: 'white',
-                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+                  boxShadow: (transcript.trim() || code.trim())
+                    ? '0 4px 18px rgba(16, 185, 129, 0.4)'
+                    : '0 4px 14px rgba(59, 130, 246, 0.3)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontWeight: 700,
                   letterSpacing: '0.5px',
-                  border: 'none'
+                  border: 'none',
+                  cursor: isProcessing ? 'default' : 'pointer',
+                  transition: 'all 0.3s ease',
+                  opacity: 1
                 }}
                 onClick={(e) => {
+                  if (isProcessing) return;
                   if (!isCurrentlyFullscreen) {
                     e.preventDefault();
                     handleDisabledButtonClick('submit');
-                  } else {
-                    submitAnswer({ code: code.trim(), transcript: transcript.trim() });
+                    return;
                   }
+                  if (!transcript.trim() && !code.trim()) {
+                    setRecordingError('💡 Please speak your answer or write code before submitting.');
+                    return;
+                  }
+                  setRecordingError(null);
+                  submitAnswer({ code: code.trim(), transcript: transcript.trim() });
                 }} 
-                disabled={isProcessing || !hasQuestion || (!transcript.trim() && !code.trim())}
+                disabled={isProcessing || !hasQuestion}
                 aria-label="Submit Answer"
-                title={!isCurrentlyFullscreen ? 'Fullscreen required to submit' : ''}
+                title={!isCurrentlyFullscreen ? 'Click to enter fullscreen' : (transcript.trim() || code.trim() ? 'Click to submit your answer' : 'Speak or type code before submitting')}
               >
-                Submit Answer
-                {!isCurrentlyFullscreen && <span style={{ marginLeft: '4px', fontSize: '1.1rem' }}>🔒</span>}
+                {isProcessing ? 'Evaluating Answer...' : (transcript.trim() || code.trim() ? '✓ Submit Answer' : 'Submit Answer')}
+                {!isCurrentlyFullscreen && <span style={{ marginLeft: '6px', fontSize: '1.1rem' }}>🔒</span>}
               </button>
             </div>
             {/* Error messages for recording/skip below buttons */}

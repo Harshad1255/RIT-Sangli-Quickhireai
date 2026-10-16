@@ -59,11 +59,20 @@
   font-weight: 700;
   padding: 14px 28px;
   cursor: pointer;
-  transition: transform 0.15s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
 }
 
-.exam-security-button:hover {
-  transform: translateY(-1px);
+.exam-security-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+}
+
+.exam-security-button:disabled {
+  opacity: 0.85 !important;
+  cursor: default !important;
+  box-shadow: none !important;
+  filter: none !important;
 }
 
 .exam-security-shell {

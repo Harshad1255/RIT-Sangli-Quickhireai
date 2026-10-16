@@ -327,14 +327,28 @@ const AptitudePractice = () => {
             </div>
 
             {!submitted ? (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', marginTop: '1.5rem' }}>
                 <button
                   className="solve-btn"
-                  style={{ opacity: selectedOption === null ? 0.6 : 1 }}
-                  disabled={selectedOption === null || submitting}
-                  onClick={handleSubmitAnswer}
+                  onClick={() => {
+                    if (submitting) return;
+                    if (selectedOption === null) {
+                      alert('Please select an option first!');
+                      return;
+                    }
+                    handleSubmitAnswer();
+                  }}
+                  disabled={submitting}
                 >
-                  {submitting ? 'Checking...' : 'Submit Answer'}
+                  {submitting ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin" style={{ marginRight: '8px' }}></i> Checking...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-paper-plane" style={{ marginRight: '8px' }}></i> Submit Answer
+                    </>
+                  )}
                 </button>
               </div>
             ) : (

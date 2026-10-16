@@ -26,8 +26,10 @@ body.modal-open {
 
 button:disabled,
 [disabled] {
-  cursor: not-allowed !important;
-  opacity: 0.6;
+  cursor: default !important;
+  opacity: 0.82;
+  filter: none !important;
+  -webkit-filter: none !important;
 }
 
 .modal-overlay,
